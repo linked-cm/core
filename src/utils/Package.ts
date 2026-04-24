@@ -277,7 +277,7 @@ export function linkedPackage(packageName: string): LinkedPackageObject
     // (e.g. LincdServerProxy) can route backend calls using the real module
     // specifier (e.g. '@_linked/server'), not the lossy URI-sanitized form
     // ('-_linked-server' — non-recoverable via decodeURIComponent).
-    if (!(constructor as any).packageName) {
+    if (!Object.getOwnPropertyNames(constructor).includes('packageName')) {
       (constructor as any).packageName = packageName;
     }
 
