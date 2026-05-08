@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.5.0
+
+### Minor Changes
+
+- [#70](https://github.com/linked-cm/core/pull/70) [`43a38fb`](https://github.com/linked-cm/core/commit/43a38fb9aaf41dd3f73dd05ea540d02ba300f9fb) Thanks [@flyon](https://github.com/flyon)! - Rename `IQuadStore` → `IDataset`
+
+  The universal dataset interface is now exported as `IDataset`. This better reflects its role: every dataset in the Linked framework accepts Linked Queries as input, and the implementing class decides how to handle them (compile to SPARQL, forward to a Host Agent API, translate to SQL, etc.).
+
+  **Migration:** replace all imports of `IQuadStore` with `IDataset`:
+
+  ```ts
+  // before
+  import type { IQuadStore } from "@_linked/core/interfaces/IQuadStore";
+  // after
+  import type { IDataset } from "@_linked/core/interfaces/IDataset";
+  ```
+
+  Classes that previously `implements IQuadStore` should now `implements IDataset`. The interface contract is unchanged — `init`, `selectQuery`, `updateQuery`, `createQuery`, `deleteQuery`.
+
+### Patch Changes
+
+- [#70](https://github.com/linked-cm/core/pull/70) [`e39f5fc`](https://github.com/linked-cm/core/commit/e39f5fc177648bef4100242abf4b15c3380b89cc) Thanks [@flyon](https://github.com/flyon)! - `linkedShape`: store un-sanitized `packageName` on each shape constructor during registration. Consumers like `LincdServerProxy.parseShape` can now route backend calls using the real module specifier (e.g. `@_linked/server`) rather than extracting from the URI — the URI form is lossy (`URI.sanitize` strips `@` and `/` to `-`), so round-tripping the sanitized form as a module specifier fails module resolution.
+
 ## 2.4.1
 
 ### Patch Changes
