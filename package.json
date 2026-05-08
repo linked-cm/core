@@ -2,6 +2,7 @@
   "name": "@_linked/core",
   "version": "2.4.1",
   "license": "MIT",
+  "linkedPackage": true,
   "description": "Linked.js core query and SHACL shape DSL (copy-then-prune baseline)",
   "repository": {
     "type": "git",

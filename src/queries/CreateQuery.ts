@@ -6,7 +6,7 @@ import {buildCanonicalCreateMutationIR} from './IRMutation.js';
 
 /**
  * The canonical CreateQuery type — an IR AST node representing a create mutation.
- * This is the type received by IQuadStore.createQuery().
+ * This is the type received by IDataset.createQuery().
  */
 export type CreateQuery = IRCreateMutation;
 

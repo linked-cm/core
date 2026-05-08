@@ -16,7 +16,7 @@ import {ExpressionNode, ExistsCondition, isExpressionNode, isExistsCondition, tr
 
 /**
  * The canonical SelectQuery type — an IR AST node representing a select query.
- * This is the type received by IQuadStore.selectQuery().
+ * This is the type received by IDataset.selectQuery().
  */
 export type SelectQuery = IRSelectQuery;
 
@@ -1355,6 +1355,11 @@ export class QueryShape<
   }
 
   equals(otherValue: NodeReferenceValue | QShape<any>): ExpressionNode {
+    //validate the value is formed correctly
+    if(!otherValue.id) {
+      throw Error(`Invalid value for .equals(). ${JSON.stringify(otherValue)}`);  
+    }
+    
     const self = toExpressionNode(this);
     const arg = otherValue instanceof QueryBuilderObject
       ? toExpressionNode(otherValue)

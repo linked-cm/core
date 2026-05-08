@@ -5,7 +5,7 @@ import type {DeleteQuery, DeleteResponse} from './DeleteQuery.js';
 
 /**
  * Abstraction boundary between the DSL layer (Shape) and the storage layer
- * (LinkedStorage / IQuadStore). Both sides import this leaf module; neither
+ * (LinkedStorage / IDataset). Both sides import this leaf module; neither
  * imports the other.
  *
  * Return types are intentionally `any` — the DSL layer threads precise

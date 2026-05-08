@@ -9,17 +9,15 @@ import type {
 } from '../queries/IntermediateRepresentation.js';
 
 /**
- * Store interface for executing IR queries.
- *
- * Implement this interface to back Linked with a custom storage engine
- * (SPARQL endpoint, SQL database, in-memory store, etc.).
+ * Universal dataset interface. Every dataset in the Linked framework accepts
+ * Linked Queries as input. The implementing class decides how to handle them —
+ * compiling to SPARQL for Fuseki, forwarding as-is to a Host Agent API, etc.
  *
  * Each method receives a canonical IR query object and returns the result.
  * The calling layer (LinkedStorage via queryDispatch) threads the precise
- * DSL-level TypeScript result type back to the caller — the store only
- * needs to produce data that matches the structural result types.
+ * DSL-level TypeScript result type back to the caller.
  */
-export interface IQuadStore {
+export interface IDataset {
   /**
    * Prepares the store to be used.
    */
