@@ -1,6 +1,6 @@
 import {CoreMap} from '../collections/CoreMap.js';
 import {CoreSet} from '../collections/CoreSet.js';
-import {IQuadStore} from '../interfaces/IQuadStore.js';
+import {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
@@ -9,8 +9,8 @@ import {setQueryDispatch} from '../queries/queryDispatch.js';
 import {getShapeClass} from './ShapeClass.js';
 
 export abstract class LinkedStorage {
-  private static defaultStore?: IQuadStore;
-  private static shapeToStore: CoreMap<Function, IQuadStore> =
+  private static defaultStore?: IDataset;
+  private static shapeToStore: CoreMap<Function, IDataset> =
     new CoreMap();
 
   static isInitialised() {
@@ -21,7 +21,7 @@ export abstract class LinkedStorage {
     return this.defaultStore;
   }
 
-  static setDefaultStore(store: IQuadStore) {
+  static setDefaultStore(store: IDataset) {
     this.defaultStore = store;
     if (this.defaultStore?.init) {
       this.defaultStore.init();
@@ -34,14 +34,14 @@ export abstract class LinkedStorage {
     });
   }
 
-  static setStoreForShapes(store: IQuadStore, ...shapeClasses: Function[]) {
+  static setStoreForShapes(store: IDataset, ...shapeClasses: Function[]) {
     shapeClasses.forEach((shapeClass) => {
       this.shapeToStore.set(shapeClass, store);
     });
   }
 
-  static getStores(): CoreSet<IQuadStore> {
-    const stores = new CoreSet<IQuadStore>();
+  static getStores(): CoreSet<IDataset> {
+    const stores = new CoreSet<IDataset>();
     if (this.defaultStore) {
       stores.add(this.defaultStore);
     }
@@ -49,11 +49,11 @@ export abstract class LinkedStorage {
     return stores;
   }
 
-  static getShapeToStoreMap(): CoreMap<Function, IQuadStore> {
+  static getShapeToStoreMap(): CoreMap<Function, IDataset> {
     return this.shapeToStore;
   }
 
-  static getStoreForShapeClass(shapeClass?: Function | null): IQuadStore {
+  static getStoreForShapeClass(shapeClass?: Function | null): IDataset {
     let current: Function | null = shapeClass ?? null;
     while (typeof current === 'function') {
       const store = this.shapeToStore.get(current);
@@ -69,7 +69,7 @@ export abstract class LinkedStorage {
 
   private static resolveStoreForQueryShape(
     shape?: string | Function | null,
-  ): IQuadStore {
+  ): IDataset {
     if (!shape) {
       return this.defaultStore;
     }

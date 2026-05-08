@@ -28,7 +28,7 @@ import * as cached from './utils/cached.js';
 import * as List from './shapes/List.js';
 import * as ICoreIterable from './interfaces/ICoreIterable.js';
 import * as IFileStore from './interfaces/IFileStore.js';
-import * as IQuadStore from './interfaces/IQuadStore.js';
+import * as IDataset from './interfaces/IDataset.js';
 import * as rdf from './ontologies/rdf.js';
 import * as rdfs from './ontologies/rdfs.js';
 import * as xsd from './ontologies/xsd.js';
@@ -96,7 +96,7 @@ export function initModularApp() {
     List,
     ICoreIterable,
     IFileStore,
-    IQuadStore,
+    IDataset,
     SelectQuery,
     UpdateQuery,
     MutationQuery,

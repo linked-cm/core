@@ -16,7 +16,7 @@ import {ExpressionNode, ExistsCondition, isExpressionNode, isExistsCondition, tr
 
 /**
  * The canonical SelectQuery type — an IR AST node representing a select query.
- * This is the type received by IQuadStore.selectQuery().
+ * This is the type received by IDataset.selectQuery().
  */
 export type SelectQuery = IRSelectQuery;
 

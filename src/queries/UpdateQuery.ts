@@ -12,7 +12,7 @@ import {buildCanonicalUpdateMutationIR} from './IRMutation.js';
 
 /**
  * The canonical UpdateQuery type — an IR AST node representing an update mutation.
- * This is the type received by IQuadStore.updateQuery().
+ * This is the type received by IDataset.updateQuery().
  */
 export type UpdateQuery = IRUpdateMutation | IRUpdateWhereMutation;
 

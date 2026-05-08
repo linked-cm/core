@@ -2,7 +2,7 @@ import {describe, expect, test} from '@jest/globals';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
 import {LinkedStorage} from '../utils/LinkedStorage';
-import {IQuadStore} from '../interfaces/IQuadStore';
+import {IDataset} from '../interfaces/IDataset';
 import {NodeReferenceValue} from '../utils/NodeReference';
 
 const {linkedShape} = linkedPackage('store-routing-test');
@@ -35,7 +35,7 @@ type StoreCalls = {
 
 const createStore = () => {
   const calls: StoreCalls = {select: 0, update: 0, create: 0, delete: 0};
-  const store: IQuadStore = {
+  const store: IDataset = {
     selectQuery: async () => {
       calls.select += 1;
       return [];
