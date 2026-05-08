@@ -1,4 +1,4 @@
-import type {IQuadStore} from '../interfaces/IQuadStore.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
@@ -53,7 +53,7 @@ import {Shape} from '../shapes/Shape.js';
  * }
  * ```
  */
-export abstract class SparqlStore extends Shape implements IQuadStore {
+export abstract class SparqlStore extends Shape implements IDataset {
   protected options?: SparqlOptions;
 
   constructor(options?: SparqlOptions) {

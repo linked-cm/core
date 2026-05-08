@@ -42,7 +42,7 @@ setQueryDispatch({
 
 /**
  * Execute a query-producing callback and return the built IR
- * (the same object that would reach IQuadStore).
+ * (the same object that would reach ILinkedDataset).
  */
 export const captureQuery = async (
   runner: () => Promise<unknown>,

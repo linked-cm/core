@@ -10,7 +10,7 @@ import {buildCanonicalDeleteMutationIR} from './IRMutation.js';
 
 /**
  * The canonical DeleteQuery type — an IR AST node representing a delete mutation.
- * This is the type received by IQuadStore.deleteQuery().
+ * This is the type received by IDataset.deleteQuery().
  */
 export type DeleteQuery = IRDeleteMutation | IRDeleteAllMutation | IRDeleteWhereMutation;
 

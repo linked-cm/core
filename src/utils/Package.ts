@@ -273,6 +273,14 @@ export function linkedPackage(packageName: string): LinkedPackageObject
     // register the component and its shape
     Shape.registerByType(constructor);
 
+    // Track the un-sanitized package name on the constructor so consumers
+    // (e.g. LincdServerProxy) can route backend calls using the real module
+    // specifier (e.g. '@_linked/server'), not the lossy URI-sanitized form
+    // ('-_linked-server' — non-recoverable via decodeURIComponent).
+    if (!Object.getOwnPropertyNames(constructor).includes('packageName')) {
+      (constructor as any).packageName = packageName;
+    }
+
     // if no shape object has been attached to the constructor
     if (!Object.getOwnPropertyNames(constructor).includes('shape'))
     {
