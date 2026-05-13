@@ -60,12 +60,14 @@ function collectAllTriples(node: SparqlAlgebraNode): SparqlTriple[] {
 /** Collect all triples that are inside LeftJoin (OPTIONAL) right-hand sides. */
 function collectOptionalTriples(node: SparqlAlgebraNode): SparqlTriple[] {
   const triples: SparqlTriple[] = [];
+  const seenBgps = new Set<SparqlAlgebraNode>();
   walkAlgebra(node, (n) => {
     if (n.type === 'left_join') {
       const lj = n as SparqlLeftJoin;
       // Collect triples from the right-hand side (the optional part)
       walkAlgebra(lj.right, (inner) => {
-        if (inner.type === 'bgp') {
+        if (inner.type === 'bgp' && !seenBgps.has(inner)) {
+          seenBgps.add(inner);
           triples.push(...(inner as SparqlBGP).triples);
         }
       });
@@ -274,28 +276,99 @@ describe('selectToAlgebra — nested traversals', () => {
     });
 
     expect(rootBgp).not.toBeNull();
-    // Root BGP should have exactly 2 triples: type + one traverse
+    // Root BGP should contain only the type triple; the nullable bestFriend
+    // traverse now lives inside a nested OPTIONAL subtree.
     const traverseInBgp = rootBgp!.triples.filter(
       (t) => t.predicate.kind === 'iri' && t.predicate.value !== RDF_TYPE,
     );
-    expect(traverseInBgp.length).toBe(1); // Only ONE traverse (deduplication)
+    expect(traverseInBgp.length).toBe(0);
 
-    // Three OPTIONAL property triples
+    // Three nested OPTIONAL property triples on alias a1 + the parent traverse
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(optionalTriples.length).toBe(3);
+    expect(optionalTriples.length).toBe(4);
+
+    const bestFriendTraverse = optionalTriples.find(
+      (t) =>
+        t.subject.kind === 'variable' &&
+        t.subject.name === 'a0' &&
+        t.predicate.kind === 'iri' &&
+        t.predicate.value === `${Person.shape.id}/bestFriend` &&
+        t.object.kind === 'variable' &&
+        t.object.name === 'a1',
+    );
+    expect(bestFriendTraverse).toBeDefined();
 
     // Each should reference the traversed alias (a1)
-    for (const t of optionalTriples) {
+    const a1PropertyTriples = optionalTriples.filter(
+      (t) => t.subject.kind === 'variable' && t.subject.name === 'a1',
+    );
+    expect(a1PropertyTriples.length).toBe(3);
+    for (const t of a1PropertyTriples) {
       expect(t.subject.kind).toBe('variable');
       expect((t.subject as any).name).toBe('a1');
     }
 
     // Each should have distinct variable names
-    const objectNames = optionalTriples.map(
+    const objectNames = a1PropertyTriples.map(
       (t) => t.object.kind === 'variable' ? t.object.name : '',
     );
     const uniqueNames = new Set(objectNames);
     expect(uniqueNames.size).toBe(3);
+  });
+
+  test('selectBestFriendName nests a nullable single-value traversal under OPTIONAL', async () => {
+    const plan = await capturePlan(() => queryFactories.selectBestFriendName());
+
+    const allTriples = collectAllTriples(plan.algebra);
+    const requiredBestFriendTriples = allTriples.filter(
+      (t) =>
+        t.subject.kind === 'variable' &&
+        t.subject.name === 'a0' &&
+        t.predicate.kind === 'iri' &&
+        t.predicate.value === `${Person.shape.id}/bestFriend` &&
+        t.object.kind === 'variable' &&
+        t.object.name === 'a1',
+    );
+    expect(requiredBestFriendTriples.length).toBe(1);
+
+    const innerAlgebra = stripFilters(plan.algebra);
+    let rootBgp: SparqlBGP | null = null;
+    walkAlgebra(innerAlgebra, (n) => {
+      if (n.type === 'bgp' && !rootBgp) {
+        const bgp = n as SparqlBGP;
+        if (bgp.triples.some((t) => t.predicate.kind === 'iri' && t.predicate.value === RDF_TYPE)) {
+          rootBgp = bgp;
+        }
+      }
+    });
+    expect(rootBgp).not.toBeNull();
+    expect(
+      rootBgp!.triples.some(
+        (t) =>
+          t.predicate.kind === 'iri' &&
+          t.predicate.value === `${Person.shape.id}/bestFriend`,
+      ),
+    ).toBe(false);
+
+    const optionalTriples = collectOptionalTriples(plan.algebra);
+    expect(
+      optionalTriples.some(
+        (t) =>
+          t.subject.kind === 'variable' &&
+          t.subject.name === 'a0' &&
+          t.predicate.kind === 'iri' &&
+          t.predicate.value === `${Person.shape.id}/bestFriend`,
+      ),
+    ).toBe(true);
+    expect(
+      optionalTriples.some(
+        (t) =>
+          t.subject.kind === 'variable' &&
+          t.subject.name === 'a1' &&
+          t.predicate.kind === 'iri' &&
+          t.predicate.value === `${Person.shape.id}/name`,
+      ),
+    ).toBe(true);
   });
 
   test('selectDeepNested produces multiple traverse triples', async () => {
