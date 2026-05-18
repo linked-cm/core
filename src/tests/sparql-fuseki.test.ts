@@ -1880,13 +1880,13 @@ describe('Fuseki mutations — DELETE', () => {
 });
 
 // =========================================================================
-// SparqlStore base class — via FusekiStore
+// SparqlDataset base class — via FusekiStore
 // =========================================================================
 
 const FUSEKI_BASE_URL = process.env.FUSEKI_BASE_URL || 'http://localhost:3939';
 const FUSEKI_DATASET = 'nashville-test';
 
-describe('SparqlStore (via FusekiStore)', () => {
+describe('SparqlDataset (via FusekiStore)', () => {
   const store = new FusekiStore(FUSEKI_BASE_URL, FUSEKI_DATASET);
 
   test('selectQuery — returns mapped result rows', async () => {

@@ -27,9 +27,9 @@ import {generateEntityUri, type SparqlOptions} from './sparqlUtils.js';
 import {Shape} from '../shapes/Shape.js';
 
 /**
- * Abstract base class for SPARQL-backed quad stores.
+ * Abstract base class for SPARQL-backed datasets.
  *
- * Extends Shape so store configurations can themselves be persisted as linked data.
+ * Extends Shape so dataset configurations can themselves be persisted as linked data.
  * Handles the full pipeline: IR query → SPARQL string → execute → map results.
  * Subclasses only need to implement the two transport methods:
  * - `executeSparqlSelect` — send a SPARQL SELECT and return JSON results
@@ -37,7 +37,7 @@ import {Shape} from '../shapes/Shape.js';
  *
  * Example subclass (Fuseki):
  * ```ts
- * class FusekiStore extends SparqlStore {
+ * class FusekiDataset extends SparqlDataset {
  *   constructor(baseUrl: string, dataset: string) {
  *     super({ dataRoot: 'http://data.example.org' });
  *     this.queryEndpoint = `${baseUrl}/${dataset}/sparql`;
@@ -53,7 +53,7 @@ import {Shape} from '../shapes/Shape.js';
  * }
  * ```
  */
-export abstract class SparqlStore extends Shape implements IDataset {
+export abstract class SparqlDataset extends Shape implements IDataset {
   protected options?: SparqlOptions;
 
   constructor(options?: SparqlOptions) {
@@ -120,7 +120,7 @@ export abstract class SparqlStore extends Shape implements IDataset {
   }
 
   /**
-   * Execute a raw SPARQL query string directly against the store.
+   * Execute a raw SPARQL query string directly against the dataset.
    * Defaults to SELECT; pass `'update'` for INSERT/DELETE operations.
    */
   async rawQuery(
@@ -133,3 +133,6 @@ export abstract class SparqlStore extends Shape implements IDataset {
     return this.executeSparqlSelect(sparql);
   }
 }
+
+// Backwards-compatibility re-export — remove once all consumers are updated.
+export {SparqlDataset as SparqlStore};
