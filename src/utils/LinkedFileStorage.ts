@@ -22,7 +22,7 @@ export abstract class LinkedFileStorage {
     return this.defaultStore;
   }
 
-  static setDefaultStore(store: IFileStore) {
+  static setDefaultDataset(store: IFileStore) {
     this.defaultStore = store;
 
     if (this.defaultStore.init) {

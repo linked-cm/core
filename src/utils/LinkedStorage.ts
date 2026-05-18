@@ -21,8 +21,12 @@ export abstract class LinkedStorage {
     return this.defaultStore;
   }
 
-  static setDefaultStore(store: IDataset) {
-    this.defaultStore = store;
+  /**
+   * Set the default IDataset (catch-all for shapes with no explicit mapping).
+   * Renamed from setDefaultStore in tasks-mode P0 — see docs/plans/002-phase-1-create-user-project-flow.md.
+   */
+  static setDefaultDataset(dataset: IDataset) {
+    this.defaultStore = dataset;
     if (this.defaultStore?.init) {
       this.defaultStore.init();
     }
@@ -34,9 +38,13 @@ export abstract class LinkedStorage {
     });
   }
 
-  static setStoreForShapes(store: IDataset, ...shapeClasses: Function[]) {
+  /**
+   * Pin one or more shape classes to a specific IDataset implementer.
+   * Renamed from setStoreForShapes in tasks-mode P0 — see docs/plans/002-phase-1-create-user-project-flow.md.
+   */
+  static setDatasetForShapes(dataset: IDataset, ...shapeClasses: Function[]) {
     shapeClasses.forEach((shapeClass) => {
-      this.shapeToStore.set(shapeClass, store);
+      this.shapeToStore.set(shapeClass, dataset);
     });
   }
 
@@ -87,7 +95,7 @@ export abstract class LinkedStorage {
     const store = this.resolveStoreForQueryShape(query?.root?.shape);
     if (!store?.selectQuery) {
       return Promise.reject(
-        new Error('No query store configured. Call LinkedStorage.setDefaultStore().'),
+        new Error('No query store configured. Call LinkedStorage.setDefaultDataset().'),
       );
     }
     return store.selectQuery(query) as Promise<ResultType>;
