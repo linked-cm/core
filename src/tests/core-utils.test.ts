@@ -89,7 +89,7 @@ class PackagePerson extends Shape {
 
 const resetLinkedStorage = () => {
   LinkedStorage.setDefaultDataset(null as any);
-  LinkedStorage.getShapeToStoreMap().clear();
+  LinkedStorage.getShapeToDatasetMap().clear();
 };
 
 describe('ShapeClass utilities', () => {
@@ -148,15 +148,15 @@ describe('LinkedStorage extra behaviors', () => {
     const shapeStore = {selectQuery: jest.fn()} as any;
     LinkedStorage.setDefaultDataset(defaultStore);
     LinkedStorage.setDatasetForShapes(shapeStore, BaseShape);
-    const stores = LinkedStorage.getStores();
+    const stores = LinkedStorage.getDatasets();
     expect(stores.has(defaultStore)).toBe(true);
     expect(stores.has(shapeStore)).toBe(true);
   });
 
-  test('getStoreForShapeClass falls back to superclass mapping', () => {
+  test('getDatasetForShapeClass falls back to superclass mapping', () => {
     const baseStore = {selectQuery: jest.fn()} as any;
     LinkedStorage.setDatasetForShapes(baseStore, BaseShape);
-    expect(LinkedStorage.getStoreForShapeClass(SubShape)).toBe(baseStore);
+    expect(LinkedStorage.getDatasetForShapeClass(SubShape)).toBe(baseStore);
   });
 
   test('selectQuery rejects when no store is configured', async () => {

@@ -8,27 +8,35 @@ import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
 import {setQueryDispatch} from '../queries/queryDispatch.js';
 import {getShapeClass} from './ShapeClass.js';
 
+/**
+ * Primary routing layer (arch-04 §The IDataset abstraction).
+ *
+ * Resolves an incoming Linked Query to the IDataset that should handle it,
+ * based on the query's target shape. Composite IDatasets (gateways, routers,
+ * forwarders, resolvers) plug in here just like storage IDatasets do.
+ *
+ * The "Dataset" naming aligns with the IDataset contract. Earlier "Store"
+ * names were renamed in phase-1 — see docs/plans/002-phase-1-create-user-project-flow.md.
+ */
 export abstract class LinkedStorage {
-  private static defaultStore?: IDataset;
-  private static shapeToStore: CoreMap<Function, IDataset> =
+  private static defaultDataset?: IDataset;
+  private static shapeToDataset: CoreMap<Function, IDataset> =
     new CoreMap();
 
   static isInitialised() {
-    return !!this.defaultStore;
+    return !!this.defaultDataset;
   }
 
-  static getDefaultStore() {
-    return this.defaultStore;
+  /** The catch-all IDataset for shapes with no explicit mapping. */
+  static getDefaultDataset() {
+    return this.defaultDataset;
   }
 
-  /**
-   * Set the default IDataset (catch-all for shapes with no explicit mapping).
-   * Renamed from setDefaultStore in tasks-mode P0 — see docs/plans/002-phase-1-create-user-project-flow.md.
-   */
+  /** Set the default IDataset (catch-all for shapes with no explicit mapping). */
   static setDefaultDataset(dataset: IDataset) {
-    this.defaultStore = dataset;
-    if (this.defaultStore?.init) {
-      this.defaultStore.init();
+    this.defaultDataset = dataset;
+    if (this.defaultDataset?.init) {
+      this.defaultDataset.init();
     }
     setQueryDispatch({
       selectQuery: (q) => this.selectQuery(q),
@@ -38,96 +46,96 @@ export abstract class LinkedStorage {
     });
   }
 
-  /**
-   * Pin one or more shape classes to a specific IDataset implementer.
-   * Renamed from setStoreForShapes in tasks-mode P0 — see docs/plans/002-phase-1-create-user-project-flow.md.
-   */
+  /** Pin one or more shape classes to a specific IDataset implementer. */
   static setDatasetForShapes(dataset: IDataset, ...shapeClasses: Function[]) {
     shapeClasses.forEach((shapeClass) => {
-      this.shapeToStore.set(shapeClass, dataset);
+      this.shapeToDataset.set(shapeClass, dataset);
     });
   }
 
-  static getStores(): CoreSet<IDataset> {
-    const stores = new CoreSet<IDataset>();
-    if (this.defaultStore) {
-      stores.add(this.defaultStore);
+  /** Every IDataset known to the primary router (default + all pinned). */
+  static getDatasets(): CoreSet<IDataset> {
+    const datasets = new CoreSet<IDataset>();
+    if (this.defaultDataset) {
+      datasets.add(this.defaultDataset);
     }
-    this.shapeToStore.forEach((store) => stores.add(store));
-    return stores;
+    this.shapeToDataset.forEach((dataset) => datasets.add(dataset));
+    return datasets;
   }
 
-  static getShapeToStoreMap(): CoreMap<Function, IDataset> {
-    return this.shapeToStore;
+  /** Read-only view of the shape→IDataset map. */
+  static getShapeToDatasetMap(): CoreMap<Function, IDataset> {
+    return this.shapeToDataset;
   }
 
-  static getStoreForShapeClass(shapeClass?: Function | null): IDataset {
+  /** Resolve the IDataset for a given shape class. Walks the prototype chain. */
+  static getDatasetForShapeClass(shapeClass?: Function | null): IDataset {
     let current: Function | null = shapeClass ?? null;
     while (typeof current === 'function') {
-      const store = this.shapeToStore.get(current);
-      if (store) {
-        return store;
+      const dataset = this.shapeToDataset.get(current);
+      if (dataset) {
+        return dataset;
       }
       const parent = Object.getPrototypeOf(current);
       if (parent === Function.prototype || parent === null) break;
       current = parent;
     }
-    return this.defaultStore;
+    return this.defaultDataset;
   }
 
-  private static resolveStoreForQueryShape(
+  private static resolveDatasetForQueryShape(
     shape?: string | Function | null,
   ): IDataset {
     if (!shape) {
-      return this.defaultStore;
+      return this.defaultDataset;
     }
     if (typeof shape === 'function') {
-      return this.getStoreForShapeClass(shape);
+      return this.getDatasetForShapeClass(shape);
     }
     if (typeof shape === 'string') {
       const shapeClass = getShapeClass(shape);
-      return this.getStoreForShapeClass(shapeClass);
+      return this.getDatasetForShapeClass(shapeClass);
     }
-    return this.defaultStore;
+    return this.defaultDataset;
   }
 
   static selectQuery<ResultType>(query: SelectQuery): Promise<ResultType> {
-    const store = this.resolveStoreForQueryShape(query?.root?.shape);
-    if (!store?.selectQuery) {
+    const dataset = this.resolveDatasetForQueryShape(query?.root?.shape);
+    if (!dataset?.selectQuery) {
       return Promise.reject(
-        new Error('No query store configured. Call LinkedStorage.setDefaultDataset().'),
+        new Error('No query dataset configured. Call LinkedStorage.setDefaultDataset().'),
       );
     }
-    return store.selectQuery(query) as Promise<ResultType>;
+    return dataset.selectQuery(query) as Promise<ResultType>;
   }
 
   static updateQuery<ResponseType>(query: UpdateQuery): Promise<ResponseType> {
-    const store = this.resolveStoreForQueryShape(query?.shape);
-    if (!store?.updateQuery) {
+    const dataset = this.resolveDatasetForQueryShape(query?.shape);
+    if (!dataset?.updateQuery) {
       return Promise.reject(
-        new Error('No update handler configured on the query store.'),
+        new Error('No update handler configured on the query dataset.'),
       );
     }
-    return store.updateQuery(query) as Promise<ResponseType>;
+    return dataset.updateQuery(query) as Promise<ResponseType>;
   }
 
   static createQuery<ResponseType>(query: CreateQuery): Promise<ResponseType> {
-    const store = this.resolveStoreForQueryShape(query?.shape);
-    if (!store?.createQuery) {
+    const dataset = this.resolveDatasetForQueryShape(query?.shape);
+    if (!dataset?.createQuery) {
       return Promise.reject(
-        new Error('No create handler configured on the query store.'),
+        new Error('No create handler configured on the query dataset.'),
       );
     }
-    return store.createQuery(query) as Promise<ResponseType>;
+    return dataset.createQuery(query) as Promise<ResponseType>;
   }
 
   static deleteQuery(query: DeleteQuery): Promise<DeleteResponse> {
-    const store = this.resolveStoreForQueryShape(query?.shape);
-    if (!store?.deleteQuery) {
+    const dataset = this.resolveDatasetForQueryShape(query?.shape);
+    if (!dataset?.deleteQuery) {
       return Promise.reject(
-        new Error('No delete handler configured on the query store.'),
+        new Error('No delete handler configured on the query dataset.'),
       );
     }
-    return store.deleteQuery(query);
+    return dataset.deleteQuery(query);
   }
 }
