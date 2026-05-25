@@ -759,6 +759,29 @@ describe('deleteInsertPlanToSparql', () => {
     expect(result).not.toContain('INSERT {');
     expect(result).toContain('WHERE {');
   });
+
+  test('DeleteInsertPlan with graph wraps delete, insert, and where in GRAPH blocks', () => {
+    const plan: SparqlDeleteInsertPlan = {
+      type: 'delete_insert',
+      deletePatterns: [
+        triple(iri(ENTITY_URI), iri(HOBBY_URI), variable('old_hobby')),
+      ],
+      insertPatterns: [
+        triple(iri(ENTITY_URI), iri(HOBBY_URI), literal('Chess')),
+      ],
+      whereAlgebra: bgp(
+        triple(iri(ENTITY_URI), iri(HOBBY_URI), variable('old_hobby')),
+      ),
+      graph: GRAPH_URI,
+    };
+
+    const result = deleteInsertPlanToSparql(plan);
+
+    expect(result).toContain('DELETE {');
+    expect(result).toContain('INSERT {');
+    expect(result).toContain('WHERE {');
+    expect(result).toContain(`GRAPH <${GRAPH_URI}>`);
+  });
 });
 
 // ---------------------------------------------------------------------------

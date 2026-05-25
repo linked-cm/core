@@ -108,6 +108,10 @@ function resolvePropertyPredicateIri(propertyId: string): string {
   return propertyId;
 }
 
+function mutationPropertyTerm(propertyId: string): SparqlTerm {
+  return iriTerm(resolvePropertyPredicateIri(propertyId));
+}
+
 /** Produce variable name suffix from the last segment of a property URI. */
 function propertySuffix(propertyUri: string): string {
   const hashIdx = propertyUri.lastIndexOf('#');
@@ -1370,7 +1374,7 @@ function generateNodeDataTriples(
 
   // Field triples
   for (const field of data.fields) {
-    const propertyTerm = iriTerm(field.property);
+    const propertyTerm = mutationPropertyTerm(field.property);
 
     if (field.value === null || field.value === undefined) {
       continue;
@@ -1423,6 +1427,7 @@ export function createToAlgebra(
   return {
     type: 'insert_data',
     triples,
+    graph: options?.graph,
   };
 }
 
@@ -1450,8 +1455,9 @@ function processUpdateFields(
   const extends_: Array<{variable: string; expression: SparqlExpression}> = [];
 
   for (const field of data.fields) {
-    const propertyTerm = iriTerm(field.property);
-    const suffix = propertySuffix(field.property);
+    const resolvedProperty = resolvePropertyPredicateIri(field.property);
+    const propertyTerm = iriTerm(resolvedProperty);
+    const suffix = propertySuffix(resolvedProperty);
 
     // Check for set modification ({add, remove})
     if (
@@ -1634,7 +1640,7 @@ export function updateToAlgebra(
         trav.from === '__mutation_subject__' ? subjectTerm : varTerm(trav.from);
       const traversalTriple = tripleOf(
         fromTerm,
-        iriTerm(trav.property),
+        mutationPropertyTerm(trav.property),
         varTerm(trav.to),
       );
       whereAlgebra = {
@@ -1660,6 +1666,7 @@ export function updateToAlgebra(
     deletePatterns: result.deletePatterns,
     insertPatterns: result.insertPatterns,
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 
@@ -1668,7 +1675,7 @@ export function updateToAlgebra(
  */
 export function deleteToAlgebra(
   query: IRDeleteMutation,
-  _options?: SparqlOptions,
+  options?: SparqlOptions,
 ): SparqlDeleteInsertPlan {
   const deletePatterns: SparqlTriple[] = [];
   const requiredTriples: SparqlTriple[] = [];
@@ -1706,6 +1713,7 @@ export function deleteToAlgebra(
     deletePatterns,
     insertPatterns: [],
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 
@@ -1812,7 +1820,7 @@ function walkBlankNodeTree(
  */
 export function deleteAllToAlgebra(
   query: IRDeleteAllMutation,
-  _options?: SparqlOptions,
+  options?: SparqlOptions,
 ): SparqlDeleteInsertPlan {
   const subjectVar = 'a0';
 
@@ -1837,6 +1845,7 @@ export function deleteAllToAlgebra(
     deletePatterns,
     insertPatterns: [],
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 
@@ -1847,7 +1856,7 @@ export function deleteAllToAlgebra(
  */
 export function deleteWhereToAlgebra(
   query: IRDeleteWhereMutation,
-  _options?: SparqlOptions,
+  options?: SparqlOptions,
 ): SparqlDeleteInsertPlan {
   const subjectVar = 'a0';
   const registry = new VariableRegistry();
@@ -1897,6 +1906,7 @@ export function deleteWhereToAlgebra(
     deletePatterns,
     insertPatterns: [],
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 
@@ -1952,7 +1962,7 @@ export function updateWhereToAlgebra(
         trav.from === '__mutation_subject__' ? varTerm('a0') : varTerm(trav.from);
       const traversalTriple = tripleOf(
         fromTerm,
-        iriTerm(trav.property),
+        mutationPropertyTerm(trav.property),
         varTerm(trav.to),
       );
       whereAlgebra = {
@@ -1978,6 +1988,7 @@ export function updateWhereToAlgebra(
     deletePatterns: result.deletePatterns,
     insertPatterns: result.insertPatterns,
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 

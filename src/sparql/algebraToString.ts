@@ -350,17 +350,28 @@ export function deleteInsertPlanToSparql(
 
   // DELETE block
   const deleteTriples = serializeTriples(plan.deletePatterns, collector);
-  const deletePart = `DELETE {\n${indent(deleteTriples)}\n}`;
+  const deleteContent = plan.graph
+    ? `GRAPH ${formatUri(plan.graph)} {\n${indent(deleteTriples)}\n}`
+    : deleteTriples;
+  const deletePart = `DELETE {\n${indent(deleteContent)}\n}`;
 
   // INSERT block (may be empty)
   let insertPart = '';
   if (plan.insertPatterns.length > 0) {
     const insertTriples = serializeTriples(plan.insertPatterns, collector);
-    insertPart = `INSERT {\n${indent(insertTriples)}\n}\n`;
+    const insertContent = plan.graph
+      ? `GRAPH ${formatUri(plan.graph)} {\n${indent(insertTriples)}\n}`
+      : insertTriples;
+    insertPart = `INSERT {\n${indent(insertContent)}\n}\n`;
   }
 
   // WHERE block
-  const whereBody = serializeAlgebraNode(plan.whereAlgebra, collector);
+  const whereBody = serializeAlgebraNode(
+    plan.graph
+      ? {type: 'graph', iri: plan.graph, inner: plan.whereAlgebra}
+      : plan.whereAlgebra,
+    collector,
+  );
   const wherePart = `WHERE {\n${indent(whereBody)}\n}`;
 
   const prefixBlock = buildPrefixBlock(collector.uris);

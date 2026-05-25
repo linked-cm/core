@@ -3,6 +3,7 @@ import {ulid} from 'ulid';
 
 export interface SparqlOptions {
   dataRoot?: string;
+  graph?: string;
   prefixes?: Record<string, string>;
 }
 
