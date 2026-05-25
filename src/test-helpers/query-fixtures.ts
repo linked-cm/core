@@ -194,6 +194,9 @@ const updateBirthDate: UpdatePartial<Person> = {
 const updateCurrentTeam: UpdatePartial<Player> = {
   currentTeam: entity('team351'),
 };
+const updateUnsetCurrentTeam: UpdatePartial<Player> = {
+  currentTeam: null,
+};
 
 export const queryFactories = {
   selectName: () => Person.select((p) => p.name),
@@ -408,6 +411,8 @@ export const queryFactories = {
   updateBirthDate: (() => Person.update(updateBirthDate).for(entity('p1'))) as () => any,
   selectCurrentTeam: () => Player.select((p) => p.currentTeam).for(entity('player1')),
   updateCurrentTeam: (() => Player.update(updateCurrentTeam).for(entity('player1'))) as () => any,
+  updateUnsetCurrentTeam: (() =>
+    Player.update(updateUnsetCurrentTeam).for(entity('player1'))) as () => any,
   createPlayerWithCurrentTeam: (() =>
     Player.create({
       __id: `${tmpEntityBase}player-created`,

@@ -48,6 +48,19 @@ describe('mutation IR parity (Phase 4)', () => {
     }
   });
 
+  test('path-resolved currentTeam clear is represented as an unset in IR', async () => {
+    const updateCurrentTeam = await captureMutationIR(() => queryFactories.updateUnsetCurrentTeam());
+
+    expect(updateCurrentTeam.kind).toBe('update');
+    if (updateCurrentTeam.kind === 'update') {
+      const currentTeamField = fieldBySuffix(updateCurrentTeam.data.fields, 'currentTeam');
+      expect(currentTeamField).toBeDefined();
+      expect(currentTeamField?.property).toBe(Player.shape.getPropertyShape('currentTeam').id);
+      expect(currentTeamField?.property).not.toBe(canonicalCurrentTeam.id);
+      expect(currentTeamField?.value).toBeUndefined();
+    }
+  });
+
   test('create with nested friend snapshot', async () => {
     const canonical = await captureMutationIR(() => queryFactories.createWithFriends());
 

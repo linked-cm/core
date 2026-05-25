@@ -155,6 +155,24 @@ WHERE {
     expect(sparql).not.toContain(`<${currentTeamPropertyId}>`);
   });
 
+  test('clearCurrentTeam resolves canonical predicate path', async () => {
+    const ir = (await captureQuery(queryFactories.updateUnsetCurrentTeam)) as IRUpdateMutation;
+    const sparql = updateToSparql(ir);
+    const currentTeamPropertyId = Player.shape.getPropertyShape('currentTeam').id;
+
+    expect(currentTeamPropertyId).not.toBe(canonicalCurrentTeam.id);
+    expect(sparql).toBe(
+`DELETE {
+  <${ENT}player1> <${canonicalCurrentTeam.id}> ?old_currentTeam .
+}
+WHERE {
+  OPTIONAL {
+    <${ENT}player1> <${canonicalCurrentTeam.id}> ?old_currentTeam .
+  }
+}`);
+    expect(sparql).not.toContain(`<${currentTeamPropertyId}>`);
+  });
+
   test('updateSimple', async () => {
     const ir = (await captureQuery(queryFactories.updateSimple)) as IRUpdateMutation;
     const sparql = updateToSparql(ir);
