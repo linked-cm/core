@@ -1,5 +1,11 @@
 import {describe, expect, test} from '@jest/globals';
-import {Person, queryFactories, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {
+  Person,
+  Player,
+  canonicalCurrentTeam,
+  queryFactories,
+  tmpEntityBase,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {
   IRCreateMutation,
@@ -29,6 +35,19 @@ const assertSetModification = (
 };
 
 describe('mutation IR parity (Phase 4)', () => {
+  test('path-resolved currentTeam retains property-shape id in IR before SPARQL resolution', async () => {
+    const updateCurrentTeam = await captureMutationIR(() => queryFactories.updateCurrentTeam());
+
+    expect(updateCurrentTeam.kind).toBe('update');
+    if (updateCurrentTeam.kind === 'update') {
+      const currentTeamField = fieldBySuffix(updateCurrentTeam.data.fields, 'currentTeam');
+      expect(currentTeamField).toBeDefined();
+      expect(currentTeamField?.property).toBe(Player.shape.getPropertyShape('currentTeam').id);
+      expect(currentTeamField?.property).not.toBe(canonicalCurrentTeam.id);
+      expect(currentTeamField?.value).toEqual({id: `${tmpEntityBase}team351`});
+    }
+  });
+
   test('create with nested friend snapshot', async () => {
     const canonical = await captureMutationIR(() => queryFactories.createWithFriends());
 

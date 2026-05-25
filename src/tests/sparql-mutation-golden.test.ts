@@ -9,7 +9,12 @@
  * use exact toBe assertions.
  */
 import {describe, expect, test} from '@jest/globals';
-import {queryFactories, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {
+  Player,
+  canonicalCurrentTeam,
+  queryFactories,
+  tmpEntityBase,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {
   createToSparql,
@@ -18,6 +23,7 @@ import {
   deleteToSparql,
   deleteAllToSparql,
   deleteWhereToSparql,
+  selectToSparql,
 } from '../sparql/irToAlgebra';
 import type {
   IRCreateMutation,
@@ -25,6 +31,7 @@ import type {
   IRDeleteMutation,
   IRDeleteAllMutation,
   IRDeleteWhereMutation,
+  IRSelectQuery,
   IRUpdateWhereMutation,
 } from '../queries/IntermediateRepresentation';
 
@@ -36,6 +43,7 @@ import '../ontologies/xsd';
 // ---------------------------------------------------------------------------
 
 const P = 'https://data.lincd.org/module/-_linked-core/shape/person';
+const PLAYER = Player.shape.id;
 const ENT = tmpEntityBase; // linked://tmp/entities/
 
 // ---------------------------------------------------------------------------
@@ -43,6 +51,19 @@ const ENT = tmpEntityBase; // linked://tmp/entities/
 // ---------------------------------------------------------------------------
 
 describe('SPARQL golden — create mutations', () => {
+  test('createPlayerWithCurrentTeam resolves canonical predicate path', async () => {
+    const ir = (await captureQuery(queryFactories.createPlayerWithCurrentTeam)) as IRCreateMutation;
+    const sparql = createToSparql(ir);
+    const currentTeamPropertyId = Player.shape.getPropertyShape('currentTeam').id;
+
+    expect(currentTeamPropertyId).not.toBe(canonicalCurrentTeam.id);
+    expect(sparql).toContain(`<${ENT}player-created> rdf:type <${PLAYER}>`);
+    expect(sparql).toContain(
+      `<${ENT}player-created> <${canonicalCurrentTeam.id}> <${ENT}team351> .`,
+    );
+    expect(sparql).not.toContain(`<${currentTeamPropertyId}>`);
+  });
+
   test('createSimple — ULID URI, contains expected triples', async () => {
     const ir = (await captureQuery(queryFactories.createSimple)) as IRCreateMutation;
     const sparql = createToSparql(ir);
@@ -100,6 +121,40 @@ INSERT DATA {
 // ---------------------------------------------------------------------------
 
 describe('SPARQL golden — update mutations', () => {
+  test('select and update currentTeam resolve the same canonical predicate', async () => {
+    const selectIr = (await captureQuery(queryFactories.selectCurrentTeam)) as IRSelectQuery;
+    const updateIr = (await captureQuery(queryFactories.updateCurrentTeam)) as IRUpdateMutation;
+    const selectSparql = selectToSparql(selectIr);
+    const updateSparql = updateToSparql(updateIr);
+    const currentTeamPropertyId = Player.shape.getPropertyShape('currentTeam').id;
+
+    expect(currentTeamPropertyId).not.toBe(canonicalCurrentTeam.id);
+    expect(selectSparql).toContain(`<${canonicalCurrentTeam.id}>`);
+    expect(updateSparql).toContain(`<${canonicalCurrentTeam.id}>`);
+    expect(updateSparql).not.toContain(`<${currentTeamPropertyId}>`);
+  });
+
+  test('updateCurrentTeam resolves canonical predicate path', async () => {
+    const ir = (await captureQuery(queryFactories.updateCurrentTeam)) as IRUpdateMutation;
+    const sparql = updateToSparql(ir);
+    const currentTeamPropertyId = Player.shape.getPropertyShape('currentTeam').id;
+
+    expect(currentTeamPropertyId).not.toBe(canonicalCurrentTeam.id);
+    expect(sparql).toBe(
+`DELETE {
+  <${ENT}player1> <${canonicalCurrentTeam.id}> ?old_currentTeam .
+}
+INSERT {
+  <${ENT}player1> <${canonicalCurrentTeam.id}> <${ENT}team351> .
+}
+WHERE {
+  OPTIONAL {
+    <${ENT}player1> <${canonicalCurrentTeam.id}> ?old_currentTeam .
+  }
+}`);
+    expect(sparql).not.toContain(`<${currentTeamPropertyId}>`);
+  });
+
   test('updateSimple', async () => {
     const ir = (await captureQuery(queryFactories.updateSimple)) as IRUpdateMutation;
     const sparql = updateToSparql(ir);

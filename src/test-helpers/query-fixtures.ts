@@ -38,6 +38,9 @@ export const petClass = type('Pet');
 export const dogClass = type('Dog');
 export const employeeName = prop('employeeName');
 export const employeeDepartment = prop('employeeDepartment');
+export const teamClass = {id: 'http://example.org/Team'};
+export const playerClass = {id: 'http://example.org/Player'};
+export const canonicalCurrentTeam = {id: 'http://lincd.org/ont/irlcg/currentTeam'};
 
 @linkedShape
 export class Pet extends Shape {
@@ -134,6 +137,26 @@ export class Employee extends Person {
   }
 }
 
+@linkedShape
+export class Team extends Shape {
+  static targetClass = teamClass;
+
+  @literalProperty({path: name, maxCount: 1})
+  get name(): string {
+    return '';
+  }
+}
+
+@linkedShape
+export class Player extends Shape {
+  static targetClass = playerClass;
+
+  @objectProperty({path: canonicalCurrentTeam, maxCount: 1, shape: Team})
+  get currentTeam(): Team {
+    return null;
+  }
+}
+
 import {QueryBuilder} from '../queries/QueryBuilder';
 import {FieldSet} from '../queries/FieldSet';
 
@@ -167,6 +190,9 @@ const updateNestedWithPredefinedId: UpdatePartial<Person> = {
 };
 const updateBirthDate: UpdatePartial<Person> = {
   birthDate: new Date('2020-01-01'),
+};
+const updateCurrentTeam: UpdatePartial<Player> = {
+  currentTeam: entity('team351'),
 };
 
 export const queryFactories = {
@@ -380,6 +406,13 @@ export const queryFactories = {
   updateNestedWithPredefinedId: (() =>
     Person.update(updateNestedWithPredefinedId).for(entity('p1'))) as () => any,
   updateBirthDate: (() => Person.update(updateBirthDate).for(entity('p1'))) as () => any,
+  selectCurrentTeam: () => Player.select((p) => p.currentTeam).for(entity('player1')),
+  updateCurrentTeam: (() => Player.update(updateCurrentTeam).for(entity('player1'))) as () => any,
+  createPlayerWithCurrentTeam: (() =>
+    Player.create({
+      __id: `${tmpEntityBase}player-created`,
+      currentTeam: entity('team351'),
+    } as any)) as () => any,
   preloadBestFriend: () =>
     Person.select((p) => p.bestFriend.preloadFor(componentLike)),
   preloadBestFriendWithFieldSet: () =>
