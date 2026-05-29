@@ -114,11 +114,30 @@ How each backend handles each `{ mode, caseSensitive }` combination:
 - **Multi-property explicit list** — e.g. `p.search('alice', { properties: ['name', 'email'] })`. Current scope is: explicit single property OR all-literal-properties via shape-wide. If a future use case wants "these 3 specific properties," add `properties` option then; YAGNI for v1.
 - **Relevance scoring** — `text:query` returns a `?score`; we ignore it for v1 (return order is whatever the backend produces). If scoring is needed, that's a follow-up.
 
-## Open decisions (next ideation batch)
+## Decisions D4–D6 (locked)
 
-- [ ] **D4 — Backend dispatch / fallback strategy.** How does each `IDataset` declare FTS support? Capability flag (`ds.capabilities.has('fts:tokens')`)? Method on `IDataset` (`ds.supports(mode)`)? Try-and-fall-back at runtime? What happens when a backend doesn't support the requested mode — throw, warn, silently fall back to FILTER?
-- [ ] **D5 — Where the primitive lives in `@_linked/core`.** New method on the query builder (`SelectQuery.ts` EXPRESSION_METHODS)? New IR node (`IRSearchExpression`)? Or compose from existing IR primitives (combine FILTER + an opaque `fts_hint` IR node that backends recognize)? How does the shape-wide form get the literal-property list at IR-build time?
-- [ ] **D6 — Test fixtures.** Real Fuseki+Lucene (CI service container)? Mock `IDataset` implementations? Use existing `packages/core/src/tests/sparql-fuseki.test.ts` infrastructure? What `cn-main-test`-style isolation pattern?
+| # | Decision | Choice | Rationale |
+|---|---|---|---|
+| **D4** | Backend capability declaration | **None at the instance level.** Each IDataset CLASS encodes its backend's capabilities by virtue of what it compiles to — `FusekiStore` IS "Fuseki + Lucene" by definition; we don't need an external registry telling us so. Base `SparqlDataset` compiles `.search()` to the FILTER fallback (correct on every SPARQL backend, slow). `FusekiStore` overrides to use `text:query` for modes Lucene supports. A future `SqlDataset` compiles to PG FTS / `ILIKE`. Genuinely-unsupported modes (e.g. `fuzzy` on bare SPARQL — no edit-distance) **throw at compile time** with a clear `[search] mode 'X' not supported by this IDataset` error. Silent fallback hides correctness/perf issues; throwing forces an explicit decision. Future enhancement: a SHAPE/RDFS-class-level "this feature isn't available at all" declaration (not currently needed — every mode either has a fallback or is opt-in like fuzzy). |
+| **D5** | Where the primitive lives in `@_linked/core` | **Option B — new `IRSearchExpression` IR kind + per-dataset pre-IR rewriter.** Add `IRSearchExpression` as a new IR kind alongside `IRFunctionExpression` and `IRAggregateExpression`. The shared compiler (`selectToSparql` in `algebraToString.ts`) stays oblivious to search. Each IDataset overrides `selectQuery` to walk the query IR, find `search_expr` nodes, and rewrite them into backend-appropriate shapes BEFORE calling the shared compiler. Base SparqlDataset: simple expression swap (replace with `function_expr` calling `STRSTARTS` / `CONTAINS` / `STRENDS` / etc.). FusekiStore: **more involved** — Lucene `text:query` has unusual SPARQL syntax (`(?subject ?score) text:query "alice*" .` is a triple pattern, not a function expression). The rewriter must inject BGP (basic graph pattern) triples into the WHERE block, not just rewrite expressions. Pattern reference: how `EXISTS`/`NOT EXISTS` inject sub-graph patterns. |
+| **D6** | Test fixtures | **Three test layers, each pulling its weight.** (1) DSL→IR: pass query through DSL, snapshot the IR shape. Cheap, fast, hundreds of cases. (2) IR→SPARQL golden: input IR shapes, expect SPARQL strings. Matches existing `sparql-select-golden.test.ts` pattern. Fast. (3) Integration: extend `packages/core/src/tests/sparql-fuseki.test.ts` infrastructure with a Lucene-configured dataset variant. Real Fuseki+Lucene container, seeded fixtures, assert results against real queries. The integration layer is the one infra piece this primitive adds — verify Lucene config behavior (tokenization, indexed predicates) matches expectations. |
+
+### Compile-time error contract (per D4)
+
+When an IDataset's rewriter encounters a `search_expr` with a mode it cannot support and cannot reasonably fall back from:
+
+```
+Error: [search] mode 'fuzzy' not supported by SparqlDataset.
+  Use a backend that declares this capability (e.g. FusekiStore with Lucene),
+  or remove the {fuzzy: true} option from this query.
+```
+
+Genuinely-unsupported modes today:
+- `fuzzy` on bare `SparqlDataset` (no SPARQL edit-distance function)
+- (Anything else? None as of v1.)
+
+Modes that always have a fallback (no throw):
+- `prefix` / `contains` / `suffix` / `tokens` — all reducible to `STRSTARTS` / `CONTAINS` / `STRENDS` chains or tokens-as-AND-of-CONTAINS. Always correct, sometimes slow.
 
 ## Implementation hints
 
@@ -128,19 +147,72 @@ Add `'search'` to the `EXPRESSION_METHODS` set in `packages/core/src/queries/Sel
 
 For the shape-wide form (`p.search('al')`), the proxy receiver is the shape root rather than a property — needs a separate dispatch path. Look at how `.equals()` works when called on the root vs on a property (lines 909–925).
 
-### IR
+### IR (per D5 = option B)
 
-Two viable options for D5:
+Add `IRSearchExpression` to `packages/core/src/queries/IntermediateRepresentation.ts`:
 
-1. **New IR kind** — `IRSearchExpression = { kind: 'search_expr', subject: IRExpression, text: string, mode: ..., caseSensitive: ..., shapeWide?: boolean, properties?: string[] }`. Cleanest to inspect downstream; each `IDataset` pattern-matches on `'search_expr'` and emits its own SPARQL/SQL.
+```ts
+export type IRSearchExpression = {
+  kind: 'search_expr';
+  subject: IRExpression;            // the property or shape-wide root
+  text: string;
+  mode: 'prefix' | 'contains' | 'suffix' | 'tokens';
+  caseSensitive: boolean;
+  shapeWide?: boolean;              // when true, expand to OR over literalProperties
+  literalProperties?: string[];     // resolved at IR-build time for shape-wide form
+};
+```
 
-2. **Function-expr with sentinel name** — `IRFunctionExpression` with `name: '__linked_search__'` and args carrying the options. Reuses the existing IR primitive; backends still pattern-match the name.
+Add to the `IRExpression` union. Update `QueryBuilderSerialization.ts` with serialize/deserialize branches (same pattern as the existing `IRAggregateExpression` handling).
 
-Option 1 is cleaner for static analysis; option 2 is fewer surface changes. Decide in D5.
+The shared compiler (`algebraToString.ts`) does NOT need a case for `'search_expr'` — each IDataset's pre-IR rewriter replaces all `search_expr` nodes before the IR reaches the compiler.
 
-### SPARQL emission (FusekiStore)
+### Per-dataset rewriting (per D5 = option B)
 
-Generic `SparqlDataset` emits the FILTER fallback (the "Bare SPARQL" column in the dispatch table). `FusekiStore` overrides to use `text:query` for tokens / prefix-case-insens / fuzzy paths. The Lucene query string composition needs careful escaping of Lucene-reserved characters (`+ - && || ! ( ) { } [ ] ^ " ~ * ? : \ /`) before appending the `*` for prefix mode.
+Each IDataset overrides `selectQuery`:
+
+```ts
+async selectQuery(query: SelectQuery): Promise<SelectResult> {
+  const rewritten = this.rewriteSearchForBackend(query);
+  const sparql = selectToSparql(rewritten, this.options);
+  const json = await this.executeSparqlSelect(sparql);
+  return mapSparqlSelectResult(json, query);
+}
+
+protected rewriteSearchForBackend(query: SelectQuery): SelectQuery {
+  // walk IR, find IRSearchExpression nodes, replace per backend conventions
+  // base SparqlDataset: swap with function_expr ('STRSTARTS' / 'CONTAINS' / etc.)
+  // FusekiStore: inject text:query BGP + bind ?subject (see below)
+}
+```
+
+### SPARQL emission for FusekiStore (Lucene)
+
+Lucene's `text:query` is a **triple pattern**, not a function expression:
+
+```sparql
+SELECT ?subject WHERE {
+  (?subject ?score) text:query "alice*" .   # <-- triple pattern with magic predicate
+  GRAPH <...> {
+    ?subject a <Person> .
+    ?subject schema:name ?name .
+  }
+}
+```
+
+So FusekiStore's rewriter has TWO jobs:
+
+1. **Inject a triple pattern** at the BGP level: `(?subject ?score) text:query "<escaped text><mode-suffix>" .`
+2. **Replace the `search_expr` node** in the WHERE expression — either remove it entirely (if the BGP injection is sufficient to constrain `?subject`) or replace with a no-op `true` expression.
+
+Pattern reference: how `EXISTS`/`NOT EXISTS` patterns inject sub-graph patterns in the existing IR compilation pipeline. Search rewriting follows the same shape — emit auxiliary BGP, adjust the expression.
+
+Lucene query string composition needs to:
+- **Escape** Lucene-reserved characters in the user text: `+ - && || ! ( ) { } [ ] ^ " ~ * ? : \ /`
+- **Append `*`** for prefix mode (after escaping).
+- **No special suffix** for tokens mode (default behavior).
+- **Wrap in `"..."`** for contains mode (escape internal `"`) and surround with `*...*` wildcards.
+- **Append `~`** for fuzzy mode (future).
 
 Reference: Apache Jena `jena-text` config + query syntax — https://jena.apache.org/documentation/query/text-query.html
 
@@ -150,19 +222,35 @@ Reference: Apache Jena `jena-text` config + query syntax — https://jena.apache
 - Build the same IR node `.search()` builds, with `{ mode: 'prefix' / 'contains' / 'suffix', caseSensitive: true }` hardcoded.
 - Visible to backends as "this is a search-IR, here are the options" — backends route uniformly. Generic SparqlDataset emits today's `STRSTARTS` / `CONTAINS` / `STRENDS` (no behavior change). FusekiStore COULD route to text:query for `mode: 'prefix' + caseSensitive: false` — but for the legacy sugar (always cs:true) it's identical to the existing emission. No behavior change for existing callers.
 
-## Tests
+## Tests (per D6 = three layers)
 
-(To be expanded in D6.)
+### Layer 1 — DSL→IR (unit, cheap, fast)
 
-Starter list:
+1. **Sugar parity**: `.startsWith('Al')` produces identical `IRSearchExpression` to `.search('Al', { mode: 'prefix', caseSensitive: true })`. Same for `.contains` / `.endsWith`.
+2. **Mode + case-sensitivity carried into IR**: `.search('al', {mode: 'tokens', caseSensitive: false})` produces an IR node with `{mode: 'tokens', caseSensitive: false}`.
+3. **Shape-wide expansion at IR-build time**: `Person.where(p => p.search('alice'))` produces IR with `shapeWide: true` AND `literalProperties: ['<schema:name>', '<schema:email>', ...]` resolved from Person's shape metadata.
+4. **Defaults**: bare `.search('text')` (no options) produces `{mode: 'tokens', caseSensitive: false}`.
 
-1. **Existing operator-equivalence tests** — `.startsWith('Al')` produces the same query plan as `.search('Al', { mode: 'prefix', caseSensitive: true })`. Same for `.contains` / `.endsWith`.
-2. **Mode dispatch on a stub IDataset** — verify that a fake backend with `capabilities = ['fts:tokens']` gets a `search_expr` IR node; backend without that capability gets the FILTER fallback IR.
-3. **Lucene compilation** — `text:query "al*"` SPARQL emitted by FusekiStore for `mode: 'prefix', caseSensitive: false`. Tokens mode emits `text:query "john smith"` (no special escaping).
-4. **Lucene character escaping** — `.search('a+b', { mode: 'prefix' })` against FusekiStore emits Lucene query with `+` escaped as `\+`.
-5. **Shape-wide expansion** — `Person.where(p => p.search('alice'))` expands to OR over Person's literal properties at IR-build time.
-6. **Case-sensitivity round-trip** — `.search('AL', { mode: 'prefix', caseSensitive: false })` matches a literal `"alice"`.
-7. **Integration test against real Fuseki+Lucene service** — `packages/core/src/tests/sparql-fuseki.test.ts` already has the test-Fuseki container infrastructure; add fixtures with a Lucene-configured dataset.
+### Layer 2 — IR→SPARQL golden (per-backend emission)
+
+5. **Base SparqlDataset emission**: 4 modes × 2 case-sens = 8 golden SPARQL snapshots, all using FILTER predicates.
+6. **FusekiStore emission**: same 8 cases — but `prefix-ci` / `tokens` / `contains-ci` / future `fuzzy` use `text:query` BGP injection; `prefix-cs` / `suffix` / `contains-cs` stay on FILTER (Lucene can't help).
+7. **Lucene character escaping**: `.search('a+b\\?c', {mode: 'prefix'})` against FusekiStore emits `text:query "a\\+b\\\\\\?c*"` (all reserved chars escaped).
+8. **Genuinely-unsupported mode throws**: requesting `mode: 'fuzzy'` against base `SparqlDataset`'s rewriter throws `[search] mode 'fuzzy' not supported by SparqlDataset` at compile time.
+
+### Layer 3 — integration vs real Fuseki+Lucene
+
+Extend `packages/core/src/tests/sparql-fuseki.test.ts` infrastructure with a Lucene-configured dataset variant.
+
+9. **Case-sensitivity round-trip**: seed `["Alice", "alice", "ALICE"]`. `.search('al', {mode: 'prefix', caseSensitive: false})` returns all three; `.search('al', {mode: 'prefix', caseSensitive: true})` returns only the lowercase one.
+10. **Tokens default**: seed `["John Smith", "Smith, John", "John Doe"]`. Default `.search('john smith')` returns first two, not the third.
+11. **Shape-wide search**: seed people with various name/email combinations. `Person.where(p => p.search('alice'))` returns people whose ANY literal property contains "alice" (tokenized).
+12. **Sugar method delegation**: `p.name.startsWith('Al')` against real Fuseki returns the same results before and after the conversion to sugar-over-`.search()`.
+
+The integration test infra needs:
+- A Fuseki test container configured with `text:` extension + a Lucene index covering the test dataset's literals.
+- Fixture data that exercises tokenization (multi-word names), case variants, and special characters.
+- `cn-main-test`-style isolation: per-test-run prefixed slugs, drop the test dataset at suite end.
 
 ## Status / sequencing
 
