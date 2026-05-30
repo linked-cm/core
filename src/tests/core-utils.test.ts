@@ -12,6 +12,7 @@ import {
   getSuperShapesClasses,
 } from '../utils/ShapeClass';
 import {LinkedStorage} from '../utils/LinkedStorage';
+import {LinkedFileStorage, asset} from '../utils/LinkedFileStorage';
 import {getQueryDispatch} from '../queries/queryDispatch';
 import {getQueryContext, setQueryContext, PendingQueryContext} from '../queries/QueryContext';
 import {NodeReferenceValue} from '../utils/NodeReference';
@@ -159,10 +160,52 @@ describe('LinkedStorage extra behaviors', () => {
     expect(LinkedStorage.getDatasetForShapeClass(SubShape)).toBe(baseStore);
   });
 
-  test('selectQuery rejects when no store is configured', async () => {
+  test('selectQuery rejects invalid query payloads before store resolution', async () => {
     await expect(
       LinkedStorage.selectQuery({shape: null} as any),
+    ).rejects.toThrow('Invalid select query passed to LinkedStorage.selectQuery(): missing root');
+  });
+
+  test('selectQuery still reports missing store for valid query shapes', async () => {
+    await expect(
+      LinkedStorage.selectQuery({
+        kind: 'select',
+        root: {kind: 'shape_scan', shape: BaseShape.shape.id, alias: 'a0'},
+        patterns: [],
+        projection: [],
+        resultMap: [],
+      } as any),
     ).rejects.toThrow('No query store configured');
+  });
+});
+
+describe('LinkedFileStorage asset helper', () => {
+  beforeEach(() => {
+    LinkedFileStorage.setDefaultAccessURL('http://localhost:4000');
+  });
+
+  test('asset prefixes relative paths with accessURL and directory', () => {
+    expect(asset('/images/example.webp')).toBe(
+      'http://localhost:4000/public/images/example.webp',
+    );
+  });
+
+  test('asset leaves fully qualified URLs unchanged', () => {
+    expect(asset('http://cdn.example.com/public/images/example.webp')).toBe(
+      'http://cdn.example.com/public/images/example.webp',
+    );
+    expect(asset('https://cdn.example.com/public/images/example.webp')).toBe(
+      'https://cdn.example.com/public/images/example.webp',
+    );
+  });
+
+  test('asset leaves data and blob URLs unchanged', () => {
+    expect(asset('data:image/png;base64,abc123')).toBe(
+      'data:image/png;base64,abc123',
+    );
+    expect(asset('blob:http://localhost:4000/1234')).toBe(
+      'blob:http://localhost:4000/1234',
+    );
   });
 });
 

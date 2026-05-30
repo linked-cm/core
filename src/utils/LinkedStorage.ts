@@ -100,6 +100,15 @@ export abstract class LinkedStorage {
   }
 
   static selectQuery<ResultType>(query: SelectQuery): Promise<ResultType> {
+    if (!query?.root) {
+      return Promise.reject(
+        new Error(
+          `Invalid select query passed to LinkedStorage.selectQuery(): missing root. Payload: ${
+            query ? JSON.stringify(query) : 'undefined'
+          }`,
+        ),
+      );
+    }
     const dataset = this.resolveDatasetForQueryShape(query?.root?.shape);
     if (!dataset?.selectQuery) {
       return Promise.reject(

@@ -53,6 +53,9 @@ function findComposeFile(): string | null {
   const candidates = [
     resolve(__dirname, '../tests/docker-compose.test.yml'),
     resolve(__dirname, '../../src/tests/docker-compose.test.yml'),
+    // Built helpers live under lib/{cjs,esm}/test-helpers, so we need to
+    // climb back to the package root before looking in src/tests.
+    resolve(__dirname, '../../../src/tests/docker-compose.test.yml'),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;

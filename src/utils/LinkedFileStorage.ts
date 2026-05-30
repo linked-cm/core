@@ -69,6 +69,15 @@ export abstract class LinkedFileStorage {
  * @returns asset url. e.g. https://cdn.example.com/public/image.png
  */
 export function asset(path: string, directory: string = '/public'): string {
+  // Some callers pass a raw app-relative path like `/images/foo.webp`, while
+  // others may already have a fully qualified asset URL from an earlier
+  // `asset(...)` call or backend response normalization. Keep this helper
+  // idempotent so shared card/image components can safely call `asset(...)`
+  // without duplicating the access URL prefix.
+  if (/^(?:[a-z]+:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) {
+    return path;
+  }
+
   const accessURL = LinkedFileStorage.accessURL;
   const assetUrl = accessURL + directory + path;
   return assetUrl;
