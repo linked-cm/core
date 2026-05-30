@@ -421,9 +421,9 @@ describe('Fuseki SELECT — nested traversals', () => {
     const result = await runSelectMapped('selectMultiplePaths');
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
-    // INNER JOIN on bestFriend traverse — only p2 has bestFriend (p3)
-    expect(rows.length).toBe(1);
-    const p2 = rows[0];
+    // Nullable bestFriend traversal preserves all root rows.
+    expect(rows.length).toBe(4);
+    const p2 = findRowById(rows, 'p2')!;
     expect(p2.id).toContain('p2');
     expect(p2.name).toBe('Moa');
 
@@ -439,6 +439,10 @@ describe('Fuseki SELECT — nested traversals', () => {
     const friends = p2.friends as ResultRow[];
     expect(Array.isArray(friends)).toBe(true);
     expect(friends.length).toBe(2);
+
+    const p3 = findRowById(rows, 'p3');
+    expect(p3).toBeDefined();
+    expect(p3!.bestFriend).toBeNull();
   });
 
   test('selectBestFriendName — bestFriend.name', async () => {
@@ -448,13 +452,16 @@ describe('Fuseki SELECT — nested traversals', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on bestFriend traverse — only p2 has bestFriend (p3)
-    expect(rows.length).toBe(1);
+    expect(rows.length).toBe(4);
     const p2 = findRowById(rows, 'p2');
     expect(p2).toBeDefined();
     const bestFriend = p2!.bestFriend as ResultRow;
     expect(bestFriend).toBeDefined();
     expect(bestFriend.name).toBe('Jinx');
+
+    const p4 = findRowById(rows, 'p4');
+    expect(p4).toBeDefined();
+    expect(p4!.bestFriend).toBeNull();
   });
 
   test('selectDeepNested — friends.bestFriend.bestFriend.name', async () => {
@@ -463,10 +470,20 @@ describe('Fuseki SELECT — nested traversals', () => {
     const result = await runSelectMapped('selectDeepNested');
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
-    // Deep chain: friends→bestFriend→bestFriend→name (all INNER JOINs).
-    // p1→friends→p2→bestFriend→p3→bestFriend→? p3 has no bestFriend → chain breaks.
-    // No root entity satisfies the full traversal chain → empty result.
-    expect(rows.length).toBe(0);
+    // Friends is still required, but deeper singular traversals are now
+    // nullable. p1 and p2 both survive because they have friends.
+    expect(rows.length).toBe(2);
+
+    const p1 = findRowById(rows, 'p1');
+    expect(p1).toBeDefined();
+    const p1Friends = p1!.friends as ResultRow[];
+    expect(Array.isArray(p1Friends)).toBe(true);
+    const friendP2 = p1Friends.find((f) => f.id.includes('p2'));
+    expect(friendP2).toBeDefined();
+    const bestFriend = friendP2!.bestFriend as ResultRow;
+    expect(bestFriend).toBeDefined();
+    expect(bestFriend.id).toContain('p3');
+    expect(bestFriend.bestFriend).toBeNull();
   });
 
   test('nestedObjectProperty — friends.bestFriend', async () => {
@@ -531,11 +548,15 @@ describe('Fuseki SELECT — nested traversals', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on bestFriend — only p2 has bestFriend (p3)
-    expect(rows.length).toBe(1);
+    expect(rows.length).toBe(4);
     const p2 = findRowById(rows, 'p2');
     expect(p2).toBeDefined();
     expect(p2!.id).toContain('p2');
+    expect((p2!.bestFriend as ResultRow).name).toBe('Jinx');
+
+    const p1 = findRowById(rows, 'p1');
+    expect(p1).toBeDefined();
+    expect(p1!.bestFriend).toBeNull();
   });
 });
 
@@ -551,13 +572,13 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on bestFriend — only p2 has bestFriend (p3)
-    expect(rows.length).toBe(1);
+    expect(rows.length).toBe(4);
     const p2 = findRowById(rows, 'p2');
     expect(p2).toBeDefined();
     const bestFriend = p2!.bestFriend as ResultRow;
     expect(bestFriend).toBeDefined();
     expect(bestFriend.name).toBe('Jinx');
+    expect(findRowById(rows, 'p1')!.bestFriend).toBeNull();
   });
 
   test('subSelectPluralCustom — friends.select(name, hobby)', async () => {
@@ -620,8 +641,7 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on bestFriend — only p2 has bestFriend (p3)
-    expect(rows.length).toBe(1);
+    expect(rows.length).toBe(4);
     const p2 = findRowById(rows, 'p2');
     expect(p2).toBeDefined();
 
@@ -635,6 +655,7 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(bf.isRealPerson).toBe(true);
     expect(bf.hobby).toBeNull();
     expect(bf.birthDate).toBeNull();
+    expect(findRowById(rows, 'p3')!.bestFriend).toBeNull();
   });
 
   test('doubleNestedSubSelect — friends → bestFriend → name', async () => {
@@ -644,26 +665,27 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOINs: friends then bestFriend.
-    // p1→friends→[p2, p3]. p2→bestFriend→p3 (Jinx). p3→no bestFriend.
-    // p2→friends→[p3, p4]. Both have no bestFriend.
-    // Only p1 (via p2→p3) satisfies both joins.
-    expect(rows.length).toBe(1);
-    expect(rows[0].id).toContain('p1');
+    expect(rows.length).toBe(2);
+    const p1 = findRowById(rows, 'p1');
+    expect(p1).toBeDefined();
 
     // Validate nested structure: friends[].bestFriend.name
-    const p1Friends = rows[0].friends as ResultRow[];
+    const p1Friends = p1!.friends as ResultRow[];
     expect(Array.isArray(p1Friends)).toBe(true);
-    // Only p2 has a bestFriend (INNER JOIN filters out p3)
-    expect(p1Friends.length).toBe(1);
-    expect(p1Friends[0].id).toContain('p2');
+    expect(p1Friends.length).toBe(2);
+    const p1FriendP2 = p1Friends.find((f) => f.id.includes('p2'));
+    expect(p1FriendP2).toBeDefined();
 
     // bestFriend is maxCount: 1 → unwrapped to single ResultRow
-    const bf = p1Friends[0].bestFriend as ResultRow;
+    const bf = p1FriendP2!.bestFriend as ResultRow;
     expect(bf).toBeDefined();
     expect(bf).not.toBeNull();
     expect(bf.id).toContain('p3');
     expect(bf.name).toBe('Jinx');
+
+    const p1FriendP3 = p1Friends.find((f) => f.id.includes('p3'));
+    expect(p1FriendP3).toBeDefined();
+    expect(p1FriendP3!.bestFriend).toBeNull();
   });
 
   test('subSelectAllPrimitives — bestFriend.[name, birthDate, isRealPerson]', async () => {
@@ -673,8 +695,7 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on bestFriend — only p2 has bestFriend (p3)
-    expect(rows.length).toBe(1);
+    expect(rows.length).toBe(4);
     const p2 = findRowById(rows, 'p2');
     expect(p2).toBeDefined();
     const bestFriend = p2!.bestFriend as ResultRow;
@@ -683,6 +704,7 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(bestFriend.isRealPerson).toBe(true);
     // p3 has no birthDate
     expect(bestFriend.birthDate).toBeNull();
+    expect(findRowById(rows, 'p4')!.bestFriend).toBeNull();
   });
 
   test('subSelectArray — friends.select([name, hobby])', async () => {
@@ -714,27 +736,31 @@ describe('Fuseki SELECT — sub-selects', () => {
     const result = await runSelectMapped('nestedQueries2');
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
-    // INNER JOIN on friends AND bestFriend — only p1 (via p2→bestFriend→p3)
-    expect(rows.length).toBe(1);
+    expect(rows.length).toBe(2);
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
 
-    // friends array — only p2 survives (p3 has no bestFriend)
+    // friends array retains p3, with null bestFriend.
     const p1Friends = p1!.friends as ResultRow[];
     expect(Array.isArray(p1Friends)).toBe(true);
-    expect(p1Friends.length).toBe(1);
-    expect(p1Friends[0].id).toContain('p2');
+    expect(p1Friends.length).toBe(2);
+    const friendP2 = p1Friends.find((f) => f.id.includes('p2'));
+    expect(friendP2).toBeDefined();
 
     // p2's firstPet is a flat field within the traversal (entity ref)
-    const firstPet = p1Friends[0].firstPet as ResultRow;
+    const firstPet = friendP2!.firstPet as ResultRow;
     expect(firstPet).toBeDefined();
     expect(firstPet.id).toContain('dog2');
 
     // p2's bestFriend is maxCount: 1 → unwrapped single ResultRow
-    const bf = p1Friends[0].bestFriend as ResultRow;
+    const bf = friendP2!.bestFriend as ResultRow;
     expect(bf).toBeDefined();
     expect(bf.id).toContain('p3');
     expect(bf.name).toBe('Jinx');
+
+    const friendP3 = p1Friends.find((f) => f.id.includes('p3'));
+    expect(friendP3).toBeDefined();
+    expect(friendP3!.bestFriend).toBeNull();
   });
 
   test('preloadBestFriend — bestFriend.preloadFor(component)', async () => {
@@ -744,8 +770,7 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on bestFriend — only p2 has bestFriend (p3)
-    expect(rows.length).toBe(1);
+    expect(rows.length).toBe(4);
     const p2 = findRowById(rows, 'p2');
     expect(p2).toBeDefined();
 
@@ -756,6 +781,7 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(bf)).toBe(false);
     expect(bf.id).toContain('p3');
     expect(bf.name).toBe('Jinx');
+    expect(findRowById(rows, 'p1')!.bestFriend).toBeNull();
   });
 });
 
@@ -1349,8 +1375,7 @@ describe('Fuseki SELECT — shape casting', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on firstPet — p1 has firstPet dog1, p2 has firstPet dog2
-    expect(rows.length).toBe(2);
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -1366,6 +1391,7 @@ describe('Fuseki SELECT — shape casting', () => {
     const p2Pet = p2!.firstPet as ResultRow;
     expect(p2Pet).toBeDefined();
     expect(p2Pet.id).toContain('dog2');
+    expect(findRowById(rows, 'p3')!.firstPet).toBeNull();
     expect(p2Pet.guardDogLevel).toBeNull();
   });
 });
