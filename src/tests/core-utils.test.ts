@@ -175,7 +175,7 @@ describe('LinkedStorage extra behaviors', () => {
         projection: [],
         resultMap: [],
       } as any),
-    ).rejects.toThrow('No query store configured');
+    ).rejects.toThrow('No query dataset configured');
   });
 });
 
