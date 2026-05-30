@@ -231,6 +231,56 @@ export interface ParameterConfig {
 
 export class NodeShape extends Shape {
   static targetClass = shacl.NodeShape;
+  /** One-time keys for missing/invalid `propertyShapes` on superclass static `shape`. */
+  private static readonly _warnedMissingPropertyShapesKeys = new Set<string>();
+
+  /**
+   * Returns `propertyShapes` when it is a real array; otherwise `[]` and logs once per
+   * `(ownerClassName, shapeId)` — common when a superclass `static shape` is a plain object
+   * or came from another `@_linked/core` copy without field initializers.
+   *
+   * Label for logs / dedupe keys when walking the shape class chain.
+   * Prefer `class.name` (almost always set for `class X {}`); if missing, use the static
+   * shape's `id` so diagnostics stay useful without vague "(anonymous)".
+   */
+  private static shapeOwnerLabel(
+    shapeClass: ShapeConstructor,
+    nodeShape: NodeShape,
+  ): string {
+    const n = shapeClass.name?.trim();
+    if (n) {
+      return n;
+    }
+    const sid = (nodeShape as unknown as {id?: string}).id;
+    if (sid) {
+      return `<shape ${sid}>`;
+    }
+    return '(unknown-class)';
+  }
+
+  private static listPropertyShapesSafe(
+    nodeShape: NodeShape,
+    ownerClassName: string,
+    context: string,
+  ): PropertyShape[] {
+    const raw = (nodeShape as unknown as {propertyShapes?: PropertyShape[]})
+      .propertyShapes;
+    if (Array.isArray(raw)) {
+      return raw;
+    }
+    const id = (nodeShape as unknown as {id?: string}).id ?? '';
+    const key = `${ownerClassName}:${String(id)}`;
+    if (!NodeShape._warnedMissingPropertyShapesKeys.has(key)) {
+      NodeShape._warnedMissingPropertyShapesKeys.add(key);
+      console.warn(
+        `[@_linked/core] '${ownerClassName}' static shape has missing or invalid propertyShapes ` +
+          `(${context}). Treating as []. Often caused by duplicate @linked/core installs or a ` +
+          `non-normalized static shape on a superclass.`,
+      );
+    }
+    return [];
+  }
+
   private _label?: string;
   description?: string;
   targetClass?: NodeReferenceValue;
@@ -265,15 +315,25 @@ export class NodeShape extends Shape {
 
   getPropertyShapes(includeSuperClasses: boolean = false): PropertyShape[] {
     if (!includeSuperClasses) {
-      return [...this.propertyShapes];
+      const own = (this as unknown as {propertyShapes?: PropertyShape[]})
+        .propertyShapes;
+      return Array.isArray(own) ? [...own] : [];
     }
     const res: PropertyShape[] = [];
     let shapeClass: ShapeConstructor | undefined = getShapeClass(this.id);
     if (!shapeClass) {
-      return [...this.propertyShapes];
+      const own = (this as unknown as {propertyShapes?: PropertyShape[]})
+        .propertyShapes;
+      return Array.isArray(own) ? [...own] : [];
     }
     while (shapeClass?.shape) {
-      res.push(...shapeClass.shape.propertyShapes);
+      res.push(
+        ...NodeShape.listPropertyShapesSafe(
+          shapeClass.shape,
+          NodeShape.shapeOwnerLabel(shapeClass, shapeClass.shape),
+          'getPropertyShapes(includeSuperClasses=true)',
+        ),
+      );
       // Stop at Shape base class. Cast needed: ShapeConstructor (concrete new) vs
       // typeof Shape (abstract new) are structurally incompatible for ===.
       if (shapeClass === (Shape as unknown)) {
@@ -303,12 +363,18 @@ export class NodeShape extends Shape {
     let shapeClass: ShapeConstructor | undefined = getShapeClass(this.id);
     let res: PropertyShape;
     if (!shapeClass) {
-      return this.propertyShapes.find((shape) => shape.label === label);
+      const own = (this as unknown as {propertyShapes?: PropertyShape[]})
+        .propertyShapes;
+      return Array.isArray(own)
+        ? own.find((shape) => shape.label === label)
+        : undefined;
     }
     while (!res && shapeClass?.shape) {
-      res = shapeClass.shape.propertyShapes.find(
-        (shape) => shape.label === label,
-      );
+      res = NodeShape.listPropertyShapesSafe(
+        shapeClass.shape,
+        NodeShape.shapeOwnerLabel(shapeClass, shapeClass.shape),
+        'getPropertyShape',
+      ).find((shape) => shape.label === label);
       if (checkSubShapes) {
         if (shapeClass === (Shape as unknown)) {
           break;

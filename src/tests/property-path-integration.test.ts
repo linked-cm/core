@@ -139,7 +139,7 @@ describe('property path integration — decorator to SPARQL', () => {
     // Should have the complex path for the memberRoles traversal
     expect(sparql).toContain(`<${testBase}member>/<${testBase}role>`);
     // Should have the simple property for label
-    expect(sparql).toContain(`<${R}/label>`);
+    expect(sparql).toContain(`<${testBase}label>`);
   });
 
   test('inverse path in decorator', async () => {
@@ -163,7 +163,7 @@ describe('property path integration — decorator to SPARQL', () => {
       SimplePersonShape.select((p) => p.name),
     );
     // Simple paths should still use standard IRI format (not path syntax)
-    expect(sparql).toContain(`<${SP}/name>`);
+    expect(sparql).toContain(`<${testBase}name>`);
     // Should NOT contain property path operators
     expect(sparql).not.toMatch(/[/|^*+?!]<.*?>[/|^*+?!]/);
   });
