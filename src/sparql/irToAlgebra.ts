@@ -11,6 +11,7 @@ import {
   IRFieldValue,
   IRNodeData,
   IRSetModificationValue,
+  IRTraversePattern,
 } from '../queries/IntermediateRepresentation.js';
 import {NodeReferenceValue} from '../utils/NodeReference.js';
 import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
@@ -37,27 +38,11 @@ import {
   deleteInsertPlanToSparql,
   deleteWherePlanToSparql,
 } from './algebraToString.js';
-// Lazy-loaded to avoid circular dependency:
-// irToAlgebra → ShapeClass → Shape → CreateBuilder → … → SHACL → Shape (circular)
-let _getShapeClass: typeof import('../utils/ShapeClass.js').getShapeClass | undefined;
-function lazyGetShapeClass(id: string) {
-  if (!_getShapeClass) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    _getShapeClass = require('../utils/ShapeClass.js').getShapeClass;
-  }
-  return _getShapeClass!(id);
-}
-
-let _shacl: typeof import('../ontologies/shacl.js').shacl | undefined;
-function lazyShacl() {
-  if (!_shacl) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    _shacl = require('../ontologies/shacl.js').shacl;
-  }
-  return _shacl!;
-}
 import {rdf} from '../ontologies/rdf.js';
+import {shacl} from '../ontologies/shacl.js';
 import {xsd} from '../ontologies/xsd.js';
+import {getSimplePathId} from '../paths/normalizePropertyPath.js';
+import {getAllShapeClasses, getShapeClass} from '../utils/ShapeClass.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -94,6 +79,33 @@ function tripleOf(
   object: SparqlTerm,
 ): SparqlTriple {
   return {subject, predicate, object};
+}
+
+function shouldResolveShapeOrPropertyId(resolvedId: string | null | undefined): boolean {
+  return !!resolvedId && !resolvedId.startsWith('linked://tmp/');
+}
+
+function resolveShapeScanIri(shapeId: string): string {
+  const shapeClass = getShapeClass(shapeId);
+  const targetClassId = shapeClass?.targetClass?.id;
+  return shouldResolveShapeOrPropertyId(targetClassId) ? targetClassId! : shapeId;
+}
+
+function resolvePropertyPredicateIri(propertyId: string): string {
+  const shapeClasses = getAllShapeClasses();
+  for (const shapeClass of shapeClasses.values()) {
+    const propertyShape = shapeClass.shape
+      ?.getPropertyShapes?.(true)
+      ?.find((prop: {id?: string}) => prop.id === propertyId);
+    if (!propertyShape) continue;
+
+    const simplePathId = getSimplePathId(propertyShape.path);
+    if (shouldResolveShapeOrPropertyId(simplePathId)) {
+      return simplePathId!;
+    }
+    break;
+  }
+  return propertyId;
 }
 
 /** Produce variable name suffix from the last segment of a property URI. */
@@ -202,6 +214,192 @@ function collectTraversalAliases(patterns: IRGraphPattern[]): string[] {
     }
   }
   return aliases;
+}
+
+function buildTraverseTriple(pattern: IRTraversePattern): SparqlTriple {
+  const predicate = pattern.pathExpr
+    ? {
+        kind: 'path' as const,
+        value: pathExprToSparql(pattern.pathExpr),
+        uris: collectPathUris(pattern.pathExpr),
+      }
+    : iriTerm(resolvePropertyPredicateIri(pattern.property));
+  return tripleOf(
+    varTerm(pattern.from),
+    predicate,
+    varTerm(pattern.to),
+  );
+}
+
+function collectTraversePatternsInOrder(
+  patterns: IRGraphPattern[],
+  out: IRTraversePattern[] = [],
+): IRTraversePattern[] {
+  for (const pattern of patterns) {
+    switch (pattern.kind) {
+      case 'traverse':
+        out.push(pattern);
+        break;
+      case 'join':
+        collectTraversePatternsInOrder(pattern.patterns, out);
+        break;
+      case 'optional':
+      case 'exists':
+        collectTraversePatternsInOrder([pattern.pattern], out);
+        break;
+      case 'union':
+        for (const branch of pattern.branches) {
+          collectTraversePatternsInOrder([branch], out);
+        }
+        break;
+      case 'shape_scan':
+      case 'minus':
+        break;
+    }
+  }
+  return out;
+}
+
+function collectDirectProjectionAliases(
+  query: IRSelectQuery,
+  rootAlias: string,
+): Set<string> {
+  const aliases = new Set<string>();
+  for (const item of query.projection) {
+    if (item.expression.kind === 'property_expr') {
+      if (item.expression.sourceAlias !== rootAlias) {
+        aliases.add(item.expression.sourceAlias);
+      }
+    } else if (item.expression.kind === 'alias_expr') {
+      if (item.expression.alias !== rootAlias) {
+        aliases.add(item.expression.alias);
+      }
+    }
+  }
+  return aliases;
+}
+
+function collectExpressionAliases(
+  expr: IRExpression,
+  aliases: Set<string>,
+): void {
+  switch (expr.kind) {
+    case 'property_expr':
+      aliases.add(expr.sourceAlias);
+      break;
+    case 'alias_expr':
+      aliases.add(expr.alias);
+      break;
+    case 'binary_expr':
+      collectExpressionAliases(expr.left, aliases);
+      collectExpressionAliases(expr.right, aliases);
+      break;
+    case 'logical_expr':
+      for (const sub of expr.expressions) {
+        collectExpressionAliases(sub, aliases);
+      }
+      break;
+    case 'not_expr':
+      collectExpressionAliases(expr.expression, aliases);
+      break;
+    case 'function_expr':
+    case 'aggregate_expr':
+      for (const arg of expr.args) {
+        collectExpressionAliases(arg, aliases);
+      }
+      break;
+    case 'exists_expr':
+      if (expr.filter) {
+        collectExpressionAliases(expr.filter, aliases);
+      }
+      break;
+    case 'literal_expr':
+    case 'reference_expr':
+    case 'context_property_expr':
+      break;
+  }
+}
+
+function markAliasAndAncestors(
+  alias: string,
+  traversePatternMap: ReadonlyMap<string, IRTraversePattern>,
+  target: Set<string>,
+): void {
+  let currentAlias: string | undefined = alias;
+  while (currentAlias && traversePatternMap.has(currentAlias)) {
+    if (target.has(currentAlias)) {
+      return;
+    }
+    target.add(currentAlias);
+    currentAlias = traversePatternMap.get(currentAlias)?.from;
+  }
+}
+
+function collectRequiredTraversalAliases(
+  query: IRSelectQuery,
+  traversePatternMap: ReadonlyMap<string, IRTraversePattern>,
+): Set<string> {
+  const directAliases = new Set<string>();
+
+  if (query.where) {
+    collectExpressionAliases(query.where, directAliases);
+  }
+
+  if (query.orderBy) {
+    for (const item of query.orderBy) {
+      collectExpressionAliases(item.expression, directAliases);
+    }
+  }
+
+  for (const pattern of traversePatternMap.values()) {
+    if (pattern.filter) {
+      directAliases.add(pattern.to);
+    }
+  }
+
+  const requiredAliases = new Set<string>();
+  for (const alias of directAliases) {
+    markAliasAndAncestors(alias, traversePatternMap, requiredAliases);
+  }
+  return requiredAliases;
+}
+
+function buildOptionalTraversalSubtree(
+  alias: string,
+  traversePatternMap: ReadonlyMap<string, IRTraversePattern>,
+  childOptionalAliasesByParent: ReadonlyMap<string, string[]>,
+  propertyTriplesByAlias: ReadonlyMap<string, SparqlTriple[]>,
+): SparqlAlgebraNode {
+  const pattern = traversePatternMap.get(alias);
+  if (!pattern) {
+    throw new Error(`Missing traverse pattern for alias "${alias}"`);
+  }
+
+  let subtree: SparqlAlgebraNode = {
+    type: 'bgp',
+    triples: [buildTraverseTriple(pattern)],
+  };
+
+  for (const propTriple of propertyTriplesByAlias.get(alias) ?? []) {
+    subtree = wrapOptional(subtree, {
+      type: 'bgp',
+      triples: [propTriple],
+    });
+  }
+
+  for (const childAlias of childOptionalAliasesByParent.get(alias) ?? []) {
+    subtree = wrapOptional(
+      subtree,
+      buildOptionalTraversalSubtree(
+        childAlias,
+        traversePatternMap,
+        childOptionalAliasesByParent,
+        propertyTriplesByAlias,
+      ),
+    );
+  }
+
+  return subtree;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,12 +516,16 @@ export function selectToAlgebra(
   const typeTriple = tripleOf(
     varTerm(rootAlias),
     iriTerm(RDF_TYPE),
-    iriTerm(shapeUri),
+    iriTerm(resolveShapeScanIri(shapeUri)),
   );
   const requiredTriples: SparqlTriple[] = [typeTriple];
 
   // Track traverse triples (required pattern)
   const traverseTriples: SparqlTriple[] = [];
+  const traversePatternsInOrder = collectTraversePatternsInOrder(query.patterns);
+  const traversePatternMap = new Map(
+    traversePatternsInOrder.map((pattern) => [pattern.to, pattern] as const),
+  );
 
   // 2. Process patterns → traverse triples, populate variable registry
   for (const pattern of query.patterns) {
@@ -375,12 +577,67 @@ export function selectToAlgebra(
     }
   }
 
+  const projectedTraversalAliases = new Set<string>();
+  const directProjectionAliases = collectDirectProjectionAliases(query, rootAlias);
+  for (const alias of directProjectionAliases) {
+    markAliasAndAncestors(alias, traversePatternMap, projectedTraversalAliases);
+  }
+
+  const requiredTraversalAliases = collectRequiredTraversalAliases(
+    query,
+    traversePatternMap,
+  );
+
+  const optionalTraversalAliases = new Set(
+    [...projectedTraversalAliases].filter((alias) => {
+      const pattern = traversePatternMap.get(alias);
+      return !!pattern &&
+        typeof pattern.maxCount === 'number' &&
+        pattern.maxCount <= 1 &&
+        !pattern.filter &&
+        !requiredTraversalAliases.has(alias);
+    }),
+  );
+
+  const requiredTraverseTriples = traverseTriples.filter((triple) =>
+    !(triple.object.kind === 'variable' &&
+      optionalTraversalAliases.has(triple.object.name))
+  );
+
+  const nestedOptionalPropertyTriplesByAlias = new Map<string, SparqlTriple[]>();
+  const topLevelOptionalPropertyTriples: SparqlTriple[] = [];
+  for (const propTriple of optionalPropertyTriples) {
+    if (propTriple.subject.kind === 'variable' &&
+      optionalTraversalAliases.has(propTriple.subject.name)) {
+      const triples = nestedOptionalPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
+      triples.push(propTriple);
+      nestedOptionalPropertyTriplesByAlias.set(propTriple.subject.name, triples);
+    } else {
+      topLevelOptionalPropertyTriples.push(propTriple);
+    }
+  }
+
+  const childOptionalAliasesByParent = new Map<string, string[]>();
+  for (const pattern of traversePatternsInOrder) {
+    if (!optionalTraversalAliases.has(pattern.to)) continue;
+    const siblings = childOptionalAliasesByParent.get(pattern.from) ?? [];
+    siblings.push(pattern.to);
+    childOptionalAliasesByParent.set(pattern.from, siblings);
+  }
+
+  const rootOptionalTraversalAliases = traversePatternsInOrder
+    .filter((pattern) =>
+      optionalTraversalAliases.has(pattern.to) &&
+      !optionalTraversalAliases.has(pattern.from),
+    )
+    .map((pattern) => pattern.to);
+
   // 5. Build the algebra tree
   //    - Start with the required BGP (type triple + traverse triples)
   //    - Wrap each optional property triple in a LeftJoin
   const requiredBgp: SparqlBGP = {
     type: 'bgp',
-    triples: [...requiredTriples, ...traverseTriples, ...requiredPropertyTriples],
+    triples: [...requiredTriples, ...requiredTraverseTriples, ...requiredPropertyTriples],
   };
 
   let algebra: SparqlAlgebraNode = requiredBgp;
@@ -403,8 +660,20 @@ export function selectToAlgebra(
     algebra = wrapOptional(algebra, filteredBlock);
   }
 
+  for (const alias of rootOptionalTraversalAliases) {
+    algebra = wrapOptional(
+      algebra,
+      buildOptionalTraversalSubtree(
+        alias,
+        traversePatternMap,
+        childOptionalAliasesByParent,
+        nestedOptionalPropertyTriplesByAlias,
+      ),
+    );
+  }
+
   // Wrap each optional property triple in its own OPTIONAL (LeftJoin)
-  for (const propTriple of optionalPropertyTriples) {
+  for (const propTriple of topLevelOptionalPropertyTriples) {
     algebra = wrapOptional(algebra, {
       type: 'bgp',
       triples: [propTriple],
@@ -590,14 +859,7 @@ function processPattern(
       // Register the traverse variable: (from, property) → to
       registry.set(pattern.from, pattern.property, pattern.to);
       // Add traverse triple to required pattern (or filtered block if inline where)
-      const predicate = pattern.pathExpr
-        ? {kind: 'path' as const, value: pathExprToSparql(pattern.pathExpr), uris: collectPathUris(pattern.pathExpr)}
-        : iriTerm(pattern.property);
-      const triple = tripleOf(
-        varTerm(pattern.from),
-        predicate,
-        varTerm(pattern.to),
-      );
+      const triple = buildTraverseTriple(pattern);
       if (pattern.filter && filteredTraverseBlocks) {
         filteredTraverseBlocks.push({
           traverseTriple: triple,
@@ -659,7 +921,7 @@ function processExpressionForProperties(
         const varName = registry.getOrCreate(expr.sourceAlias, expr.property);
         const predicate = expr.pathExpr
           ? {kind: 'path' as const, value: pathExprToSparql(expr.pathExpr), uris: collectPathUris(expr.pathExpr)}
-          : iriTerm(expr.property);
+          : iriTerm(resolvePropertyPredicateIri(expr.property));
         const triple = tripleOf(
           varTerm(expr.sourceAlias),
           predicate,
@@ -744,7 +1006,7 @@ function processExpressionForProperties(
         const varName = registry.getOrCreate(ctxKey, expr.property);
         const triple = tripleOf(
           iriTerm(expr.contextIri),
-          iriTerm(expr.property),
+          iriTerm(resolvePropertyPredicateIri(expr.property)),
           varTerm(varName),
         );
         const triples = requiredPropertyKeys.has(bindingKey(ctxKey, expr.property))
@@ -956,7 +1218,7 @@ function convertExistsPattern(
     case 'traverse': {
       const existsPredicate = pattern.pathExpr
         ? {kind: 'path' as const, value: pathExprToSparql(pattern.pathExpr), uris: collectPathUris(pattern.pathExpr)}
-        : iriTerm(pattern.property);
+        : iriTerm(resolvePropertyPredicateIri(pattern.property));
       const triple = tripleOf(
         varTerm(pattern.from),
         existsPredicate,
@@ -981,7 +1243,7 @@ function convertExistsPattern(
           tripleOf(
             varTerm(pattern.alias),
             iriTerm(RDF_TYPE),
-            iriTerm(pattern.shape),
+            iriTerm(resolveShapeScanIri(pattern.shape)),
           ),
         ],
       };
@@ -1103,12 +1365,15 @@ function generateNodeDataTriples(
   const triples: SparqlTriple[] = [];
   const subjectTerm = iriTerm(uri);
 
-  // Type triple
-  triples.push(tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(data.shape)));
+  // Type triple — resolve the SHACL NodeShape id in the IR to the ontology
+  // targetClass URI (sibling of PR #77's SELECT-side resolveShapeScanIri).
+  // Mutations were not covered by #77; see mutation-uri-fidelity.test.ts.
+  triples.push(tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(data.shape))));
 
   // Field triples
   for (const field of data.fields) {
-    const propertyTerm = iriTerm(field.property);
+    // Resolve the SHACL PropertyShape id to its declared `path` URI.
+    const propertyTerm = iriTerm(resolvePropertyPredicateIri(field.property));
 
     if (field.value === null || field.value === undefined) {
       continue;
@@ -1188,7 +1453,7 @@ function processUpdateFields(
   const extends_: Array<{variable: string; expression: SparqlExpression}> = [];
 
   for (const field of data.fields) {
-    const propertyTerm = iriTerm(field.property);
+    const propertyTerm = iriTerm(resolvePropertyPredicateIri(field.property));
     const suffix = propertySuffix(field.property);
 
     // Check for set modification ({add, remove})
@@ -1418,7 +1683,7 @@ export function deleteToAlgebra(
 
     const subjWild = tripleOf(subjectTerm, varTerm(`p${idx}`), varTerm(`o${idx}`));
     const objWild = tripleOf(varTerm(`s${idx}`), varTerm(`p2${idx}`), subjectTerm);
-    const typeGuard = tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(query.shape));
+    const typeGuard = tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(query.shape)));
 
     // DELETE block: all patterns (subject-wildcard, object-wildcard, type)
     deletePatterns.push(subjWild, objWild, typeGuard);
@@ -1459,8 +1724,7 @@ export function deleteToAlgebra(
 function isBlankNodeProperty(prop: {nodeKind?: {id?: string}}): boolean {
   const nk = prop.nodeKind?.id;
   if (!nk) return false;
-  const s = lazyShacl();
-  return nk === s.BlankNode.id || nk === s.BlankNodeOrIRI.id;
+  return nk === shacl.BlankNode.id || nk === shacl.BlankNodeOrIRI.id;
 }
 
 /**
@@ -1479,7 +1743,7 @@ function walkBlankNodeTree(
   depth: number,
   deletePatterns: SparqlTriple[],
 ): SparqlAlgebraNode | null {
-  const shapeClass = lazyGetShapeClass(shapeId);
+  const shapeClass = getShapeClass(shapeId);
   if (!shapeClass?.shape) return null;
 
   let optionals: SparqlAlgebraNode | null = null;
@@ -1498,7 +1762,7 @@ function walkBlankNodeTree(
     // WHERE: parent --<property>--> ?bnVar
     const traverseTriple = tripleOf(
       varTerm(parentVar),
-      iriTerm(prop.path[0].id),
+      iriTerm(resolvePropertyPredicateIri(prop.id)),
       varTerm(bnVar),
     );
     // FILTER(isBlank(?bnVar))
@@ -1561,7 +1825,7 @@ export function deleteAllToAlgebra(
   ];
 
   // WHERE: type triple + root wildcard
-  const typeTriple = tripleOf(varTerm(subjectVar), iriTerm(RDF_TYPE), iriTerm(query.shape));
+  const typeTriple = tripleOf(varTerm(subjectVar), iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(query.shape)));
   const rootWildcard = tripleOf(varTerm(subjectVar), varTerm('p'), varTerm('o'));
   let whereAlgebra: SparqlAlgebraNode = {type: 'bgp', triples: [typeTriple, rootWildcard]};
 
@@ -1597,7 +1861,7 @@ export function deleteWhereToAlgebra(
   ];
 
   // WHERE: type triple + root wildcard
-  const typeTriple = tripleOf(varTerm(subjectVar), iriTerm(RDF_TYPE), iriTerm(query.shape));
+  const typeTriple = tripleOf(varTerm(subjectVar), iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(query.shape)));
   const rootWildcard = tripleOf(varTerm(subjectVar), varTerm('p'), varTerm('o'));
   let whereAlgebra: SparqlAlgebraNode = {type: 'bgp', triples: [typeTriple, rootWildcard]};
 
@@ -1654,7 +1918,7 @@ export function updateWhereToAlgebra(
   const result = processUpdateFields(query.data, subjectTerm, options);
 
   // WHERE: type triple is always required
-  const typeTriple = tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(query.data.shape));
+  const typeTriple = tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(query.data.shape)));
   let whereAlgebra: SparqlAlgebraNode = {type: 'bgp', triples: [typeTriple]};
 
   // Process where filter conditions (if any)
