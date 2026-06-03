@@ -121,38 +121,37 @@ function resolveString(
 }
 
 /**
- * Factory keyed by the npm-import-path string in a DatasetEntry's `store` field.
- * Each factory receives the entry's `config` (verbatim, env-resolved) and the alias name,
- * and returns the constructed store instance.
- */
-export type DatasetFactories<T = unknown> = Record<
-  string,
-  (config: Record<string, unknown>, alias: string) => T
->;
-
-/**
- * Walk a parsed DatasetsConfig and construct one store per alias by
- * dispatching on `entry.store` (the npm import path). Returns alias → store.
- * Throws if any alias references a store path that has no factory provided.
+ * Backend-side store loader. Dynamically imports each alias's `store`
+ * (an npm specifier) and instantiates the resolved class with the entry's
+ * `config` verbatim — `new StoreClass(entry.config)`. Returns alias → store.
  *
- * The two-step pattern (parse, then build) exists so the JSON spec stays
- * stable (per 016) while the TS code on each runtime side decides which
- * stores it actually imports — keeps the loader free of cross-package
- * dependencies on every possible store class.
+ * Convention: the last segment of the `store` path is the named export to
+ * use (e.g. `@_linked/fuseki/shapes/FusekiStore` → `FusekiStore`). Falls
+ * back to the module's `default` export if the named export is absent.
+ *
+ * This helper is async + uses runtime dynamic import — works in Node where
+ * the module specifier can be resolved at runtime. The frontend can't use it
+ * (webpack can't bundle `import(variableString)`); frontends instead import
+ * store classes explicitly in their storage-config file and instantiate per
+ * alias themselves.
  */
-export function buildStoresFromConfig<T = unknown>(
+export async function loadStores<T = unknown>(
   config: DatasetsConfig,
-  factories: DatasetFactories<T>,
-): Record<string, T> {
+): Promise<Record<string, T>> {
   const stores: Record<string, T> = {};
   for (const [alias, entry] of Object.entries(config.datasets)) {
-    const factory = factories[entry.store];
-    if (!factory) {
+    const mod = await import(entry.store);
+    const exportName = entry.store.split('/').pop()!;
+    const StoreClass =
+      (mod && (mod as Record<string, unknown>)[exportName]) ??
+      (mod && (mod as { default?: unknown }).default);
+    if (typeof StoreClass !== 'function') {
       throw new Error(
-        `No factory registered for store "${entry.store}" (alias "${alias}"). Pass a factory keyed by the same npm import path in the second argument to buildStoresFromConfig.`,
+        `loadStores: could not resolve a class export from "${entry.store}" for alias "${alias}". ` +
+          `Expected a named export "${exportName}" or a default export that is a class.`,
       );
     }
-    stores[alias] = factory(entry.config, alias);
+    stores[alias] = new (StoreClass as new (cfg: unknown) => T)(entry.config);
   }
   return stores;
 }
