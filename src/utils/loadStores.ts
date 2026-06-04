@@ -15,12 +15,29 @@ import type {DatasetsConfig} from './parseDatasetsConfig.js';
  * Convention: the last segment of the `store` path is the named export
  * to use (e.g. `@_linked/fuseki/shapes/FusekiStore` → `FusekiStore`).
  * Falls back to the module's `default` export if the named export is
- * absent.
+ * absent. Each store class must accept a single config-object argument.
  *
  * Async + uses runtime dynamic import; works in Node where the module
  * specifier can be resolved at runtime. Frontends should instead
  * import each store class explicitly in their storage-config file and
- * instantiate per alias by hand.
+ * instantiate per alias by hand (webpack can't bundle
+ * `import(variableString)`).
+ *
+ * @example
+ * ```ts
+ * import rawConfig from './linked.backend.datasets.json' assert { type: 'json' };
+ * import { parseDatasetsConfig } from '@_linked/core/utils/parseDatasetsConfig';
+ * import { loadStores } from '@_linked/core/utils/loadStores';
+ * import { LinkedStorage } from '@_linked/core/utils/LinkedStorage';
+ *
+ * const config = parseDatasetsConfig(rawConfig, process.env);
+ * const stores = await loadStores(config);
+ * LinkedStorage.setDefaultDataset(stores.appData);
+ * ```
+ *
+ * @param config  Parsed config from {@link parseDatasetsConfig}.
+ * @returns       Map of alias → constructed store instance.
+ * @throws        If a `store` path can't be resolved to a class export.
  */
 export async function loadStores<T = unknown>(
   config: DatasetsConfig,

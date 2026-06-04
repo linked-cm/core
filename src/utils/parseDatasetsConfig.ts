@@ -41,6 +41,30 @@ export interface DatasetsConfig {
  *   across all string leaves.
  * - Strips keys starting with `_` (treated as comments / `_note` fields).
  * - Throws on a referenced env var with no default that is unset or empty.
+ *
+ * Pure + browser-safe — no file I/O, no dynamic imports. Use this on both
+ * backend and frontend. The companion `loadStores` (separate file) does the
+ * runtime dynamic-import dispatch for the backend.
+ *
+ * @example Backend
+ * ```ts
+ * import rawConfig from './linked.backend.datasets.json' assert { type: 'json' };
+ * const config = parseDatasetsConfig(rawConfig, process.env);
+ * ```
+ *
+ * @example Frontend
+ * ```ts
+ * import rawConfig from './linked.frontend.datasets.json' assert { type: 'json' };
+ * // No runtime env in the browser; pass empty {}
+ * const config = parseDatasetsConfig(rawConfig, {});
+ * const appData = new BackendAPIStore(config.datasets.appData.config);
+ * ```
+ *
+ * @param raw   Parsed JSON object (or anything object-shaped). Throws otherwise.
+ * @param env   Env map. Defaults to {} (no interpolation).
+ * @returns     Typed, env-resolved {@link DatasetsConfig}.
+ * @throws      On missing/malformed `datasets`, on malformed alias entry, or
+ *              on an unresolved `${VAR}` with no default.
  */
 export function parseDatasetsConfig(
   raw: unknown,
