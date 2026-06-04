@@ -27,7 +27,7 @@ export function setQueryDispatch(d: QueryDispatch): void {
 export function getQueryDispatch(): QueryDispatch {
   if (!dispatch) {
     throw new Error(
-      'No query dispatch configured. Call LinkedStorage.setDefaultStore() first.',
+      'No query dispatch configured. Call LinkedStorage.setDefaultDataset() first.',
     );
   }
   return dispatch;

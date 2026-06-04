@@ -60,8 +60,8 @@ describe('LinkedStorage store routing', () => {
   test('routes select queries based on shape mapping', async () => {
     const defaultStore = createStore();
     const personStore = createStore();
-    LinkedStorage.setDefaultStore(defaultStore.store);
-    LinkedStorage.setStoreForShapes(personStore.store, RoutedPerson);
+    LinkedStorage.setDefaultDataset(defaultStore.store);
+    LinkedStorage.setDatasetForShapes(personStore.store, RoutedPerson);
 
     await LinkedStorage.selectQuery({
       kind: 'select',
@@ -80,7 +80,7 @@ describe('LinkedStorage store routing', () => {
 
   test('routes select queries to default store when no mapping exists', async () => {
     const defaultStore = createStore();
-    LinkedStorage.setDefaultStore(defaultStore.store);
+    LinkedStorage.setDefaultDataset(defaultStore.store);
 
     await LinkedStorage.selectQuery({
       kind: 'select',
@@ -99,8 +99,8 @@ describe('LinkedStorage store routing', () => {
   test('uses parent shape store for subclasses', async () => {
     const defaultStore = createStore();
     const personStore = createStore();
-    LinkedStorage.setDefaultStore(defaultStore.store);
-    LinkedStorage.setStoreForShapes(personStore.store, RoutedPerson);
+    LinkedStorage.setDefaultDataset(defaultStore.store);
+    LinkedStorage.setDatasetForShapes(personStore.store, RoutedPerson);
 
     await LinkedStorage.selectQuery({
       kind: 'select',
@@ -120,8 +120,8 @@ describe('LinkedStorage store routing', () => {
   test('routes update/create/delete using node shape ids', async () => {
     const defaultStore = createStore();
     const personStore = createStore();
-    LinkedStorage.setDefaultStore(defaultStore.store);
-    LinkedStorage.setStoreForShapes(personStore.store, RoutedPerson);
+    LinkedStorage.setDefaultDataset(defaultStore.store);
+    LinkedStorage.setDatasetForShapes(personStore.store, RoutedPerson);
 
     await LinkedStorage.updateQuery({
       kind: 'update',

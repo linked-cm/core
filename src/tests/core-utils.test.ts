@@ -89,8 +89,8 @@ class PackagePerson extends Shape {
 }
 
 const resetLinkedStorage = () => {
-  LinkedStorage.setDefaultStore(null as any);
-  LinkedStorage.getShapeToStoreMap().clear();
+  LinkedStorage.setDefaultDataset(null as any);
+  LinkedStorage.getShapeToDatasetMap().clear();
 };
 
 describe('ShapeClass utilities', () => {
@@ -138,26 +138,26 @@ describe('ShapeClass utilities', () => {
 describe('LinkedStorage extra behaviors', () => {
   beforeEach(() => resetLinkedStorage());
 
-  test('setDefaultStore calls init when provided', () => {
+  test('setDefaultDataset calls init when provided', () => {
     const init = jest.fn();
-    LinkedStorage.setDefaultStore({init} as any);
+    LinkedStorage.setDefaultDataset({init} as any);
     expect(init).toHaveBeenCalled();
   });
 
   test('getStores returns default and shape-specific stores', () => {
     const defaultStore = {selectQuery: jest.fn()} as any;
     const shapeStore = {selectQuery: jest.fn()} as any;
-    LinkedStorage.setDefaultStore(defaultStore);
-    LinkedStorage.setStoreForShapes(shapeStore, BaseShape);
-    const stores = LinkedStorage.getStores();
+    LinkedStorage.setDefaultDataset(defaultStore);
+    LinkedStorage.setDatasetForShapes(shapeStore, BaseShape);
+    const stores = LinkedStorage.getDatasets();
     expect(stores.has(defaultStore)).toBe(true);
     expect(stores.has(shapeStore)).toBe(true);
   });
 
-  test('getStoreForShapeClass falls back to superclass mapping', () => {
+  test('getDatasetForShapeClass falls back to superclass mapping', () => {
     const baseStore = {selectQuery: jest.fn()} as any;
-    LinkedStorage.setStoreForShapes(baseStore, BaseShape);
-    expect(LinkedStorage.getStoreForShapeClass(SubShape)).toBe(baseStore);
+    LinkedStorage.setDatasetForShapes(baseStore, BaseShape);
+    expect(LinkedStorage.getDatasetForShapeClass(SubShape)).toBe(baseStore);
   });
 
   test('selectQuery rejects invalid query payloads before store resolution', async () => {
@@ -175,7 +175,7 @@ describe('LinkedStorage extra behaviors', () => {
         projection: [],
         resultMap: [],
       } as any),
-    ).rejects.toThrow('No query store configured');
+    ).rejects.toThrow('No query dataset configured');
   });
 });
 
@@ -216,7 +216,7 @@ describe('Query dispatch delegation', () => {
     const store = {
       selectQuery: jest.fn(async () => [{id: 'r1'}]),
     } as any;
-    LinkedStorage.setDefaultStore(store);
+    LinkedStorage.setDefaultDataset(store);
 
     const dispatch = getQueryDispatch();
     const query = ContextPerson.select((p) => p.name);
@@ -235,7 +235,7 @@ describe('Query dispatch delegation', () => {
       createQuery: jest.fn(async () => ({id: 'c1'})),
       deleteQuery: jest.fn(async () => ({deleted: [], count: 0})),
     } as any;
-    LinkedStorage.setDefaultStore(store);
+    LinkedStorage.setDefaultDataset(store);
 
     await ContextPerson.select((p) => p.name);
     expect(store.selectQuery).toHaveBeenCalledTimes(1);

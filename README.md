@@ -282,6 +282,42 @@ You can also route specific shapes to specific stores:
 LinkedStorage.setStoreForShapes(new InMemoryStore(), Person);
 ```
 
+### Config-driven setup: `parseDatasetsConfig` + `loadStores`
+
+For apps that want to keep their storage wiring in JSON rather than code, `@_linked/core` ships two helpers that read a `linked.datasets.json`-style file (see [backlog 016](https://github.com/create-now/docs) for the canonical spec) and instantiate the stores per alias.
+
+```ts
+// @_linked/core/utils/parseDatasetsConfig — pure parser, browser-safe
+parseDatasetsConfig(raw: unknown, env?: Record<string, string | undefined>): DatasetsConfig
+```
+
+Validates a config of the shape `{ datasets: { <alias>: { store: <npm-path>, config: { ... } } } }`, resolves `${VAR}` / `${VAR:-default}` placeholders in string leaves against `env`, strips `_*` comment keys, and throws on malformed input. Returns a typed `DatasetsConfig`.
+
+```ts
+// @_linked/core/utils/loadStores — async, backend-only
+loadStores<T>(config: DatasetsConfig): Promise<Record<string, T>>
+```
+
+Dynamically imports each alias's `store` path and instantiates the resolved class with `new StoreClass(entry.config)`. Returns alias → store. Convention: the last segment of the `store` path is the named export to use (with `default` as a fallback). **Async + uses runtime dynamic `import()`** — works in Node where module specifiers resolve at runtime. Frontends can't use this (webpack can't bundle `import(variableString)`); frontend code instead imports each store class statically and constructs per alias by hand.
+
+A typical backend setup looks like:
+
+```ts
+import rawConfig from './linked.datasets.json' assert { type: 'json' };
+import { parseDatasetsConfig } from '@_linked/core/utils/parseDatasetsConfig';
+import { loadStores } from '@_linked/core/utils/loadStores';
+import { LinkedStorage } from '@_linked/core/utils/LinkedStorage';
+
+const config = parseDatasetsConfig(rawConfig, process.env);
+const stores = await loadStores(config);
+
+LinkedStorage.setDefaultDataset(stores.appData);
+// or per-shape:
+// LinkedStorage.setDatasetForShapes(stores.appData, [Person, BlogPost]);
+```
+
+Each store class must accept a single config-object argument (`new StoreClass(config)`). `@_linked/fuseki`'s `FusekiStore` and `@_linked/server`'s `BackendAPIStore` both follow this contract.
+
 ## Automatic data validation
 
 SHACL shapes are ideal for data validation. Linked generates SHACL shapes from your TypeScript Shape classes, which you can sync to your store for schema-level validation. When your store enforces those shapes at runtime, you get both schema validation and runtime enforcement for extra safety.
