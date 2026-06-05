@@ -2,48 +2,48 @@ import {IFileStore} from '../interfaces/IFileStore.js';
 import type {Readable} from 'stream';
 
 export abstract class LinkedFileStorage {
-  private static defaultStore: IFileStore;
+  private static defaultDataset: IFileStore;
   private static url: string; // default accessURL
 
   static get accessURL(): string {
     // check if default store is not set, return default accessURL
-    if (!this.defaultStore) {
+    if (!this.defaultDataset) {
       return this.url;
     }
 
-    return this.defaultStore.accessURL;
+    return this.defaultDataset.accessURL;
   }
 
   static setDefaultAccessURL(accessURL: string): string {
     return (this.url = accessURL);
   }
 
-  static getDefaultStore(): IFileStore {
-    return this.defaultStore;
+  static getDefaultDataset(): IFileStore {
+    return this.defaultDataset;
   }
 
-  static setDefaultStore(store: IFileStore) {
-    this.defaultStore = store;
+  static setDefaultDataset(dataset: IFileStore) {
+    this.defaultDataset = dataset;
 
-    if (this.defaultStore.init) {
-      this.defaultStore.init();
+    if (this.defaultDataset.init) {
+      this.defaultDataset.init();
     }
   }
 
   static deleteFile(filePath: string): Promise<void> {
-    return this.defaultStore.deleteFile(filePath);
+    return this.defaultDataset.deleteFile(filePath);
   }
 
   static fileExists(filePath: string): Promise<boolean> {
-    return this.defaultStore.fileExists(filePath);
+    return this.defaultDataset.fileExists(filePath);
   }
 
   static getFile(filePath: string): Promise<Buffer> {
-    return this.defaultStore.getFile(filePath);
+    return this.defaultDataset.getFile(filePath);
   }
 
   static listFiles(prefix?: string): Promise<string[]> {
-    return this.defaultStore.listFiles(prefix);
+    return this.defaultDataset.listFiles(prefix);
   }
 
   static saveFile(
@@ -52,7 +52,7 @@ export abstract class LinkedFileStorage {
     mimeType?: string,
     preventDuplicates: boolean = false,
   ): Promise<string> {
-    return this.defaultStore.saveFile(
+    return this.defaultDataset.saveFile(
       filePath,
       fileContent,
       mimeType,

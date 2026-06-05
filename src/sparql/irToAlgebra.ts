@@ -1365,12 +1365,15 @@ function generateNodeDataTriples(
   const triples: SparqlTriple[] = [];
   const subjectTerm = iriTerm(uri);
 
-  // Type triple
-  triples.push(tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(data.shape)));
+  // Type triple — resolve the SHACL NodeShape id in the IR to the ontology
+  // targetClass URI (sibling of PR #77's SELECT-side resolveShapeScanIri).
+  // Mutations were not covered by #77; see mutation-uri-fidelity.test.ts.
+  triples.push(tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(data.shape))));
 
   // Field triples
   for (const field of data.fields) {
-    const propertyTerm = iriTerm(field.property);
+    // Resolve the SHACL PropertyShape id to its declared `path` URI.
+    const propertyTerm = iriTerm(resolvePropertyPredicateIri(field.property));
 
     if (field.value === null || field.value === undefined) {
       continue;
@@ -1450,7 +1453,7 @@ function processUpdateFields(
   const extends_: Array<{variable: string; expression: SparqlExpression}> = [];
 
   for (const field of data.fields) {
-    const propertyTerm = iriTerm(field.property);
+    const propertyTerm = iriTerm(resolvePropertyPredicateIri(field.property));
     const suffix = propertySuffix(field.property);
 
     // Check for set modification ({add, remove})
@@ -1680,7 +1683,7 @@ export function deleteToAlgebra(
 
     const subjWild = tripleOf(subjectTerm, varTerm(`p${idx}`), varTerm(`o${idx}`));
     const objWild = tripleOf(varTerm(`s${idx}`), varTerm(`p2${idx}`), subjectTerm);
-    const typeGuard = tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(query.shape));
+    const typeGuard = tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(query.shape)));
 
     // DELETE block: all patterns (subject-wildcard, object-wildcard, type)
     deletePatterns.push(subjWild, objWild, typeGuard);
@@ -1822,7 +1825,7 @@ export function deleteAllToAlgebra(
   ];
 
   // WHERE: type triple + root wildcard
-  const typeTriple = tripleOf(varTerm(subjectVar), iriTerm(RDF_TYPE), iriTerm(query.shape));
+  const typeTriple = tripleOf(varTerm(subjectVar), iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(query.shape)));
   const rootWildcard = tripleOf(varTerm(subjectVar), varTerm('p'), varTerm('o'));
   let whereAlgebra: SparqlAlgebraNode = {type: 'bgp', triples: [typeTriple, rootWildcard]};
 
@@ -1858,7 +1861,7 @@ export function deleteWhereToAlgebra(
   ];
 
   // WHERE: type triple + root wildcard
-  const typeTriple = tripleOf(varTerm(subjectVar), iriTerm(RDF_TYPE), iriTerm(query.shape));
+  const typeTriple = tripleOf(varTerm(subjectVar), iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(query.shape)));
   const rootWildcard = tripleOf(varTerm(subjectVar), varTerm('p'), varTerm('o'));
   let whereAlgebra: SparqlAlgebraNode = {type: 'bgp', triples: [typeTriple, rootWildcard]};
 
@@ -1915,7 +1918,7 @@ export function updateWhereToAlgebra(
   const result = processUpdateFields(query.data, subjectTerm, options);
 
   // WHERE: type triple is always required
-  const typeTriple = tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(query.data.shape));
+  const typeTriple = tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(query.data.shape)));
   let whereAlgebra: SparqlAlgebraNode = {type: 'bgp', triples: [typeTriple]};
 
   // Process where filter conditions (if any)

@@ -46,5 +46,5 @@ export {
 } from './resultMapping.js';
 export type {SparqlJsonResults, SparqlBinding} from './resultMapping.js';
 
-// Store base class
-export {SparqlStore} from './SparqlStore.js';
+// Dataset base class
+export {SparqlDataset, SparqlStore} from './SparqlDataset.js';
