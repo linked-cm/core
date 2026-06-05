@@ -109,6 +109,15 @@ jobs:
 
       - name: Publish next release
         run: |
+          echo "=== DIAGNOSTIC: npm identity + access ==="
+          echo "npm whoami:"
+          npm whoami || echo "(whoami failed)"
+          echo "npm access list packages (for @_linked):"
+          npm access list packages @_linked 2>&1 | head -30 || echo "(access list failed)"
+          echo "npm access get @_linked/core:"
+          npm access get status @_linked/core 2>&1 || echo "(access get failed)"
+          echo "=== END DIAGNOSTIC ==="
+
           # Start from main's version so changesets apply on top of the latest stable
           git fetch origin main --depth=1
           MAIN_VERSION=$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
