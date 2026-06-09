@@ -1,11 +1,11 @@
-import {SparqlStore} from '../sparql/SparqlStore.js';
+import {SparqlDataset} from '../sparql/SparqlDataset.js';
 import type {SparqlJsonResults} from '../sparql/resultMapping.js';
 import type {SparqlOptions} from '../sparql/sparqlUtils.js';
 
 /**
- * Concrete SparqlStore implementation for Apache Jena Fuseki.
+ * Concrete SparqlDataset implementation for Apache Jena Fuseki.
  *
- * Demonstrates how to extend SparqlStore with a real SPARQL endpoint.
+ * Demonstrates how to extend SparqlDataset with a real SPARQL endpoint.
  * Used by the integration tests to implicitly validate the base class.
  *
  * Usage:
@@ -15,7 +15,7 @@ import type {SparqlOptions} from '../sparql/sparqlUtils.js';
  * const result = await store.selectQuery(irSelectQuery);
  * ```
  */
-export class FusekiStore extends SparqlStore {
+export class FusekiStore extends SparqlDataset {
   private readonly queryEndpoint: string;
   private readonly updateEndpoint: string;
   private readonly baseUrl: string;
