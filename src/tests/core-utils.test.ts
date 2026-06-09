@@ -144,14 +144,14 @@ describe('LinkedStorage extra behaviors', () => {
     expect(init).toHaveBeenCalled();
   });
 
-  test('getStores returns default and shape-specific stores', () => {
+  test('getDatasets returns default and shape-specific datasets', () => {
     const defaultStore = {selectQuery: jest.fn()} as any;
     const shapeStore = {selectQuery: jest.fn()} as any;
     LinkedStorage.setDefaultDataset(defaultStore);
     LinkedStorage.setDatasetForShapes(shapeStore, BaseShape);
-    const stores = LinkedStorage.getDatasets();
-    expect(stores.has(defaultStore)).toBe(true);
-    expect(stores.has(shapeStore)).toBe(true);
+    const datasets = LinkedStorage.getDatasets();
+    expect(datasets.has(defaultStore)).toBe(true);
+    expect(datasets.has(shapeStore)).toBe(true);
   });
 
   test('getDatasetForShapeClass falls back to superclass mapping', () => {
