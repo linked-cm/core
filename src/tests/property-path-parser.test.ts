@@ -1,4 +1,4 @@
-import {parsePropertyPath, PathExpr} from '../paths/PropertyPathExpr';
+import {parsePropertyPath, type PathExpr} from '../paths/PropertyPathExpr';
 
 describe('parsePropertyPath', () => {
   // ------ Simple paths ------

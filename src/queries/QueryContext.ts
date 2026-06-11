@@ -1,4 +1,4 @@
-import {QShape, QueryShape} from './SelectQuery.js';
+import {type QShape, QueryShape} from './SelectQuery.js';
 import {Shape} from '../shapes/Shape.js';
 
 const queryContext = new Map<string, QShape<any, any, any>>();

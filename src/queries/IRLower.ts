@@ -1,8 +1,8 @@
-import {
+import type {
   CanonicalDesugaredSelectQuery,
   CanonicalWhereExpression,
 } from './IRCanonicalize.js';
-import {
+import type {
   DesugaredExpressionSelect,
   DesugaredExpressionWhere,
   DesugaredExistsWhere,
@@ -12,7 +12,7 @@ import {
   DesugaredWhere,
 } from './IRDesugar.js';
 import {resolveExpressionRefs, ExistsCondition} from '../expressions/ExpressionNode.js';
-import {
+import type {
   IRExpression,
   IRGraphPattern,
   IROrderByItem,

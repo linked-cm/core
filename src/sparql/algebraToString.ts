@@ -1,4 +1,4 @@
-import {
+import type {
   SparqlAlgebraNode,
   SparqlExpression,
   SparqlTerm,
@@ -9,7 +9,7 @@ import {
   SparqlDeleteWherePlan,
 } from './SparqlAlgebra.js';
 import {
-  SparqlOptions,
+  type SparqlOptions,
   formatUri,
   formatLiteral,
   escapeSparqlString,

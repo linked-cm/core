@@ -1,9 +1,9 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
-import {DeleteQueryFactory, DeleteQuery, DeleteResponse} from './DeleteQuery.js';
-import {NodeId} from './MutationQuery.js';
+import {DeleteQueryFactory, type DeleteQuery, type DeleteResponse} from './DeleteQuery.js';
+import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {WhereClause, processWhereClause} from './SelectQuery.js';
+import {type WhereClause, processWhereClause} from './SelectQuery.js';
 import {
   buildCanonicalDeleteAllMutationIR,
   buildCanonicalDeleteWhereMutationIR,

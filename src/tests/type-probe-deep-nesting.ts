@@ -9,7 +9,7 @@
  * If it compiles, all type inferences are correct.
  */
 import {Person, Dog, Pet, Employee} from '../test-helpers/query-fixtures';
-import {
+import type {
   QueryResponseToResultType,
   QueryBuildFn,
 } from '../queries/SelectQuery';

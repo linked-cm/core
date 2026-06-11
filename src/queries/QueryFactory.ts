@@ -1,7 +1,7 @@
 import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
 import {Shape} from '../shapes/Shape.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
-import {NodeReferenceValue} from '../utils/NodeReference.js';
+import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {ExpressionNode} from '../expressions/ExpressionNode.js';
 
 export type Prettify<T> = T extends infer R

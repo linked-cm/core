@@ -1,5 +1,5 @@
 import {describe, test} from '@jest/globals';
-import {
+import type {
   IRCreateMutation,
   IRDeleteMutation,
   IRExpression,

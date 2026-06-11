@@ -11,7 +11,7 @@ import {
   NodeShape,
   PropertyShape,
 } from '../shapes/SHACL.js';
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {Prefix} from './Prefix.js';
 import {lincd as lincdOntology} from '../ontologies/lincd.js';
 import {rdf} from '../ontologies/rdf.js';
@@ -19,7 +19,7 @@ import {addNodeShapeToShapeClass,getShapeClass} from './ShapeClass.js';
 import {shacl} from '../ontologies/shacl.js';
 import {rdfs} from '../ontologies/rdfs.js';
 import {xsd} from '../ontologies/xsd.js';
-import {NodeReferenceValue} from './NodeReference.js';
+import type {NodeReferenceValue} from './NodeReference.js';
 
 //global tree
 declare var lincd: any;

@@ -1,11 +1,11 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import type {PropertyShape} from '../shapes/SHACL.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
 import {shacl} from '../ontologies/shacl.js';
 import {CoreSet} from '../collections/CoreSet.js';
 import {CoreMap} from '../collections/CoreMap.js';
 import {getPropertyShapeByLabel,getShapeClass} from '../utils/ShapeClass.js';
-import {NodeReferenceValue,Prettify,ShapeReferenceValue} from './QueryFactory.js';
+import {NodeReferenceValue,type Prettify,type ShapeReferenceValue} from './QueryFactory.js';
 import {xsd} from '../ontologies/xsd.js';
 import type {IRSelectQuery} from './IntermediateRepresentation.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';

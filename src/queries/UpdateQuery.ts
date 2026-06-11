@@ -1,13 +1,13 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {
-  AddId,
-  NodeDescriptionValue,
+  type AddId,
+  type NodeDescriptionValue,
   NodeReferenceValue,
-  UpdatePartial,
+  type UpdatePartial,
   toNodeReference,
 } from './QueryFactory.js';
 import {MutationQueryFactory} from './MutationQuery.js';
-import {IRUpdateMutation, IRUpdateWhereMutation} from './IntermediateRepresentation.js';
+import type {IRUpdateMutation, IRUpdateWhereMutation} from './IntermediateRepresentation.js';
 import {buildCanonicalUpdateMutationIR} from './IRMutation.js';
 
 /**

@@ -1,4 +1,4 @@
-import {
+import type {
   IRSelectQuery,
   IRCreateMutation,
   IRUpdateMutation,
@@ -13,9 +13,9 @@ import {
   IRSetModificationValue,
   IRTraversePattern,
 } from '../queries/IntermediateRepresentation.js';
-import {NodeReferenceValue} from '../utils/NodeReference.js';
+import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
-import {
+import type {
   SparqlSelectPlan,
   SparqlInsertDataPlan,
   SparqlDeleteInsertPlan,
@@ -31,7 +31,7 @@ import {
   SparqlLeftJoin,
   SparqlFilter,
 } from './SparqlAlgebra.js';
-import {SparqlOptions, generateEntityUri} from './sparqlUtils.js';
+import {type SparqlOptions, generateEntityUri} from './sparqlUtils.js';
 import {
   selectPlanToSparql,
   insertDataPlanToSparql,

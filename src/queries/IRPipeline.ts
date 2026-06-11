@@ -1,7 +1,7 @@
-import {desugarSelectQuery, RawSelectInput} from './IRDesugar.js';
+import {desugarSelectQuery, type RawSelectInput} from './IRDesugar.js';
 import {canonicalizeDesugaredSelectQuery} from './IRCanonicalize.js';
 import {lowerSelectQuery} from './IRLower.js';
-import {IRSelectQuery} from './IntermediateRepresentation.js';
+import type {IRSelectQuery} from './IntermediateRepresentation.js';
 
 const isIRSelectQuery = (query: unknown): query is IRSelectQuery =>
   !!query &&

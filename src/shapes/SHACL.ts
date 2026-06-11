@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import {NodeReferenceValue, toNodeReference} from '../utils/NodeReference.js';
-import {Shape, ShapeConstructor} from './Shape.js';
+import {type NodeReferenceValue, toNodeReference} from '../utils/NodeReference.js';
+import {Shape, type ShapeConstructor} from './Shape.js';
 import {shacl} from '../ontologies/shacl.js';
 import {URI} from '../utils/URI.js';
 import {getShapeClass} from '../utils/ShapeClass.js';

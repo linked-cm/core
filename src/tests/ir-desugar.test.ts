@@ -4,10 +4,10 @@ import {captureRawQuery} from '../test-helpers/query-capture-store';
 import {setQueryContext} from '../queries/QueryContext';
 import {
   desugarSelectQuery,
-  DesugaredSelectionPath,
-  DesugaredSubSelect,
-  DesugaredCustomObjectSelect,
-  DesugaredMultiSelection,
+  type DesugaredSelectionPath,
+  type DesugaredSubSelect,
+  type DesugaredCustomObjectSelect,
+  type DesugaredMultiSelection,
 } from '../queries/IRDesugar';
 import {Person} from '../test-helpers/query-fixtures';
 

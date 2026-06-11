@@ -1,4 +1,4 @@
-import {
+import type {
   PropertyQueryStep,
   QueryPropertyPath,
   QueryStep,
@@ -6,7 +6,7 @@ import {
   SortByPath,
   WherePath,
 } from './SelectQuery.js';
-import {NodeReferenceValue, ShapeReferenceValue} from './QueryFactory.js';
+import {NodeReferenceValue, type ShapeReferenceValue} from './QueryFactory.js';
 import type {FieldSetEntry} from './FieldSet.js';
 import {ExpressionNode, ExistsCondition} from '../expressions/ExpressionNode.js';
 import type {PropertyShape} from '../shapes/SHACL.js';

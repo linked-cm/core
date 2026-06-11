@@ -5,7 +5,7 @@ import {literalProperty, objectProperty, LINCD_DATA_ROOT} from '../shapes/SHACL'
 import {URI} from '../utils/URI';
 import {lincd} from '../ontologies/lincd';
 import {shacl} from '../ontologies/shacl';
-import {NodeReferenceValue} from '../utils/NodeReference';
+import type {NodeReferenceValue} from '../utils/NodeReference';
 
 const packageName = 'meta-test';
 const {linkedShape, packageMetadata} = linkedPackage(packageName);

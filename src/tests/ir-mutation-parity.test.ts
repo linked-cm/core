@@ -1,7 +1,7 @@
 import {describe, expect, test} from '@jest/globals';
 import {Person, queryFactories, tmpEntityBase} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
-import {
+import type {
   IRCreateMutation,
   IRDeleteMutation,
   IRFieldUpdate,

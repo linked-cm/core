@@ -1,14 +1,14 @@
 import {
-  LiteralUpdateValue,
-  NodeDescriptionValue,
+  type LiteralUpdateValue,
+  type NodeDescriptionValue,
   NodeReferenceValue,
-  PropUpdateValue,
+  type PropUpdateValue,
   QueryFactory,
-  SetModification,
-  SetModificationValue,
-  SinglePropertyUpdateValue,
-  UpdateNodePropertyValue,
-  UpdatePartial,
+  type SetModification,
+  type SetModificationValue,
+  type SinglePropertyUpdateValue,
+  type UpdateNodePropertyValue,
+  type UpdatePartial,
 } from './QueryFactory.js';
 import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
 import {Shape} from '../shapes/Shape.js';

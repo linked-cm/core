@@ -1,6 +1,6 @@
 import {CoreMap} from '../collections/CoreMap.js';
 import {CoreSet} from '../collections/CoreSet.js';
-import {IDataset} from '../interfaces/IDataset.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
