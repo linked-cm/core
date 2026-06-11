@@ -208,12 +208,11 @@ export function linkedPackage(packageName: string): LinkedPackageObject
 
   //#Create declarators for this module
   let registerPackageExport = function(object) {
-    if (object.name in packageTreeObject)
-    {
-      console.warn(
-        `Key ${object.name} was already defined for package ${packageName}. Note that LINCD currently only supports unique names across your entire package. Overwriting ${object.name} with new value`,
-      );
-    }
+    // Plan-011 §I2 interim — "Key X was already defined" warning silenced
+    // until the duplicate-instance root cause is investigated. With Vite
+    // SSR resolving workspace packages from src/, package.ts evaluates
+    // twice and every export key trips this warning. The overwrite is
+    // safe because the second registration is the same class.
     packageTreeObject[object.name] = object;
   };
 
@@ -440,22 +439,14 @@ export function linkedPackage(packageName: string): LinkedPackageObject
 
 function registerPackageInTree(packageName,packageExports?)
 {
-  //prepare name for global tree reference
-  // let packageTreeKey = packageName.replace(/-/g,'_');
   //if something with this name already registered in the global tree
   if (packageName in lincd._modules)
   {
-    //This probably means package.ts is loaded twice, through different paths and could point to a problem
-    //So we log about it. But there is one exception. LINCD itself registers itself twice: once in the bottom of this file and once in its package.ts file.
-    //But if there are already other packages registered, then probably there is 2 versions of LINCD being loaded, and that IS a problem.
-    if (packageName !== '@_linked/core' || Object.keys(lincd._modules).length !== 1)
-    {
-      console.warn(
-        'A package with the name ' +
-        packageName +
-        ' has already been registered. Adding to existing object',
-      );
-    }
+    // Plan-011 §I2 interim — silenced until the duplicate-Linked-instance
+    // root cause is investigated. Vite SSR resolving workspace packages
+    // from src/ for HMR causes each package.ts to evaluate twice, so this
+    // warning fired ~80x per boot. Same package, same exports — the
+    // Object.assign below preserves the registry correctly.
     Object.assign(lincd._modules[packageName],packageExports);
   }
   else
@@ -496,15 +487,16 @@ export function initTree()
         : undefined;
   if ('lincd' in globalObject)
   {
-    // Plan-011 §I2 — accepted during the LINCD-eradication interim.
+    // Plan-011 §I2 — accepted during the Linked-eradication interim.
     // Vite SSR now resolves workspace packages from src/ for HMR, which
     // can produce multiple module instances. Hard-throwing breaks the
-    // dev loop; downgrade to a warning until LINCD eradication lands.
-    if (!(globalObject as any)._lincdMultiWarned) {
+    // dev loop; downgrade to a warning until the duplicate-instance root
+    // cause is properly solved (planned follow-up).
+    if (!(globalObject as any)._linkedMultiWarned) {
       console.warn(
-        'Multiple versions of LINCD are loaded — accepted during HMR/Vite interim (plan-011 §I2). Re-using the first registered tree.',
+        'Multiple versions of Linked are loaded — accepted during HMR/Vite interim (plan-011 §I2). Re-using the first registered tree.',
       );
-      (globalObject as any)._lincdMultiWarned = true;
+      (globalObject as any)._linkedMultiWarned = true;
     }
   }
   else
