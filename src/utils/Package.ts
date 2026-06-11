@@ -496,7 +496,16 @@ export function initTree()
         : undefined;
   if ('lincd' in globalObject)
   {
-    throw new Error('Multiple versions of LINCD are loaded');
+    // Plan-011 §I2 — accepted during the LINCD-eradication interim.
+    // Vite SSR now resolves workspace packages from src/ for HMR, which
+    // can produce multiple module instances. Hard-throwing breaks the
+    // dev loop; downgrade to a warning until LINCD eradication lands.
+    if (!(globalObject as any)._lincdMultiWarned) {
+      console.warn(
+        'Multiple versions of LINCD are loaded — accepted during HMR/Vite interim (plan-011 §I2). Re-using the first registered tree.',
+      );
+      (globalObject as any)._lincdMultiWarned = true;
+    }
   }
   else
   {
