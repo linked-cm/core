@@ -485,21 +485,17 @@ export function initTree()
       : typeof global !== 'undefined'
         ? global
         : undefined;
-  if ('lincd' in globalObject)
-  {
-    // Plan-011 §I2 — accepted during the Linked-eradication interim.
-    // Vite SSR now resolves workspace packages from src/ for HMR, which
-    // can produce multiple module instances. Hard-throwing breaks the
-    // dev loop; downgrade to a warning until the duplicate-instance root
-    // cause is properly solved (planned follow-up).
-    if (!(globalObject as any)._linkedMultiWarned) {
-      console.warn(
-        'Multiple versions of Linked are loaded — accepted during HMR/Vite interim (plan-011 §I2). Re-using the first registered tree.',
-      );
-      (globalObject as any)._linkedMultiWarned = true;
-    }
-  }
-  else
+  // Idempotent: if the global tree is already set up (by another copy of
+  // this Package.ts in the same Node process — structural under Vite SSR,
+  // which evaluates the file once for its own SSR transform AND once via
+  // Node's resolver when a non-Vite import path reaches @_linked/core),
+  // attach to it instead of throwing. Both instances write the same
+  // _modules / _packages registry shape.
+  //
+  // Legacy `lincd` package's Package.ts (separate file) still throws on
+  // dup — that throw signals a REAL problem (legacy `lincd` should never
+  // load in a clean post-eradication state).
+  if (!('lincd' in globalObject))
   {
     globalObject['lincd'] = {_modules: {}, _packages: {}};
   }
