@@ -8,6 +8,19 @@ import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
 import {setQueryDispatch} from '../queries/queryDispatch.js';
 import {getShapeClass} from './ShapeClass.js';
 
+// plan-011 §P2 — single-instance probe support.
+// Each physical evaluation of THIS module (e.g. the Vite/src copy vs a
+// Node/lib copy in the same process) increments a counter on the one shared
+// global object and captures a distinct ordinal. Two copies therefore expose
+// different INSTANCE_IDs, which lets a boot probe assert that storage config
+// and CN's query providers share a single LinkedStorage. Deliberately avoids
+// Date/Math.random (unavailable / non-deterministic per repo constraints).
+const linkedStorageGlobal: any =
+  typeof globalThis !== 'undefined' ? globalThis : ({} as any);
+const LINKED_STORAGE_INSTANCE_ID: number =
+  (linkedStorageGlobal.__linkedStorageInstanceCount =
+    (linkedStorageGlobal.__linkedStorageInstanceCount ?? 0) + 1);
+
 /**
  * Primary routing layer (arch-04 §The IDataset abstraction).
  *
@@ -22,6 +35,18 @@ export abstract class LinkedStorage {
   private static defaultDataset?: IDataset;
   private static shapeToDataset: CoreMap<Function, IDataset> =
     new CoreMap();
+
+  /**
+   * plan-011 §P2 — ordinal of THIS physical copy of the module (1 for the
+   * first copy evaluated in the process, 2 for the next, …). Equal IDs across
+   * two read sites ⇒ same instance. Used by the boot single-instance probe.
+   */
+  static readonly INSTANCE_ID: number = LINKED_STORAGE_INSTANCE_ID;
+
+  /** plan-011 §P2 — how many physical copies of this module have evaluated. */
+  static getLoadedInstanceCount(): number {
+    return linkedStorageGlobal.__linkedStorageInstanceCount ?? 0;
+  }
 
   static isInitialised() {
     return !!this.defaultDataset;
