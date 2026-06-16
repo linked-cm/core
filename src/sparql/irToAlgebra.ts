@@ -91,7 +91,17 @@ function resolveShapeScanIri(shapeId: string): string {
   return shouldResolveShapeOrPropertyId(targetClassId) ? targetClassId! : shapeId;
 }
 
-function resolvePropertyPredicateIri(propertyId: string): string {
+/**
+ * Resolve a SHACL property-shape id to the predicate term used in a triple.
+ *
+ * - Simple single-IRI path → `{kind:'iri'}` (byte-for-byte unchanged behaviour).
+ * - Structured path (sequence / inverse / alternative / …) → `{kind:'path'}` built from the property
+ *   shape's `sh:path`, reusing the same `pathExprToSparql` / `collectPathUris` machinery as the
+ *   inline-`pathExpr` branches. Without this, structured named-property paths collapsed to a shadow IRI
+ *   that matched nothing.
+ * - No matching shape / unresolvable → `{kind:'iri'}` of the property id itself (unchanged shadow fallback).
+ */
+function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
   const shapeClasses = getAllShapeClasses();
   for (const shapeClass of shapeClasses.values()) {
     const propertyShape = shapeClass.shape
@@ -100,12 +110,19 @@ function resolvePropertyPredicateIri(propertyId: string): string {
     if (!propertyShape) continue;
 
     const simplePathId = getSimplePathId(propertyShape.path);
-    if (shouldResolveShapeOrPropertyId(simplePathId)) {
-      return simplePathId!;
+    if (simplePathId !== null) {
+      // Simple single-IRI path: resolve to the IRI, or fall back to the property id
+      // (e.g. unresolvable `linked://tmp/` ids) — unchanged from before.
+      return iriTerm(shouldResolveShapeOrPropertyId(simplePathId) ? simplePathId : propertyId);
     }
-    break;
+    // Structured sh:path — emit a property-path predicate instead of a shadow IRI.
+    return {
+      kind: 'path',
+      value: pathExprToSparql(propertyShape.path),
+      uris: collectPathUris(propertyShape.path),
+    };
   }
-  return propertyId;
+  return iriTerm(propertyId);
 }
 
 /** Produce variable name suffix from the last segment of a property URI. */
@@ -223,7 +240,7 @@ function buildTraverseTriple(pattern: IRTraversePattern): SparqlTriple {
         value: pathExprToSparql(pattern.pathExpr),
         uris: collectPathUris(pattern.pathExpr),
       }
-    : iriTerm(resolvePropertyPredicateIri(pattern.property));
+    : resolvePropertyPredicateTerm(pattern.property);
   return tripleOf(
     varTerm(pattern.from),
     predicate,
@@ -921,7 +938,7 @@ function processExpressionForProperties(
         const varName = registry.getOrCreate(expr.sourceAlias, expr.property);
         const predicate = expr.pathExpr
           ? {kind: 'path' as const, value: pathExprToSparql(expr.pathExpr), uris: collectPathUris(expr.pathExpr)}
-          : iriTerm(resolvePropertyPredicateIri(expr.property));
+          : resolvePropertyPredicateTerm(expr.property);
         const triple = tripleOf(
           varTerm(expr.sourceAlias),
           predicate,
@@ -1006,7 +1023,7 @@ function processExpressionForProperties(
         const varName = registry.getOrCreate(ctxKey, expr.property);
         const triple = tripleOf(
           iriTerm(expr.contextIri),
-          iriTerm(resolvePropertyPredicateIri(expr.property)),
+          resolvePropertyPredicateTerm(expr.property),
           varTerm(varName),
         );
         const triples = requiredPropertyKeys.has(bindingKey(ctxKey, expr.property))
@@ -1218,7 +1235,7 @@ function convertExistsPattern(
     case 'traverse': {
       const existsPredicate = pattern.pathExpr
         ? {kind: 'path' as const, value: pathExprToSparql(pattern.pathExpr), uris: collectPathUris(pattern.pathExpr)}
-        : iriTerm(resolvePropertyPredicateIri(pattern.property));
+        : resolvePropertyPredicateTerm(pattern.property);
       const triple = tripleOf(
         varTerm(pattern.from),
         existsPredicate,
@@ -1373,7 +1390,7 @@ function generateNodeDataTriples(
   // Field triples
   for (const field of data.fields) {
     // Resolve the SHACL PropertyShape id to its declared `path` URI.
-    const propertyTerm = iriTerm(resolvePropertyPredicateIri(field.property));
+    const propertyTerm = resolvePropertyPredicateTerm(field.property);
 
     if (field.value === null || field.value === undefined) {
       continue;
@@ -1453,7 +1470,7 @@ function processUpdateFields(
   const extends_: Array<{variable: string; expression: SparqlExpression}> = [];
 
   for (const field of data.fields) {
-    const propertyTerm = iriTerm(resolvePropertyPredicateIri(field.property));
+    const propertyTerm = resolvePropertyPredicateTerm(field.property);
     const suffix = propertySuffix(field.property);
 
     // Check for set modification ({add, remove})
@@ -1762,7 +1779,7 @@ function walkBlankNodeTree(
     // WHERE: parent --<property>--> ?bnVar
     const traverseTriple = tripleOf(
       varTerm(parentVar),
-      iriTerm(resolvePropertyPredicateIri(prop.id)),
+      resolvePropertyPredicateTerm(prop.id),
       varTerm(bnVar),
     );
     // FILTER(isBlank(?bnVar))
