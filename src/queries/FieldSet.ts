@@ -59,6 +59,19 @@ export type FieldSetEntry = {
   preloadSubSelect?: FieldSet;
   /** Computed expression from proxy tracing (e.g. `p.age.times(12)`) */
   expressionNode?: ExpressionNode;
+  /** Inner LIMIT for a nested select (e.g. `p.friends.select(...).limit(2)`).
+   *  Only supported when the outer query targets a single subject. */
+  innerLimit?: number;
+  /** Inner OFFSET for a nested select. */
+  innerOffset?: number;
+  /** Inner ORDER BY for a nested select — paths relative to the sub-select shape. */
+  innerOrderBy?: FieldSetInnerOrderBy[];
+};
+
+/** A single inner ORDER BY clause for a nested select. */
+export type FieldSetInnerOrderBy = {
+  propertyShapeId: string;
+  direction: 'ASC' | 'DESC';
 };
 
 /**
@@ -122,6 +135,15 @@ export class FieldSet<R = any, Source = any> {
    * For sub-select FieldSets: the shape class (ShapeType) of the sub-select's target.
    */
   readonly shapeType?: any;
+
+  /**
+   * For sub-select FieldSets: inner LIMIT/OFFSET/ORDER BY carried from
+   * `.limit()`/`.offset()`/`.orderBy()` chained on the nested select.
+   * These bound the related collection per parent (single-subject only).
+   */
+  readonly innerLimit?: number;
+  readonly innerOffset?: number;
+  readonly innerOrderBy?: FieldSetInnerOrderBy[];
 
   private constructor(shape: NodeShape, entries: FieldSetEntry[]) {
     this.shape = shape;
@@ -289,6 +311,91 @@ export class FieldSet<R = any, Source = any> {
   select(fields: FieldSetInput[]): FieldSet {
     const entries = FieldSet.resolveInputs(this.shape, fields);
     return new FieldSet(this.shape, entries);
+  }
+
+  /**
+   * Clone this FieldSet, preserving the sub-select carrier fields
+   * (traceResponse / parentSegments / shapeType / inner pagination) and
+   * applying the supplied overrides. Used by `.limit()`/`.offset()`/`.orderBy()`.
+   */
+  private cloneWith(
+    overrides: Partial<Pick<FieldSet, 'innerLimit' | 'innerOffset' | 'innerOrderBy'>>,
+  ): this {
+    const clone = new FieldSet(this.shape, this.entries as FieldSetEntry[]) as this;
+    // The sub-select carrier fields are declared `readonly` (normally set once at
+    // construction via `forSubSelect`). Copy this FieldSet's identity onto the
+    // clone through a mutable view, then layer the pagination overrides on top.
+    Object.assign(clone as Record<string, unknown>, {
+      traceResponse: this.traceResponse,
+      parentSegments: this.parentSegments,
+      shapeType: this.shapeType,
+      innerLimit: this.innerLimit,
+      innerOffset: this.innerOffset,
+      innerOrderBy: this.innerOrderBy,
+      ...overrides,
+    });
+    return clone;
+  }
+
+  /**
+   * Bound a nested select's related collection to at most `lim` items per parent.
+   * Only honoured when the outer query targets a single subject; otherwise the
+   * pipeline throws (per-group pagination across multiple parents is unsupported).
+   */
+  limit(lim: number): this {
+    return this.cloneWith({innerLimit: lim});
+  }
+
+  /** Skip the first `off` items of a nested select's related collection (single-subject only). */
+  offset(off: number): this {
+    return this.cloneWith({innerOffset: off});
+  }
+
+  /**
+   * Order a nested select's related collection, producing a deterministic window
+   * for inner LIMIT/OFFSET. Defaults to ascending.
+   *
+   * Accepts either a proxy callback — `.orderBy(f => f.name)` — consistent with
+   * the rest of the DSL, or a property-name string (`.orderBy('name')`).
+   */
+  orderBy(
+    paths: string | string[] | ((p: any) => unknown),
+    direction: 'ASC' | 'DESC' = 'ASC',
+  ): this {
+    const orderBy: FieldSetInnerOrderBy[] =
+      typeof paths === 'function'
+        ? this.orderByFromProxy(paths, direction)
+        : (Array.isArray(paths) ? paths : [paths]).map((label) => {
+            const ps = walkPropertyPath(this.shape, label).terminal;
+            if (!ps) {
+              throw new Error(`orderBy: cannot resolve property '${label}' on shape '${this.shape.id}'`);
+            }
+            return {propertyShapeId: ps.id, direction};
+          });
+    return this.cloneWith({innerOrderBy: orderBy});
+  }
+
+  /** Resolve a proxy `orderBy` callback (e.g. `f => f.name` or `f => [f.a, f.b]`)
+   *  to inner order-by clauses by tracing the sub-select shape's property proxy. */
+  private orderByFromProxy(
+    fn: (p: any) => unknown,
+    direction: 'ASC' | 'DESC',
+  ): FieldSetInnerOrderBy[] {
+    if (!this.shapeType) {
+      throw new Error(
+        'orderBy(callback) is only available on a nested select(); pass a property-name string otherwise',
+      );
+    }
+    const response = fn(createProxiedPathBuilder(this.shapeType));
+    const results = Array.isArray(response) ? response : [response];
+    return results.map((result) => {
+      const segments = FieldSet.collectPropertySegments(result as QueryBuilderObjectLike);
+      const terminal = segments[segments.length - 1];
+      if (!terminal) {
+        throw new Error('orderBy: callback did not resolve to a property of the sub-select shape');
+      }
+      return {propertyShapeId: terminal.id, direction};
+    });
   }
 
   /** Returns a new FieldSet with additional entries. */
@@ -549,10 +656,15 @@ export class FieldSet<R = any, Source = any> {
     // FieldSet sub-select — use its entries directly (created by forSubSelect)
     if (obj instanceof FieldSet && obj.parentSegments !== undefined) {
       const subSelect = obj.entries.length > 0 ? obj : undefined;
-      return {
+      const entry: FieldSetEntry = {
         path: new PropertyPath(rootShape, obj.parentSegments),
         subSelect: subSelect as FieldSet | undefined,
       };
+      // Carry inner LIMIT/OFFSET/ORDER BY from `.limit()`/`.offset()`/`.orderBy()`.
+      if (typeof obj.innerLimit === 'number') entry.innerLimit = obj.innerLimit;
+      if (typeof obj.innerOffset === 'number') entry.innerOffset = obj.innerOffset;
+      if (obj.innerOrderBy) entry.innerOrderBy = obj.innerOrderBy;
+      return entry;
     }
 
     // BoundComponent → preload composition (e.g. p.bestFriend.preloadFor(component))

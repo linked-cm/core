@@ -222,6 +222,32 @@ export function serializeAlgebraNode(
         .join(' ');
       return `VALUES ?${node.variable} { ${values} }`;
     }
+
+    case 'subselect': {
+      const innerBody = serializeAlgebraNode(node.inner, collector);
+      const projection = node.projection.map((v) => `?${v}`).join(' ');
+      const lines: string[] = [`SELECT ${projection} WHERE {`];
+      lines.push(indent(innerBody));
+      lines.push('}');
+      const trailing: string[] = [];
+      if (node.orderBy && node.orderBy.length > 0) {
+        const orderParts = node.orderBy.map((cond) => {
+          const expr = serializeExpression(cond.expression, collector);
+          return `${cond.direction}(${expr})`;
+        });
+        trailing.push(`ORDER BY ${orderParts.join(' ')}`);
+      }
+      if (node.limit !== undefined) {
+        trailing.push(`LIMIT ${node.limit}`);
+      }
+      if (node.offset !== undefined) {
+        trailing.push(`OFFSET ${node.offset}`);
+      }
+      const subSelectStr = trailing.length > 0
+        ? `${lines.join('\n')} ${trailing.join(' ')}`
+        : lines.join('\n');
+      return `{\n${indent(subSelectStr)}\n}`;
+    }
   }
 }
 
