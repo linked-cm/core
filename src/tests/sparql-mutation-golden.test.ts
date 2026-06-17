@@ -35,7 +35,7 @@ import '../ontologies/xsd';
 // URI shorthands
 // ---------------------------------------------------------------------------
 
-const P = 'https://linked.cm/shape/core/Person';
+const P = 'https://linked.cm/shape/linked-core/Person';
 const ENT = tmpEntityBase; // linked://tmp/entities/
 
 // ---------------------------------------------------------------------------

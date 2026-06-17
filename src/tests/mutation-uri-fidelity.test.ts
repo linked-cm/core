@@ -46,7 +46,7 @@ const HOBBY_PATH_URI = `${ONT_BASE}props/hobby`;
 const HAS_FRIEND_PATH_URI = `${ONT_BASE}props/hasFriend`;
 
 // Shape-shadow URIs that MUST NOT leak into emitted SPARQL once resolution is applied.
-const SHAPE_SHADOW_NODE = 'https://linked.cm/shape/core/MfPerson';
+const SHAPE_SHADOW_NODE = 'https://linked.cm/shape/linked-core/MfPerson';
 
 @linkedShape
 class MfPerson extends Shape {

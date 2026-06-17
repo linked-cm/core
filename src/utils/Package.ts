@@ -204,12 +204,13 @@ export function autoLoadOntologyData(value: boolean)
 
 export function linkedPackage(
   packageName: string,
-  options?: {baseUri?: string; slug?: string},
+  options?: {baseUri?: string},
 ): LinkedPackageObject
 {
-  // Declare where this package publishes its IRIs before any shape/metadata IRI
-  // is built. Maintainers pass `slug`/`baseUri`; CN injects a workspace-scoped
-  // `baseUri` for private packages; first-party packages default to linked.cm.
+  // Declare the package's publish root before any shape/metadata IRI is built.
+  // The slug is derived from `packageName`; only `baseUri` is configurable — CN
+  // injects a workspace-scoped root for private packages, first-party packages
+  // default to linked.cm.
   setPackagePublishConfig(packageName, options);
   let packageMetadata = registerPackageMetadata(packageName);
   let packageTreeObject = registerPackageInTree(packageName);
@@ -513,7 +514,7 @@ export function initTree()
 initTree();
 
 //now that this file is set up, we can link linked shapes in the core module itself
-export const corePackage = linkedPackage('@_linked/core', {slug: 'core'});
+export const corePackage = linkedPackage('@_linked/core');
 corePackage.linkedShape({
   description:
     'Represents a SHACL NodeShape; defines constraints for a class of RDF nodes. Links to multiple PropertyShapes. (schema, constraint, class validation)',

@@ -20,39 +20,45 @@ import {normalizePropertyPath, type PropertyPathDecoratorInput} from '../paths/n
  */
 export const LINKED_DATA_ROOT: string = 'https://linked.cm/';
 
-/** Per-package publish identity: where a package's shapes/IRIs are rooted. */
-type PackagePublishConfig = {baseUri: string; slug: string};
-const packagePublishConfig = new Map<string, PackagePublishConfig>();
-
 /**
- * Record where a package publishes its IRIs. Called by `linkedPackage()`.
- * - `baseUri` — identity root (default `LINKED_DATA_ROOT` = linked.cm).
- * - `slug` — clean kebab package slug used in IRIs (default: sanitized name).
+ * Derive an arch-compliant kebab slug from a package name (arch-02 §Slug rules:
+ * `^[a-z0-9]+(?:-[a-z0-9]+)*$`). The package name is the single source of truth —
+ * there is no separate slug to declare. Scoped npm names are flattened:
+ *   `@_linked/core` → `linked-core`, `@scope/name` → `scope-name`, `mypkg` → `mypkg`.
+ * (Theoretical cross-scope collisions are accepted within the @_linked ecosystem.)
  */
-export function setPackagePublishConfig(
-  packageName: string,
-  config?: {baseUri?: string; slug?: string},
-): void {
-  packagePublishConfig.set(packageName, {
-    baseUri: config?.baseUri ?? LINKED_DATA_ROOT,
-    slug: config?.slug ?? URI.sanitize(packageName),
-  });
+export function packageNameToSlug(packageName: string): string {
+  return packageName
+    .replace(/^@/, '') // drop scope marker
+    .replace(/[^a-zA-Z0-9]+/g, '-') // any run of non-alphanumerics → single hyphen
+    .replace(/^-+|-+$/g, '') // trim stray hyphens (e.g. the scope's leading underscore)
+    .toLowerCase();
 }
 
-/** Resolve a package's {baseUri, slug}, falling back to defaults if undeclared. */
-function resolvePublishConfig(packageName: string): PackagePublishConfig {
-  return (
-    packagePublishConfig.get(packageName) ?? {
-      baseUri: LINKED_DATA_ROOT,
-      slug: URI.sanitize(packageName),
-    }
-  );
+/**
+ * Where each package publishes its IRIs (the identity root). The slug is always
+ * derived from the package name; only the root is configurable — `linkedPackage`
+ * defaults it to `LINKED_DATA_ROOT` (linked.cm), and CN injects a workspace-scoped
+ * root (`{workspaceSlug}.id.create.now`) for private packages.
+ */
+const packageBaseUri = new Map<string, string>();
+
+/** Record a package's publish root. Called by `linkedPackage()`. */
+export function setPackagePublishConfig(
+  packageName: string,
+  config?: {baseUri?: string},
+): void {
+  packageBaseUri.set(packageName, config?.baseUri ?? LINKED_DATA_ROOT);
+}
+
+/** Resolve a package's publish root, defaulting to linked.cm if undeclared. */
+function resolveBaseUri(packageName: string): string {
+  return packageBaseUri.get(packageName) ?? LINKED_DATA_ROOT;
 }
 
 /** Public/first-party package IRI — arch-02: `{baseUri}pkg/{slug}`. */
 export function getPackageUri(packageName: string): string {
-  const {baseUri, slug} = resolvePublishConfig(packageName);
-  return `${baseUri}pkg/${slug}`;
+  return `${resolveBaseUri(packageName)}pkg/${packageNameToSlug(packageName)}`;
 }
 
 type NodeKindConfig = NodeReferenceValue | NodeReferenceValue[];
@@ -894,9 +900,8 @@ export function disallowProperty(
 
 export function getNodeShapeUri(packageName: string, shapeName: string): string {
   // arch-02: `{baseUri}shape/{packageSlug}/{ShapeName}` — ShapeName kept PascalCase
-  // (it is a class name, already URI-safe), packageSlug is the clean declared slug.
-  const {baseUri, slug} = resolvePublishConfig(packageName);
-  return `${baseUri}shape/${slug}/${shapeName}`;
+  // (it is a class name, already URI-safe), packageSlug derived from the name.
+  return `${resolveBaseUri(packageName)}shape/${packageNameToSlug(packageName)}/${shapeName}`;
 }
 
 const nodeShapeCallbacks = new Map<string, ((shape: NodeShape) => void)[]>();
