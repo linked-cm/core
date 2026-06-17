@@ -50,10 +50,10 @@ setQueryContext('user', {id: `${tmpEntityBase}p3`}, Person);
 // URI constants matching the SHACL-generated shape URIs
 // ---------------------------------------------------------------------------
 
-const P = 'https://linked.cm/shape/linked-core/Person';
-const D = 'https://linked.cm/shape/linked-core/Dog';
-const PET = 'https://linked.cm/shape/linked-core/Pet';
-const E = 'https://linked.cm/shape/linked-core/Employee';
+const P = 'https://linked.cm/shape/core/Person';
+const D = 'https://linked.cm/shape/core/Dog';
+const PET = 'https://linked.cm/shape/core/Pet';
+const E = 'https://linked.cm/shape/core/Employee';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const ENT = tmpEntityBase; // linked://tmp/entities/

@@ -21,17 +21,20 @@ import {normalizePropertyPath, type PropertyPathDecoratorInput} from '../paths/n
 export const LINKED_DATA_ROOT: string = 'https://linked.cm/';
 
 /**
- * Derive an arch-compliant kebab slug from a package name (arch-02 §Slug rules:
- * `^[a-z0-9]+(?:-[a-z0-9]+)*$`). The package name is the single source of truth —
- * there is no separate slug to declare. Scoped npm names are flattened:
- *   `@_linked/core` → `linked-core`, `@scope/name` → `scope-name`, `mypkg` → `mypkg`.
- * (Theoretical cross-scope collisions are accepted within the @_linked ecosystem.)
+ * Derive the public package slug — the npm package **basename** with the
+ * `@scope/` dropped, kebab-cased (arch-02 §Slug rules: `^[a-z0-9]+(?:-[a-z0-9]+)*$`).
+ * The package name is the single source of truth; there is no separate slug.
+ *   `@_linked/core` → `core`, `@linked.cm/blog` → `blog`, `mypkg` → `mypkg`.
+ *
+ * Both first-party (`@_linked`) and community (`@linked.cm`) packages publish into
+ * the one `linked.cm/{shape,pkg}` space, so the basename must be globally unique —
+ * enforced by the registry, which reserves the (handful of) first-party names.
  */
 export function packageNameToSlug(packageName: string): string {
   return packageName
-    .replace(/^@/, '') // drop scope marker
+    .replace(/^@[^/]+\//, '') // drop the npm scope (@scope/), keep the basename
     .replace(/[^a-zA-Z0-9]+/g, '-') // any run of non-alphanumerics → single hyphen
-    .replace(/^-+|-+$/g, '') // trim stray hyphens (e.g. the scope's leading underscore)
+    .replace(/^-+|-+$/g, '') // trim stray hyphens
     .toLowerCase();
 }
 

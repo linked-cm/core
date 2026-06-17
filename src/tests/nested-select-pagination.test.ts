@@ -38,7 +38,7 @@ setQueryContext('user', {id: `${tmpEntityBase}pp1`}, Person);
 // URI shorthands
 // ---------------------------------------------------------------------------
 
-const P = 'https://linked.cm/shape/linked-core/Person';
+const P = 'https://linked.cm/shape/core/Person';
 const ENT = tmpEntityBase;
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 

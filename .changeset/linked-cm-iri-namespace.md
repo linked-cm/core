@@ -10,7 +10,7 @@ Shape, package, and framework-vocabulary IRIs now use the canonical `linked.cm` 
 - Framework vocabulary: `https://linked.cm/ont/linked-core/` (prefix `linked_core`; previously `https://purl.org/on/lincd/`, prefix `lincd`). The `Module` term is renamed to `Package`.
 
 **New / changed public API:**
-- `linkedPackage(name, { baseUri? })` — packages declare where they publish. `baseUri` defaults to `https://linked.cm/` (first-party); CN injects a workspace-scoped root (`{workspaceSlug}.id.create.now`) for private packages. The IRI slug is derived from the package name (`@_linked/core` → `linked-core`); there is no separate slug param.
+- `linkedPackage(name, { baseUri? })` — packages declare where they publish. `baseUri` defaults to `https://linked.cm/` (first-party); CN injects a workspace-scoped root (`{workspaceSlug}.id.create.now`) for private packages. The IRI slug is the package **basename** with the npm scope dropped (`@_linked/core` → `core`, `@linked.cm/blog` → `blog`); there is no separate slug param. Slugs must be globally unique within the publish root — the registry enforces this and reserves the first-party (`@_linked`) names.
 - New exports `LINKED_DATA_ROOT`, `getPackageUri()`, `setPackagePublishConfig()`, `packageNameToSlug()` (replaces the removed `LINCD_DATA_ROOT`).
 - The framework ontology export is now `coreOntology` (was `lincd`).
 

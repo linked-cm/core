@@ -22,10 +22,10 @@ setQueryContext('user', {id: 'user-1'}, Person);
 // URI shorthands for readability
 // ---------------------------------------------------------------------------
 
-const P = 'https://linked.cm/shape/linked-core/Person';
-const E = 'https://linked.cm/shape/linked-core/Employee';
-const D = 'https://linked.cm/shape/linked-core/Dog';
-const S = 'https://linked.cm/shape/linked-core/Shape';
+const P = 'https://linked.cm/shape/core/Person';
+const E = 'https://linked.cm/shape/core/Employee';
+const D = 'https://linked.cm/shape/core/Dog';
+const S = 'https://linked.cm/shape/core/Shape';
 
 // ---------------------------------------------------------------------------
 // Helper

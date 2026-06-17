@@ -547,7 +547,7 @@ describe("select canonical IR golden fixtures", () => {
             "expression": {
               "kind": "property_expr",
               "maxCount": 1,
-              "property": "https://linked.cm/shape/linked-core/Person/name",
+              "property": "https://linked.cm/shape/core/Person/name",
               "sourceAlias": "a0",
             },
           },
@@ -555,13 +555,13 @@ describe("select canonical IR golden fixtures", () => {
         "resultMap": [
           {
             "alias": "a1",
-            "key": "https://linked.cm/shape/linked-core/Person/name",
+            "key": "https://linked.cm/shape/core/Person/name",
           },
         ],
         "root": {
           "alias": "a0",
           "kind": "shape_scan",
-          "shape": "https://linked.cm/shape/linked-core/Person",
+          "shape": "https://linked.cm/shape/core/Person",
         },
         "singleResult": false,
       }
@@ -579,13 +579,13 @@ describe("select canonical IR golden fixtures", () => {
           {
             "from": "a0",
             "kind": "traverse",
-            "property": "https://linked.cm/shape/linked-core/Person/friends",
+            "property": "https://linked.cm/shape/core/Person/friends",
             "to": "a1",
           },
           {
             "from": "a1",
             "kind": "traverse",
-            "property": "https://linked.cm/shape/linked-core/Person/friends",
+            "property": "https://linked.cm/shape/core/Person/friends",
             "to": "a2",
           },
         ],
@@ -595,7 +595,7 @@ describe("select canonical IR golden fixtures", () => {
             "expression": {
               "kind": "property_expr",
               "maxCount": 1,
-              "property": "https://linked.cm/shape/linked-core/Person/name",
+              "property": "https://linked.cm/shape/core/Person/name",
               "sourceAlias": "a2",
             },
           },
@@ -603,13 +603,13 @@ describe("select canonical IR golden fixtures", () => {
         "resultMap": [
           {
             "alias": "a1",
-            "key": "https://linked.cm/shape/linked-core/Person/name",
+            "key": "https://linked.cm/shape/core/Person/name",
           },
         ],
         "root": {
           "alias": "a0",
           "kind": "shape_scan",
-          "shape": "https://linked.cm/shape/linked-core/Person",
+          "shape": "https://linked.cm/shape/core/Person",
         },
         "singleResult": false,
       }
@@ -632,7 +632,7 @@ describe("select canonical IR golden fixtures", () => {
             "from": "a0",
             "kind": "traverse",
             "maxCount": 1,
-            "property": "https://linked.cm/shape/linked-core/Person/bestFriend",
+            "property": "https://linked.cm/shape/core/Person/bestFriend",
             "to": "a1",
           },
         ],
@@ -642,7 +642,7 @@ describe("select canonical IR golden fixtures", () => {
             "expression": {
               "kind": "property_expr",
               "maxCount": 1,
-              "property": "https://linked.cm/shape/linked-core/Person/name",
+              "property": "https://linked.cm/shape/core/Person/name",
               "sourceAlias": "a1",
             },
           },
@@ -650,13 +650,13 @@ describe("select canonical IR golden fixtures", () => {
         "resultMap": [
           {
             "alias": "a1",
-            "key": "https://linked.cm/shape/linked-core/Person/name",
+            "key": "https://linked.cm/shape/core/Person/name",
           },
         ],
         "root": {
           "alias": "a0",
           "kind": "shape_scan",
-          "shape": "https://linked.cm/shape/linked-core/Person",
+          "shape": "https://linked.cm/shape/core/Person",
         },
         "singleResult": false,
       }
@@ -675,7 +675,7 @@ describe("select canonical IR golden fixtures", () => {
         "root": {
           "alias": "a0",
           "kind": "shape_scan",
-          "shape": "https://linked.cm/shape/linked-core/Person",
+          "shape": "https://linked.cm/shape/core/Person",
         },
         "singleResult": false,
         "where": {
@@ -683,7 +683,7 @@ describe("select canonical IR golden fixtures", () => {
             "kind": "binary_expr",
             "left": {
               "kind": "property_expr",
-              "property": "https://linked.cm/shape/linked-core/Person/name",
+              "property": "https://linked.cm/shape/core/Person/name",
               "sourceAlias": "a1",
             },
             "operator": "=",
@@ -696,7 +696,7 @@ describe("select canonical IR golden fixtures", () => {
           "pattern": {
             "from": "a0",
             "kind": "traverse",
-            "property": "https://linked.cm/shape/linked-core/Person/friends",
+            "property": "https://linked.cm/shape/core/Person/friends",
             "to": "a1",
           },
         },

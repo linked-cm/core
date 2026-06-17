@@ -112,11 +112,11 @@ const goldenSelect = async (
 };
 
 // Shape URI prefix used in generated IDs
-const O = 'https://linked.cm/shape/linked-core/OrgShape';
-const R = 'https://linked.cm/shape/linked-core/RoleShape';
-const SP = 'https://linked.cm/shape/linked-core/SimplePersonShape';
-const CH = 'https://linked.cm/shape/linked-core/ChildShape';
-const CO = 'https://linked.cm/shape/linked-core/ContactShape';
+const O = 'https://linked.cm/shape/core/OrgShape';
+const R = 'https://linked.cm/shape/core/RoleShape';
+const SP = 'https://linked.cm/shape/core/SimplePersonShape';
+const CH = 'https://linked.cm/shape/core/ChildShape';
+const CO = 'https://linked.cm/shape/core/ContactShape';
 
 // ---------------------------------------------------------------------------
 // Integration tests
