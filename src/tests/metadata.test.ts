@@ -1,9 +1,8 @@
 import {describe, expect, test} from '@jest/globals';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
-import {literalProperty, objectProperty, LINCD_DATA_ROOT} from '../shapes/SHACL';
-import {URI} from '../utils/URI';
-import {lincd} from '../ontologies/lincd';
+import {literalProperty, objectProperty} from '../shapes/SHACL';
+import {coreOntology} from '../ontologies/linked-core';
 import {shacl} from '../ontologies/shacl';
 import type {NodeReferenceValue} from '../utils/NodeReference';
 
@@ -31,19 +30,18 @@ class MetaPerson extends Shape {
 }
 
 describe('Package & Shape Metadata Registration', () => {
-  test('registers package metadata with legacy id format', () => {
+  test('registers package metadata with the expected id', () => {
     expect(packageMetadata).toEqual({
-      id: `${LINCD_DATA_ROOT}module/${packageName}`,
+      id: `https://linked.cm/pkg/${packageName}`,
       packageName,
-      type: lincd.Module,
+      type: coreOntology.Package,
     });
     expect(globalThis['_linked']._packages[packageName]).toBe(packageMetadata);
   });
 
   test('registers node shape metadata with expected id', () => {
-    const expectedId = `${LINCD_DATA_ROOT}module/${URI.sanitize(
-      packageName,
-    )}/shape/${URI.sanitize(MetaPerson.name)}`;
+    // arch-02: {baseUri}shape/{packageSlug}/{ShapeName} — PascalCase shape name.
+    const expectedId = `https://linked.cm/shape/${packageName}/${MetaPerson.name}`;
 
     expect(MetaPerson.shape).toBeDefined();
     expect(MetaPerson.shape.id).toBe(expectedId);

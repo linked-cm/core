@@ -37,11 +37,11 @@ describe('mutation IR parity (Phase 4)', () => {
         "data": {
           "fields": [
             {
-              "property": "https://data.lincd.org/module/-_linked-core/shape/person/name",
+              "property": "https://linked.cm/shape/core/Person/name",
               "value": "Test Create",
             },
             {
-              "property": "https://data.lincd.org/module/-_linked-core/shape/person/friends",
+              "property": "https://linked.cm/shape/core/Person/friends",
               "value": [
                 {
                   "id": "linked://tmp/entities/p2",
@@ -49,19 +49,19 @@ describe('mutation IR parity (Phase 4)', () => {
                 {
                   "fields": [
                     {
-                      "property": "https://data.lincd.org/module/-_linked-core/shape/person/name",
+                      "property": "https://linked.cm/shape/core/Person/name",
                       "value": "New Friend",
                     },
                   ],
-                  "shape": "https://data.lincd.org/module/-_linked-core/shape/person",
+                  "shape": "https://linked.cm/shape/core/Person",
                 },
               ],
             },
           ],
-          "shape": "https://data.lincd.org/module/-_linked-core/shape/person",
+          "shape": "https://linked.cm/shape/core/Person",
         },
         "kind": "create",
-        "shape": "https://data.lincd.org/module/-_linked-core/shape/person",
+        "shape": "https://linked.cm/shape/core/Person",
       }
     `);
   });

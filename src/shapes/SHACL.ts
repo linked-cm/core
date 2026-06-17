@@ -11,7 +11,49 @@ import {getShapeClass} from '../utils/ShapeClass.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import {normalizePropertyPath, type PropertyPathDecoratorInput} from '../paths/normalizePropertyPath.js';
 
-export const LINCD_DATA_ROOT: string = 'https://data.lincd.org/';
+/**
+ * Default identity root for shape & package IRIs. Public/first-party packages
+ * publish under `linked.cm` (arch-02 §Domains). Packages may override per-package
+ * via `linkedPackage(name, { baseUri })` — CN injects a workspace-scoped root
+ * (`{workspaceSlug}.id.create.now`) for private packages; first-party packages
+ * keep this default.
+ */
+export const LINKED_DATA_ROOT: string = 'https://linked.cm/';
+
+/** Per-package publish identity: where a package's shapes/IRIs are rooted. */
+type PackagePublishConfig = {baseUri: string; slug: string};
+const packagePublishConfig = new Map<string, PackagePublishConfig>();
+
+/**
+ * Record where a package publishes its IRIs. Called by `linkedPackage()`.
+ * - `baseUri` — identity root (default `LINKED_DATA_ROOT` = linked.cm).
+ * - `slug` — clean kebab package slug used in IRIs (default: sanitized name).
+ */
+export function setPackagePublishConfig(
+  packageName: string,
+  config?: {baseUri?: string; slug?: string},
+): void {
+  packagePublishConfig.set(packageName, {
+    baseUri: config?.baseUri ?? LINKED_DATA_ROOT,
+    slug: config?.slug ?? URI.sanitize(packageName),
+  });
+}
+
+/** Resolve a package's {baseUri, slug}, falling back to defaults if undeclared. */
+function resolvePublishConfig(packageName: string): PackagePublishConfig {
+  return (
+    packagePublishConfig.get(packageName) ?? {
+      baseUri: LINKED_DATA_ROOT,
+      slug: URI.sanitize(packageName),
+    }
+  );
+}
+
+/** Public/first-party package IRI — arch-02: `{baseUri}pkg/{slug}`. */
+export function getPackageUri(packageName: string): string {
+  const {baseUri, slug} = resolvePublishConfig(packageName);
+  return `${baseUri}pkg/${slug}`;
+}
 
 type NodeKindConfig = NodeReferenceValue | NodeReferenceValue[];
 
@@ -851,9 +893,10 @@ export function disallowProperty(
 }
 
 export function getNodeShapeUri(packageName: string, shapeName: string): string {
-  return `${LINCD_DATA_ROOT}module/${URI.sanitize(packageName)}/shape/${URI.sanitize(
-    shapeName,
-  )}`;
+  // arch-02: `{baseUri}shape/{packageSlug}/{ShapeName}` — ShapeName kept PascalCase
+  // (it is a class name, already URI-safe), packageSlug is the clean declared slug.
+  const {baseUri, slug} = resolvePublishConfig(packageName);
+  return `${baseUri}shape/${slug}/${shapeName}`;
 }
 
 const nodeShapeCallbacks = new Map<string, ((shape: NodeShape) => void)[]>();

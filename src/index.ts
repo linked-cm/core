@@ -33,7 +33,7 @@ import * as rdf from './ontologies/rdf.js';
 import * as rdfs from './ontologies/rdfs.js';
 import * as xsd from './ontologies/xsd.js';
 import * as shacl from './ontologies/shacl.js';
-import * as lincd from './ontologies/lincd.js';
+import * as coreOntology from './ontologies/linked-core.js';
 import * as owl from './ontologies/owl.js';
 import * as npm from './ontologies/npm.js';
 import * as Sparql from './sparql/index.js';
@@ -110,7 +110,7 @@ export function initModularApp() {
     rdfs,
     xsd,
     shacl,
-    lincd,
+    coreOntology,
     owl,
     npm,
     Sparql,

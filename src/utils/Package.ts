@@ -7,13 +7,14 @@ import {
   createPropertyShape,
   getAndClearCallbacks,
   getNodeShapeUri,
-  LINCD_DATA_ROOT,
+  getPackageUri,
+  setPackagePublishConfig,
   NodeShape,
   PropertyShape,
 } from '../shapes/SHACL.js';
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {Prefix} from './Prefix.js';
-import {lincd as lincdOntology} from '../ontologies/lincd.js';
+import {coreOntology} from '../ontologies/linked-core.js';
 import {rdf} from '../ontologies/rdf.js';
 import {addNodeShapeToShapeClass,getShapeClass} from './ShapeClass.js';
 import {shacl} from '../ontologies/shacl.js';
@@ -201,8 +202,15 @@ export function autoLoadOntologyData(value: boolean)
 }
 
 
-export function linkedPackage(packageName: string): LinkedPackageObject
+export function linkedPackage(
+  packageName: string,
+  options?: {baseUri?: string; slug?: string},
+): LinkedPackageObject
 {
+  // Declare where this package publishes its IRIs before any shape/metadata IRI
+  // is built. Maintainers pass `slug`/`baseUri`; CN injects a workspace-scoped
+  // `baseUri` for private packages; first-party packages default to linked.cm.
+  setPackagePublishConfig(packageName, options);
   let packageMetadata = registerPackageMetadata(packageName);
   let packageTreeObject = registerPackageInTree(packageName);
 
@@ -468,9 +476,9 @@ function registerPackageMetadata(packageName: string): PackageMetadata
     return _linked._packages[packageName];
   }
   const packageMetadata: PackageMetadata = {
-    id: `${LINCD_DATA_ROOT}module/${packageName}`,
+    id: getPackageUri(packageName),
     packageName,
-    type: lincdOntology.Module,
+    type: coreOntology.Package,
   };
   _linked._packages[packageName] = packageMetadata;
   return packageMetadata;
@@ -505,7 +513,7 @@ export function initTree()
 initTree();
 
 //now that this file is set up, we can link linked shapes in the core module itself
-export const corePackage = linkedPackage('@_linked/core');
+export const corePackage = linkedPackage('@_linked/core', {slug: 'core'});
 corePackage.linkedShape({
   description:
     'Represents a SHACL NodeShape; defines constraints for a class of RDF nodes. Links to multiple PropertyShapes. (schema, constraint, class validation)',
@@ -519,8 +527,10 @@ corePackage.linkedShape({
 //ALL the following is to support Shape having get/set methods with property shapes
 //and Shape itself having a nodeShape
 //if we dont need Shape to have get/set methods (like label and type) then this can be removed
+// Base Shape IRI follows the same scheme as every other core shape:
+// https://linked.cm/shape/core/Shape (corePackage above declared slug 'core').
 Shape.shape = new NodeShape(
-  'https://data.lincd.org/module/lincd/shape/shape',
+  getNodeShapeUri('@_linked/core', 'Shape'),
 );
 addNodeShapeToShapeClass(Shape.shape,Shape);
 
@@ -588,7 +598,7 @@ createPropertyShape({
 },'targetNode',shacl.IRI, NodeShape);
 
 createPropertyShape({
-  path: lincdOntology.isExtending,
+  path: coreOntology.isExtending,
   shape: NodeShape,
 },'extends',shacl.IRI, NodeShape);
 
