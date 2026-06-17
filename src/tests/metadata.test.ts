@@ -37,7 +37,7 @@ describe('Package & Shape Metadata Registration', () => {
       packageName,
       type: lincd.Module,
     });
-    expect(globalThis['lincd']._packages[packageName]).toBe(packageMetadata);
+    expect(globalThis['_linked']._packages[packageName]).toBe(packageMetadata);
   });
 
   test('registers node shape metadata with expected id', () => {

@@ -22,7 +22,7 @@ import {xsd} from '../ontologies/xsd.js';
 import type {NodeReferenceValue} from './NodeReference.js';
 
 //global tree
-declare var lincd: any;
+declare var _linked: any;
 declare var window;
 declare var global;
 
@@ -440,39 +440,39 @@ export function linkedPackage(packageName: string): LinkedPackageObject
 function registerPackageInTree(packageName,packageExports?)
 {
   //if something with this name already registered in the global tree
-  if (packageName in lincd._modules)
+  if (packageName in _linked._modules)
   {
     // Plan-011 §I2 interim — silenced until the duplicate-Linked-instance
     // root cause is investigated. Vite SSR resolving workspace packages
     // from src/ for HMR causes each package.ts to evaluate twice, so this
     // warning fired ~80x per boot. Same package, same exports — the
     // Object.assign below preserves the registry correctly.
-    Object.assign(lincd._modules[packageName],packageExports);
+    Object.assign(_linked._modules[packageName],packageExports);
   }
   else
   {
     //initiate an empty object for this module in the global tree
-    lincd._modules[packageName] = packageExports || {};
+    _linked._modules[packageName] = packageExports || {};
   }
-  return lincd._modules[packageName];
+  return _linked._modules[packageName];
 }
 
 function registerPackageMetadata(packageName: string): PackageMetadata
 {
-  if (!lincd._packages)
+  if (!_linked._packages)
   {
-    lincd._packages = {};
+    _linked._packages = {};
   }
-  if (packageName in lincd._packages)
+  if (packageName in _linked._packages)
   {
-    return lincd._packages[packageName];
+    return _linked._packages[packageName];
   }
   const packageMetadata: PackageMetadata = {
     id: `${LINCD_DATA_ROOT}module/${packageName}`,
     packageName,
     type: lincdOntology.Module,
   };
-  lincd._packages[packageName] = packageMetadata;
+  _linked._packages[packageName] = packageMetadata;
   return packageMetadata;
 }
 
@@ -495,9 +495,9 @@ export function initTree()
   // Legacy `lincd` package's Package.ts (separate file) still throws on
   // dup — that throw signals a REAL problem (legacy `lincd` should never
   // load in a clean post-eradication state).
-  if (!('lincd' in globalObject))
+  if (!('_linked' in globalObject))
   {
-    globalObject['lincd'] = {_modules: {}, _packages: {}};
+    globalObject['_linked'] = {_modules: {}, _packages: {}};
   }
 }
 

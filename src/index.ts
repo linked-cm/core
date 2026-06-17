@@ -130,8 +130,8 @@ export function initModularApp() {
     }
   }
   if (typeof window !== 'undefined') {
-    Object.assign(window['lincd'], lincdExport);
+    Object.assign(window['_linked'], lincdExport);
   } else if (typeof global !== 'undefined') {
-    Object.assign(global['lincd'], lincdExport);
+    Object.assign(global['_linked'], lincdExport);
   }
 }
