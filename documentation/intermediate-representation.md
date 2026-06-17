@@ -276,7 +276,7 @@ DSL: `Person.select({id: 'node:1'}, (p) => p.name)`
 | Kind | Fields | Description |
 |---|---|---|
 | `shape_scan` | `shape`, `alias` | Entry point — scan all instances of a shape |
-| `traverse` | `from`, `to`, `property` | Follow a property edge between aliases |
+| `traverse` | `from`, `to`, `property`, `pathExpr?`, `innerLimit?`, `innerOffset?`, `innerOrderBy?` | Follow a property edge between aliases. `pathExpr` carries a structured property path (sequence/inverse/alt). `innerLimit`/`innerOffset`/`innerOrderBy` request nested-select pagination — lowered to a `subselect` algebra node (single-subject queries only; see sparql-algebra.md) |
 | `join` | `patterns[]` | Combine multiple patterns |
 | `optional` | `pattern` | Left-outer-join semantics |
 | `union` | `branches[]` | OR-union of patterns |
