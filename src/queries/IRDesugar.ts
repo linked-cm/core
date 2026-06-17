@@ -67,10 +67,19 @@ export type DesugaredSelectionPath = {
   steps: DesugaredStep[];
 };
 
+export type DesugaredInnerOrderBy = {
+  propertyShapeId: string;
+  direction: 'ASC' | 'DESC';
+};
+
 export type DesugaredSubSelect = {
   kind: 'sub_select';
   parentPath: DesugaredStep[];
   selections: DesugaredSelection;
+  /** Inner LIMIT/OFFSET/ORDER BY for nested-select pagination (single-subject only). */
+  innerLimit?: number;
+  innerOffset?: number;
+  innerOrderBy?: DesugaredInnerOrderBy[];
 };
 
 export type DesugaredCustomObjectSelect = {
@@ -223,11 +232,20 @@ const desugarEntry = (entry: FieldSetEntry): DesugaredSelection => {
   // SubSelect → produce DesugaredSubSelect with recursive entries
   if (entry.subSelect) {
     const subEntries = entry.subSelect.entries as FieldSetEntry[];
-    return {
+    const subSelect: DesugaredSubSelect = {
       kind: 'sub_select',
       parentPath: steps as DesugaredPropertyStep[],
       selections: desugarSubSelectEntries(subEntries),
     };
+    if (typeof entry.innerLimit === 'number') subSelect.innerLimit = entry.innerLimit;
+    if (typeof entry.innerOffset === 'number') subSelect.innerOffset = entry.innerOffset;
+    if (entry.innerOrderBy) {
+      subSelect.innerOrderBy = entry.innerOrderBy.map((o) => ({
+        propertyShapeId: o.propertyShapeId,
+        direction: o.direction,
+      }));
+    }
+    return subSelect;
   }
 
   // Preload → stored as preloadSubSelect (FieldSet) on the entry

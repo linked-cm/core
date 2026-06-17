@@ -771,7 +771,17 @@ export class QueryBuilderObject<
     return new BoundComponent<this, CompQueryRes>(component, this);
   }
 
-  limit(lim: number) {
+  /**
+   * Pagination is applied to a nested *select*, not to a bare traversal — use
+   * `p.friends.select(f => f.name).limit(n)`. Calling `.limit()` directly on a
+   * traversal would silently do nothing, so we fail loudly instead.
+   * (Top-level result pagination lives on the outer query builder.)
+   */
+  limit(lim: number): never {
+    throw new Error(
+      `.limit(${lim}) is not supported directly on a traversal — use ` +
+      '.select(...).limit(n) on the nested collection (single-subject queries only).',
+    );
   }
 
   /**

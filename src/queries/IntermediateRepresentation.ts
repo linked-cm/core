@@ -68,6 +68,20 @@ export type IRTraversePattern = {
   pathExpr?: PathExpr;
   filter?: IRExpression;
   maxCount?: number;
+  /**
+   * Inner LIMIT/OFFSET/ORDER BY for a nested select on this traversal's
+   * related collection. When set, the root→child traverse is wrapped in a
+   * SPARQL sub-SELECT to bound the collection per parent. Only valid when the
+   * outer query targets a single root subject (enforced in irToAlgebra).
+   */
+  innerLimit?: number;
+  innerOffset?: number;
+  innerOrderBy?: IRInnerOrderBy[];
+};
+
+export type IRInnerOrderBy = {
+  property: string;
+  direction: IRDirection;
 };
 
 export type IRJoinPattern = {
