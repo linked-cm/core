@@ -23,7 +23,8 @@ export type SparqlAlgebraNode =
   | SparqlMinus
   | SparqlExtend
   | SparqlGraph
-  | SparqlValues;
+  | SparqlValues
+  | SparqlSubSelect;
 
 export type SparqlBGP = {
   type: 'bgp';
@@ -78,6 +79,23 @@ export type SparqlValues = {
   type: 'values';
   variable: string;
   iris: string[];
+};
+
+/**
+ * A nested sub-SELECT used as a group graph pattern inside a WHERE block.
+ *
+ * Emitted for nested-select inner LIMIT/OFFSET: the root→child traverse is
+ * wrapped in `{ SELECT <projection> WHERE { <inner> } ORDER BY … LIMIT … OFFSET … }`
+ * so the related collection is bounded per parent. Only valid when the outer
+ * query targets a single root subject (see irToAlgebra).
+ */
+export type SparqlSubSelect = {
+  type: 'subselect';
+  projection: string[];
+  inner: SparqlAlgebraNode;
+  orderBy?: SparqlOrderCondition[];
+  limit?: number;
+  offset?: number;
 };
 
 // --- Expressions ---

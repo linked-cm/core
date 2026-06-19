@@ -1,13 +1,13 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import {
-  SelectQuery,
-  QueryBuildFn,
-  WhereClause,
-  QResult,
-  QueryResponseToResultType,
-  SelectAllQueryResponse,
-  QueryComponentLike,
+  type SelectQuery,
+  type QueryBuildFn,
+  type WhereClause,
+  type QResult,
+  type QueryResponseToResultType,
+  type SelectAllQueryResponse,
+  type QueryComponentLike,
   processWhereClause,
   evaluateSortCallback,
 } from './SelectQuery.js';
@@ -17,7 +17,7 @@ import {buildSelectQuery} from './IRPipeline.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
-import {FieldSet, FieldSetJSON, FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
+import {FieldSet, type FieldSetJSON, type FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
 import {PendingQueryContext} from './QueryContext.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {

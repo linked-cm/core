@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {PathExpr, parsePropertyPath, PATH_OPERATOR_CHARS} from './PropertyPathExpr.js';
+import {type PathExpr, parsePropertyPath, PATH_OPERATOR_CHARS} from './PropertyPathExpr.js';
 
 /**
  * Input type for property path decorators.

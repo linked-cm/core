@@ -1,7 +1,7 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
-import {NodeReferenceValue, UpdatePartial} from './QueryFactory.js';
-import {MutationQueryFactory, NodeId} from './MutationQuery.js';
-import {
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
+import {NodeReferenceValue, type UpdatePartial} from './QueryFactory.js';
+import {MutationQueryFactory, type NodeId} from './MutationQuery.js';
+import type {
   IRDeleteMutation,
   IRDeleteAllMutation,
   IRDeleteWhereMutation,

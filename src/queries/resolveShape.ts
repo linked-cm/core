@@ -1,4 +1,4 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 
 /**

@@ -62,7 +62,7 @@ const NUMERIC_DATATYPES = new Set([
 
 /**
  * Extracts the local name (last segment) from a full URI.
- * E.g. "https://data.lincd.org/.../person/name" → "name"
+ * E.g. "https://linked.cm/shape/core/Person/name" → "name"
  */
 function localName(uri: string): string {
   const hashIdx = uri.lastIndexOf('#');

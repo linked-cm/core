@@ -5,7 +5,7 @@ import {Expr} from '../expressions/Expr';
 import {xsd} from '../ontologies/xsd';
 import {ShapeSet} from '../collections/ShapeSet';
 import {getQueryContext} from '../queries/QueryContext';
-import {NodeReferenceValue, UpdatePartial} from '../queries/QueryFactory';
+import {NodeReferenceValue, type UpdatePartial} from '../queries/QueryFactory';
 import {DeleteBuilder} from '../queries/DeleteBuilder';
 
 const tmpPropBase = 'linked://tmp/props/';

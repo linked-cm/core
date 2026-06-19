@@ -15,7 +15,7 @@ import {LinkedStorage} from '../utils/LinkedStorage';
 import {LinkedFileStorage, asset} from '../utils/LinkedFileStorage';
 import {getQueryDispatch} from '../queries/queryDispatch';
 import {getQueryContext, setQueryContext, PendingQueryContext} from '../queries/QueryContext';
-import {NodeReferenceValue} from '../utils/NodeReference';
+import type {NodeReferenceValue} from '../utils/NodeReference';
 
 const makeProp = (base: string) => (suffix: string): NodeReferenceValue => ({
   id: `${base}${suffix}`,

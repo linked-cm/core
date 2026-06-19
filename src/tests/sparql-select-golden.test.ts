@@ -22,10 +22,10 @@ setQueryContext('user', {id: 'user-1'}, Person);
 // URI shorthands for readability
 // ---------------------------------------------------------------------------
 
-const P = 'https://data.lincd.org/module/-_linked-core/shape/person';
-const E = 'https://data.lincd.org/module/-_linked-core/shape/employee';
-const D = 'https://data.lincd.org/module/-_linked-core/shape/dog';
-const S = 'https://data.lincd.org/module/lincd/shape/shape';
+const P = 'https://linked.cm/shape/core/Person';
+const E = 'https://linked.cm/shape/core/Employee';
+const D = 'https://linked.cm/shape/core/Dog';
+const S = 'https://linked.cm/shape/core/Shape';
 
 // ---------------------------------------------------------------------------
 // Helper
