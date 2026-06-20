@@ -657,10 +657,19 @@ export function selectToAlgebra(
   const optionalTraversalAliases = new Set(
     [...projectedTraversalAliases].filter((alias) => {
       const pattern = traversePatternMap.get(alias);
+      // Lower projection-only traversals into OPTIONAL subtrees regardless of
+      // cardinality, so a parent with an empty relationship is preserved (with
+      // an empty array / null child) instead of being inner-joined away. The
+      // result grouper already collects multiple child bindings into an array.
+      //
+      // Excluded:
+      //  - filtered traversals (`.where(...)`) — the filter makes the child required
+      //  - aliases otherwise required by the query (e.g. used in a top-level filter)
+      //  - paginated traversals — emitted separately as a sub-SELECT (section 5a),
+      //    so lowering them here too would double-emit the traverse triple
       return !!pattern &&
-        typeof pattern.maxCount === 'number' &&
-        pattern.maxCount <= 1 &&
         !pattern.filter &&
+        !subSelectAliases.has(alias) &&
         !requiredTraversalAliases.has(alias);
     }),
   );
