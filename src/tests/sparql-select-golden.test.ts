@@ -261,9 +261,11 @@ describe('SPARQL golden — nested traversals', () => {
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/name> ?a1_name .
+    ?a0 <${P}/friends> ?a1 .
+    OPTIONAL {
+      ?a1 <${P}/name> ?a1_name .
+    }
   }
 }`);
   });
@@ -275,10 +277,14 @@ WHERE {
 SELECT DISTINCT ?a0 ?a2_name ?a1 ?a2
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
-  ?a1 <${P}/friends> ?a2 .
   OPTIONAL {
-    ?a2 <${P}/name> ?a2_name .
+    ?a0 <${P}/friends> ?a1 .
+    OPTIONAL {
+      ?a1 <${P}/friends> ?a2 .
+      OPTIONAL {
+        ?a2 <${P}/name> ?a2_name .
+      }
+    }
   }
 }`);
   });
@@ -328,13 +334,15 @@ WHERE {
 SELECT DISTINCT ?a0 ?a3_name ?a1 ?a2 ?a3
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/bestFriend> ?a2 .
+    ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
-      ?a2 <${P}/bestFriend> ?a3 .
+      ?a1 <${P}/bestFriend> ?a2 .
       OPTIONAL {
-        ?a3 <${P}/name> ?a3_name .
+        ?a2 <${P}/bestFriend> ?a3 .
+        OPTIONAL {
+          ?a3 <${P}/name> ?a3_name .
+        }
       }
     }
   }
@@ -370,9 +378,11 @@ WHERE {
 SELECT DISTINCT ?a0 ?a1_bestFriend ?a1
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/bestFriend> ?a1_bestFriend .
+    ?a0 <${P}/friends> ?a1 .
+    OPTIONAL {
+      ?a1 <${P}/bestFriend> ?a1_bestFriend .
+    }
   }
 }`);
   });
@@ -907,12 +917,14 @@ WHERE {
 SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/name> ?a1_name .
-  }
-  OPTIONAL {
-    ?a1 <${P}/hobby> ?a1_hobby .
+    ?a0 <${P}/friends> ?a1 .
+    OPTIONAL {
+      ?a1 <${P}/name> ?a1_name .
+    }
+    OPTIONAL {
+      ?a1 <${P}/hobby> ?a1_hobby .
+    }
   }
 }`);
   });
@@ -925,42 +937,44 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1_nickNames ?a1_birthDate ?a1_isRealPerson ?a1_bestFriend ?a1_friends ?a1_pets ?a1_firstPet ?a1_pluralTestProp ?a1_label ?a1_type ?a1
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/name> ?a1_name .
-  }
-  OPTIONAL {
-    ?a1 <${P}/hobby> ?a1_hobby .
-  }
-  OPTIONAL {
-    ?a1 <${P}/nickNames> ?a1_nickNames .
-  }
-  OPTIONAL {
-    ?a1 <${P}/birthDate> ?a1_birthDate .
-  }
-  OPTIONAL {
-    ?a1 <${P}/isRealPerson> ?a1_isRealPerson .
-  }
-  OPTIONAL {
-    ?a1 <${P}/bestFriend> ?a1_bestFriend .
-  }
-  OPTIONAL {
-    ?a1 <${P}/friends> ?a1_friends .
-  }
-  OPTIONAL {
-    ?a1 <${P}/pets> ?a1_pets .
-  }
-  OPTIONAL {
-    ?a1 <${P}/firstPet> ?a1_firstPet .
-  }
-  OPTIONAL {
-    ?a1 <${P}/pluralTestProp> ?a1_pluralTestProp .
-  }
-  OPTIONAL {
-    ?a1 rdfs:label ?a1_label .
-  }
-  OPTIONAL {
-    ?a1 rdf:type ?a1_type .
+    ?a0 <${P}/friends> ?a1 .
+    OPTIONAL {
+      ?a1 <${P}/name> ?a1_name .
+    }
+    OPTIONAL {
+      ?a1 <${P}/hobby> ?a1_hobby .
+    }
+    OPTIONAL {
+      ?a1 <${P}/nickNames> ?a1_nickNames .
+    }
+    OPTIONAL {
+      ?a1 <${P}/birthDate> ?a1_birthDate .
+    }
+    OPTIONAL {
+      ?a1 <${P}/isRealPerson> ?a1_isRealPerson .
+    }
+    OPTIONAL {
+      ?a1 <${P}/bestFriend> ?a1_bestFriend .
+    }
+    OPTIONAL {
+      ?a1 <${P}/friends> ?a1_friends .
+    }
+    OPTIONAL {
+      ?a1 <${P}/pets> ?a1_pets .
+    }
+    OPTIONAL {
+      ?a1 <${P}/firstPet> ?a1_firstPet .
+    }
+    OPTIONAL {
+      ?a1 <${P}/pluralTestProp> ?a1_pluralTestProp .
+    }
+    OPTIONAL {
+      ?a1 rdfs:label ?a1_label .
+    }
+    OPTIONAL {
+      ?a1 rdf:type ?a1_type .
+    }
   }
 }`);
   });
@@ -1044,12 +1058,14 @@ WHERE {
 SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/name> ?a1_name .
-  }
-  OPTIONAL {
-    ?a1 <${P}/hobby> ?a1_hobby .
+    ?a0 <${P}/friends> ?a1 .
+    OPTIONAL {
+      ?a1 <${P}/name> ?a1_name .
+    }
+    OPTIONAL {
+      ?a1 <${P}/hobby> ?a1_hobby .
+    }
   }
 }`);
   });
@@ -1061,11 +1077,13 @@ WHERE {
 SELECT DISTINCT ?a0 ?a2_name ?a1 ?a2
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/bestFriend> ?a2 .
+    ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
-      ?a2 <${P}/name> ?a2_name .
+      ?a1 <${P}/bestFriend> ?a2 .
+      OPTIONAL {
+        ?a2 <${P}/name> ?a2_name .
+      }
     }
   }
 }`);
@@ -1078,15 +1096,17 @@ WHERE {
 SELECT DISTINCT ?a0 ?a1_firstPet ?a2_name ?a1 ?a2
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/bestFriend> ?a2 .
+    ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
-      ?a2 <${P}/name> ?a2_name .
+      ?a1 <${P}/firstPet> ?a1_firstPet .
     }
-  }
-  OPTIONAL {
-    ?a1 <${P}/firstPet> ?a1_firstPet .
+    OPTIONAL {
+      ?a1 <${P}/bestFriend> ?a2 .
+      OPTIONAL {
+        ?a2 <${P}/name> ?a2_name .
+      }
+    }
   }
 }`);
   });
@@ -1104,9 +1124,11 @@ describe('SPARQL golden — shape casting', () => {
 SELECT DISTINCT ?a0 ?a1_guardDogLevel ?a1
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/pets> ?a1 .
   OPTIONAL {
-    ?a1 <${D}/guardDogLevel> ?a1_guardDogLevel .
+    ?a0 <${P}/pets> ?a1 .
+    OPTIONAL {
+      ?a1 <${D}/guardDogLevel> ?a1_guardDogLevel .
+    }
   }
 }`);
   });
