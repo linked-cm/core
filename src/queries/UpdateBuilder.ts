@@ -1,9 +1,9 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
-import {AddId, UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
-import {UpdateQueryFactory, UpdateQuery} from './UpdateQuery.js';
+import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
+import {UpdateQueryFactory, type UpdateQuery} from './UpdateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {WhereClause, processWhereClause} from './SelectQuery.js';
+import {type WhereClause, processWhereClause} from './SelectQuery.js';
 import {buildCanonicalUpdateWhereMutationIR} from './IRMutation.js';
 import {toWhere} from './IRDesugar.js';
 import {canonicalizeWhere} from './IRCanonicalize.js';

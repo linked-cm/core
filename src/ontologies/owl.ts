@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import {NodeReferenceValue} from '../utils/NodeReference.js';
+import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {Prefix} from '../utils/Prefix.js';
 
 //Important note: the actual ontology node is WITHOUT HASH, because in the ontology itself, that is how the node is defined

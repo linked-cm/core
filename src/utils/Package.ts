@@ -7,22 +7,23 @@ import {
   createPropertyShape,
   getAndClearCallbacks,
   getNodeShapeUri,
-  LINCD_DATA_ROOT,
+  getPackageUri,
+  setPackagePublishConfig,
   NodeShape,
   PropertyShape,
 } from '../shapes/SHACL.js';
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {Prefix} from './Prefix.js';
-import {lincd as lincdOntology} from '../ontologies/lincd.js';
+import {coreOntology} from '../ontologies/linked-core.js';
 import {rdf} from '../ontologies/rdf.js';
 import {addNodeShapeToShapeClass,getShapeClass} from './ShapeClass.js';
 import {shacl} from '../ontologies/shacl.js';
 import {rdfs} from '../ontologies/rdfs.js';
 import {xsd} from '../ontologies/xsd.js';
-import {NodeReferenceValue} from './NodeReference.js';
+import type {NodeReferenceValue} from './NodeReference.js';
 
 //global tree
-declare var lincd: any;
+declare var _linked: any;
 declare var window;
 declare var global;
 
@@ -201,19 +202,26 @@ export function autoLoadOntologyData(value: boolean)
 }
 
 
-export function linkedPackage(packageName: string): LinkedPackageObject
+export function linkedPackage(
+  packageName: string,
+  options?: {baseUri?: string},
+): LinkedPackageObject
 {
+  // Declare the package's publish root before any shape/metadata IRI is built.
+  // The slug is derived from `packageName`; only `baseUri` is configurable — CN
+  // injects a workspace-scoped root for private packages, first-party packages
+  // default to linked.cm.
+  setPackagePublishConfig(packageName, options);
   let packageMetadata = registerPackageMetadata(packageName);
   let packageTreeObject = registerPackageInTree(packageName);
 
   //#Create declarators for this module
   let registerPackageExport = function(object) {
-    if (object.name in packageTreeObject)
-    {
-      console.warn(
-        `Key ${object.name} was already defined for package ${packageName}. Note that LINCD currently only supports unique names across your entire package. Overwriting ${object.name} with new value`,
-      );
-    }
+    // Plan-011 §I2 interim — "Key X was already defined" warning silenced
+    // until the duplicate-instance root cause is investigated. With Vite
+    // SSR resolving workspace packages from src/, package.ts evaluates
+    // twice and every export key trips this warning. The overwrite is
+    // safe because the second registration is the same class.
     packageTreeObject[object.name] = object;
   };
 
@@ -440,48 +448,40 @@ export function linkedPackage(packageName: string): LinkedPackageObject
 
 function registerPackageInTree(packageName,packageExports?)
 {
-  //prepare name for global tree reference
-  // let packageTreeKey = packageName.replace(/-/g,'_');
   //if something with this name already registered in the global tree
-  if (packageName in lincd._modules)
+  if (packageName in _linked._modules)
   {
-    //This probably means package.ts is loaded twice, through different paths and could point to a problem
-    //So we log about it. But there is one exception. LINCD itself registers itself twice: once in the bottom of this file and once in its package.ts file.
-    //But if there are already other packages registered, then probably there is 2 versions of LINCD being loaded, and that IS a problem.
-    if (packageName !== '@_linked/core' || Object.keys(lincd._modules).length !== 1)
-    {
-      console.warn(
-        'A package with the name ' +
-        packageName +
-        ' has already been registered. Adding to existing object',
-      );
-    }
-    Object.assign(lincd._modules[packageName],packageExports);
+    // Plan-011 §I2 interim — silenced until the duplicate-Linked-instance
+    // root cause is investigated. Vite SSR resolving workspace packages
+    // from src/ for HMR causes each package.ts to evaluate twice, so this
+    // warning fired ~80x per boot. Same package, same exports — the
+    // Object.assign below preserves the registry correctly.
+    Object.assign(_linked._modules[packageName],packageExports);
   }
   else
   {
     //initiate an empty object for this module in the global tree
-    lincd._modules[packageName] = packageExports || {};
+    _linked._modules[packageName] = packageExports || {};
   }
-  return lincd._modules[packageName];
+  return _linked._modules[packageName];
 }
 
 function registerPackageMetadata(packageName: string): PackageMetadata
 {
-  if (!lincd._packages)
+  if (!_linked._packages)
   {
-    lincd._packages = {};
+    _linked._packages = {};
   }
-  if (packageName in lincd._packages)
+  if (packageName in _linked._packages)
   {
-    return lincd._packages[packageName];
+    return _linked._packages[packageName];
   }
   const packageMetadata: PackageMetadata = {
-    id: `${LINCD_DATA_ROOT}module/${packageName}`,
+    id: getPackageUri(packageName),
     packageName,
-    type: lincdOntology.Module,
+    type: coreOntology.Package,
   };
-  lincd._packages[packageName] = packageMetadata;
+  _linked._packages[packageName] = packageMetadata;
   return packageMetadata;
 }
 
@@ -494,13 +494,19 @@ export function initTree()
       : typeof global !== 'undefined'
         ? global
         : undefined;
-  if ('lincd' in globalObject)
+  // Idempotent: if the global tree is already set up (by another copy of
+  // this Package.ts in the same Node process — structural under Vite SSR,
+  // which evaluates the file once for its own SSR transform AND once via
+  // Node's resolver when a non-Vite import path reaches @_linked/core),
+  // attach to it instead of throwing. Both instances write the same
+  // _modules / _packages registry shape.
+  //
+  // Legacy `lincd` package's Package.ts (separate file) still throws on
+  // dup — that throw signals a REAL problem (legacy `lincd` should never
+  // load in a clean post-eradication state).
+  if (!('_linked' in globalObject))
   {
-    throw new Error('Multiple versions of LINCD are loaded');
-  }
-  else
-  {
-    globalObject['lincd'] = {_modules: {}, _packages: {}};
+    globalObject['_linked'] = {_modules: {}, _packages: {}};
   }
 }
 
@@ -522,8 +528,10 @@ corePackage.linkedShape({
 //ALL the following is to support Shape having get/set methods with property shapes
 //and Shape itself having a nodeShape
 //if we dont need Shape to have get/set methods (like label and type) then this can be removed
+// Base Shape IRI follows the same scheme as every other core shape:
+// https://linked.cm/shape/core/Shape (corePackage above declared slug 'core').
 Shape.shape = new NodeShape(
-  'https://data.lincd.org/module/lincd/shape/shape',
+  getNodeShapeUri('@_linked/core', 'Shape'),
 );
 addNodeShapeToShapeClass(Shape.shape,Shape);
 
@@ -591,7 +599,7 @@ createPropertyShape({
 },'targetNode',shacl.IRI, NodeShape);
 
 createPropertyShape({
-  path: lincdOntology.isExtending,
+  path: coreOntology.isExtending,
   shape: NodeShape,
 },'extends',shacl.IRI, NodeShape);
 

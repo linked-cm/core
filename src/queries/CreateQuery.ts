@@ -1,7 +1,7 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
-import {AddId, NodeDescriptionValue, UpdatePartial} from './QueryFactory.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
+import type {AddId, NodeDescriptionValue, UpdatePartial} from './QueryFactory.js';
 import {MutationQueryFactory} from './MutationQuery.js';
-import {IRCreateMutation} from './IntermediateRepresentation.js';
+import type {IRCreateMutation} from './IntermediateRepresentation.js';
 import {buildCanonicalCreateMutationIR} from './IRMutation.js';
 
 /**

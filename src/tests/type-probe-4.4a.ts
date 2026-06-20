@@ -6,7 +6,7 @@
  * If it compiles, the approach works.
  */
 import {Person, Dog, Pet} from '../test-helpers/query-fixtures';
-import {
+import type {
   QueryResponseToResultType,
   QueryBuildFn,
   SingleResult,

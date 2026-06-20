@@ -1,4 +1,4 @@
-import {
+import type {
   IRSelectQuery,
   IRCreateMutation,
   IRUpdateMutation,
@@ -13,9 +13,9 @@ import {
   IRSetModificationValue,
   IRTraversePattern,
 } from '../queries/IntermediateRepresentation.js';
-import {NodeReferenceValue} from '../utils/NodeReference.js';
+import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
-import {
+import type {
   SparqlSelectPlan,
   SparqlInsertDataPlan,
   SparqlDeleteInsertPlan,
@@ -31,7 +31,7 @@ import {
   SparqlLeftJoin,
   SparqlFilter,
 } from './SparqlAlgebra.js';
-import {SparqlOptions, generateEntityUri} from './sparqlUtils.js';
+import {type SparqlOptions, generateEntityUri} from './sparqlUtils.js';
 import {
   selectPlanToSparql,
   insertDataPlanToSparql,
@@ -91,7 +91,17 @@ function resolveShapeScanIri(shapeId: string): string {
   return shouldResolveShapeOrPropertyId(targetClassId) ? targetClassId! : shapeId;
 }
 
-function resolvePropertyPredicateIri(propertyId: string): string {
+/**
+ * Resolve a SHACL property-shape id to the predicate term used in a triple.
+ *
+ * - Simple single-IRI path → `{kind:'iri'}` (byte-for-byte unchanged behaviour).
+ * - Structured path (sequence / inverse / alternative / …) → `{kind:'path'}` built from the property
+ *   shape's `sh:path`, reusing the same `pathExprToSparql` / `collectPathUris` machinery as the
+ *   inline-`pathExpr` branches. Without this, structured named-property paths collapsed to a shadow IRI
+ *   that matched nothing.
+ * - No matching shape / unresolvable → `{kind:'iri'}` of the property id itself (unchanged shadow fallback).
+ */
+function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
   const shapeClasses = getAllShapeClasses();
   for (const shapeClass of shapeClasses.values()) {
     const propertyShape = shapeClass.shape
@@ -100,12 +110,19 @@ function resolvePropertyPredicateIri(propertyId: string): string {
     if (!propertyShape) continue;
 
     const simplePathId = getSimplePathId(propertyShape.path);
-    if (shouldResolveShapeOrPropertyId(simplePathId)) {
-      return simplePathId!;
+    if (simplePathId !== null) {
+      // Simple single-IRI path: resolve to the IRI, or fall back to the property id
+      // (e.g. unresolvable `linked://tmp/` ids) — unchanged from before.
+      return iriTerm(shouldResolveShapeOrPropertyId(simplePathId) ? simplePathId : propertyId);
     }
-    break;
+    // Structured sh:path — emit a property-path predicate instead of a shadow IRI.
+    return {
+      kind: 'path',
+      value: pathExprToSparql(propertyShape.path),
+      uris: collectPathUris(propertyShape.path),
+    };
   }
-  return propertyId;
+  return iriTerm(propertyId);
 }
 
 /** Produce variable name suffix from the last segment of a property URI. */
@@ -223,7 +240,7 @@ function buildTraverseTriple(pattern: IRTraversePattern): SparqlTriple {
         value: pathExprToSparql(pattern.pathExpr),
         uris: collectPathUris(pattern.pathExpr),
       }
-    : iriTerm(resolvePropertyPredicateIri(pattern.property));
+    : resolvePropertyPredicateTerm(pattern.property);
   return tripleOf(
     varTerm(pattern.from),
     predicate,
@@ -527,9 +544,58 @@ export function selectToAlgebra(
     traversePatternsInOrder.map((pattern) => [pattern.to, pattern] as const),
   );
 
-  // 2. Process patterns → traverse triples, populate variable registry
+  // ── Nested-select inner LIMIT/OFFSET (Option A: single-subject only) ──────
+  // A nested select on a related collection may carry an inner LIMIT/OFFSET.
+  // A plain SPARQL sub-SELECT is uncorrelated, so its LIMIT bounds GLOBALLY.
+  // That only equals per-parent windowing when the outer query targets exactly
+  // ONE root subject — then we inline that subject into the sub-SELECT.
+  const paginatedTraversePatterns = traversePatternsInOrder.filter(
+    (p) =>
+      typeof p.innerLimit === 'number' ||
+      typeof p.innerOffset === 'number' ||
+      (p.innerOrderBy && p.innerOrderBy.length > 0),
+  );
+  const singleSubjectIri: string | undefined =
+    query.subjectId ??
+    (query.subjectIds && query.subjectIds.length === 1
+      ? query.subjectIds[0]
+      : undefined);
+  if (paginatedTraversePatterns.length > 0 && !singleSubjectIri) {
+    throw new Error(
+      'Inner LIMIT/OFFSET on a nested select is only supported when the outer ' +
+      'query targets a single subject; multi-parent per-group pagination is not ' +
+      'yet implemented.',
+    );
+  }
+  // Only root→child traversals can be inlined against the single subject.
+  // A paginated traversal deeper than root→child has a parent collection that is
+  // itself multi-valued (effectively multi-parent), so a sub-SELECT LIMIT there
+  // would bound globally, not per-parent. Reject it loudly rather than silently
+  // dropping the inner limit.
+  const deepPaginated = paginatedTraversePatterns.filter((p) => p.from !== rootAlias);
+  if (deepPaginated.length > 0) {
+    throw new Error(
+      'Inner LIMIT/OFFSET on a nested select is only supported on a direct nested ' +
+      'select of the single root subject; pagination on a deeper (grandchild) ' +
+      'collection is multi-parent and not yet implemented.',
+    );
+  }
+  const subSelectAliases = new Set<string>(
+    paginatedTraversePatterns.map((p) => p.to),
+  );
+
+  // 2. Process patterns → traverse triples, populate variable registry.
+  //    Skip sub-SELECT-wrapped traversals here — they are emitted separately
+  //    (their child variable is still registered so projection/optionals work).
   for (const pattern of query.patterns) {
-    processPattern(pattern, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks);
+    processPattern(
+      pattern,
+      registry,
+      traverseTriples,
+      optionalPropertyTriples,
+      filteredTraverseBlocks,
+      subSelectAliases,
+    );
   }
 
   // 3. Pre-register filter property references BEFORE processing projections.
@@ -606,8 +672,18 @@ export function selectToAlgebra(
 
   const nestedOptionalPropertyTriplesByAlias = new Map<string, SparqlTriple[]>();
   const topLevelOptionalPropertyTriples: SparqlTriple[] = [];
+  // Property triples whose subject is a sub-SELECT child alias must be nested
+  // INSIDE the sub-SELECT's OPTIONAL block (keyed by alias), so that ?childVar
+  // stays scoped — otherwise an empty window leaves ?childVar unbound and the
+  // outer property OPTIONAL leaks across the whole graph.
+  const subSelectChildPropertyTriplesByAlias = new Map<string, SparqlTriple[]>();
   for (const propTriple of optionalPropertyTriples) {
     if (propTriple.subject.kind === 'variable' &&
+      subSelectAliases.has(propTriple.subject.name)) {
+      const triples = subSelectChildPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
+      triples.push(propTriple);
+      subSelectChildPropertyTriplesByAlias.set(propTriple.subject.name, triples);
+    } else if (propTriple.subject.kind === 'variable' &&
       optionalTraversalAliases.has(propTriple.subject.name)) {
       const triples = nestedOptionalPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
       triples.push(propTriple);
@@ -641,6 +717,70 @@ export function selectToAlgebra(
   };
 
   let algebra: SparqlAlgebraNode = requiredBgp;
+
+  // 5a. Nested-select inner LIMIT/OFFSET → sub-SELECT (single-subject only).
+  //     Wrap each root→child paginated traversal in a sub-SELECT that inlines
+  //     the single subject, projecting only the child variable. The child's own
+  //     property triples stay OUTSIDE (as OPTIONALs), joined on the child var —
+  //     so the flat-row structure and result mapping are unchanged.
+  // Every pattern here is a root→child paginated traversal (the deep-pagination
+  // guard above rejected anything else), so each maps 1:1 to a sub-SELECT.
+  for (const pattern of paginatedTraversePatterns) {
+    const predicate = pattern.pathExpr
+      ? {
+          kind: 'path' as const,
+          value: pathExprToSparql(pattern.pathExpr),
+          uris: collectPathUris(pattern.pathExpr),
+        }
+      : resolvePropertyPredicateTerm(pattern.property);
+    const innerTriple = tripleOf(
+      iriTerm(singleSubjectIri!),
+      predicate,
+      varTerm(pattern.to),
+    );
+    // Default ORDER BY ?childVar for a deterministic window, unless the nested
+    // select supplied its own ordering. When it did, each ordered property must
+    // also be bound inside the sub-SELECT so the ORDER BY variable resolves.
+    let orderBy: SparqlOrderCondition[];
+    let innerNode: SparqlAlgebraNode = {type: 'bgp', triples: [innerTriple]};
+    if (pattern.innerOrderBy && pattern.innerOrderBy.length > 0) {
+      orderBy = pattern.innerOrderBy.map((o) => {
+        const orderVar = registry.getOrCreate(pattern.to, o.property);
+        innerNode = joinNodes(innerNode, {
+          type: 'bgp',
+          triples: [tripleOf(varTerm(pattern.to), resolvePropertyPredicateTerm(o.property), varTerm(orderVar))],
+        });
+        return {
+          expression: {kind: 'variable_expr' as const, name: orderVar},
+          direction: o.direction,
+        };
+      });
+    } else {
+      orderBy = [{
+        expression: {kind: 'variable_expr', name: pattern.to},
+        direction: 'ASC',
+      }];
+    }
+    const subSelect: SparqlAlgebraNode = {
+      type: 'subselect',
+      projection: [pattern.to],
+      inner: innerNode,
+      orderBy,
+      ...(typeof pattern.innerLimit === 'number' ? {limit: pattern.innerLimit} : {}),
+      ...(typeof pattern.innerOffset === 'number' ? {offset: pattern.innerOffset} : {}),
+    };
+    // Nest the child's own property triples (e.g. ?a1 <name> ?a1_name) INSIDE
+    // this block, each as its own OPTIONAL, so they only bind when the window
+    // produced a ?childVar. This keeps the flat-row projection unchanged.
+    let childBlock: SparqlAlgebraNode = subSelect;
+    for (const propTriple of subSelectChildPropertyTriplesByAlias.get(pattern.to) ?? []) {
+      childBlock = wrapOptional(childBlock, {type: 'bgp', triples: [propTriple]});
+    }
+    // OPTIONAL so a parent with an empty (or fully-windowed-out) child set is
+    // still returned — the sub-SELECT yields no ?a1 binding, but the parent row
+    // survives (mirrors the plain nested-traverse OPTIONAL behaviour).
+    algebra = wrapOptional(algebra, childBlock);
+  }
 
   // 5b. Build filtered OPTIONAL blocks for inline where traversals.
   //     Each block contains: traverse triple + OPTIONAL property triples + FILTER.
@@ -848,6 +988,7 @@ function processPattern(
   traverseTriples: SparqlTriple[],
   optionalPropertyTriples: SparqlTriple[],
   filteredTraverseBlocks?: Array<{traverseTriple: SparqlTriple; filter: IRExpression; toAlias: string}>,
+  subSelectAliases?: ReadonlySet<string>,
 ): void {
   switch (pattern.kind) {
     case 'shape_scan':
@@ -858,6 +999,11 @@ function processPattern(
     case 'traverse': {
       // Register the traverse variable: (from, property) → to
       registry.set(pattern.from, pattern.property, pattern.to);
+      // Traversals wrapped in a sub-SELECT (inner LIMIT/OFFSET) are emitted
+      // separately — don't add their triple to the required BGP here.
+      if (subSelectAliases?.has(pattern.to)) {
+        break;
+      }
       // Add traverse triple to required pattern (or filtered block if inline where)
       const triple = buildTraverseTriple(pattern);
       if (pattern.filter && filteredTraverseBlocks) {
@@ -874,26 +1020,26 @@ function processPattern(
 
     case 'join': {
       for (const sub of pattern.patterns) {
-        processPattern(sub, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks);
+        processPattern(sub, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks, subSelectAliases);
       }
       break;
     }
 
     case 'optional': {
       // Optional patterns — process inner patterns but keep them optional
-      processPattern(pattern.pattern, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks);
+      processPattern(pattern.pattern, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks, subSelectAliases);
       break;
     }
 
     case 'union': {
       for (const branch of pattern.branches) {
-        processPattern(branch, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks);
+        processPattern(branch, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks, subSelectAliases);
       }
       break;
     }
 
     case 'exists': {
-      processPattern(pattern.pattern, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks);
+      processPattern(pattern.pattern, registry, traverseTriples, optionalPropertyTriples, filteredTraverseBlocks, subSelectAliases);
       break;
     }
 
@@ -921,7 +1067,7 @@ function processExpressionForProperties(
         const varName = registry.getOrCreate(expr.sourceAlias, expr.property);
         const predicate = expr.pathExpr
           ? {kind: 'path' as const, value: pathExprToSparql(expr.pathExpr), uris: collectPathUris(expr.pathExpr)}
-          : iriTerm(resolvePropertyPredicateIri(expr.property));
+          : resolvePropertyPredicateTerm(expr.property);
         const triple = tripleOf(
           varTerm(expr.sourceAlias),
           predicate,
@@ -1006,7 +1152,7 @@ function processExpressionForProperties(
         const varName = registry.getOrCreate(ctxKey, expr.property);
         const triple = tripleOf(
           iriTerm(expr.contextIri),
-          iriTerm(resolvePropertyPredicateIri(expr.property)),
+          resolvePropertyPredicateTerm(expr.property),
           varTerm(varName),
         );
         const triples = requiredPropertyKeys.has(bindingKey(ctxKey, expr.property))
@@ -1218,7 +1364,7 @@ function convertExistsPattern(
     case 'traverse': {
       const existsPredicate = pattern.pathExpr
         ? {kind: 'path' as const, value: pathExprToSparql(pattern.pathExpr), uris: collectPathUris(pattern.pathExpr)}
-        : iriTerm(resolvePropertyPredicateIri(pattern.property));
+        : resolvePropertyPredicateTerm(pattern.property);
       const triple = tripleOf(
         varTerm(pattern.from),
         existsPredicate,
@@ -1373,7 +1519,7 @@ function generateNodeDataTriples(
   // Field triples
   for (const field of data.fields) {
     // Resolve the SHACL PropertyShape id to its declared `path` URI.
-    const propertyTerm = iriTerm(resolvePropertyPredicateIri(field.property));
+    const propertyTerm = resolvePropertyPredicateTerm(field.property);
 
     if (field.value === null || field.value === undefined) {
       continue;
@@ -1453,7 +1599,7 @@ function processUpdateFields(
   const extends_: Array<{variable: string; expression: SparqlExpression}> = [];
 
   for (const field of data.fields) {
-    const propertyTerm = iriTerm(resolvePropertyPredicateIri(field.property));
+    const propertyTerm = resolvePropertyPredicateTerm(field.property);
     const suffix = propertySuffix(field.property);
 
     // Check for set modification ({add, remove})
@@ -1762,7 +1908,7 @@ function walkBlankNodeTree(
     // WHERE: parent --<property>--> ?bnVar
     const traverseTriple = tripleOf(
       varTerm(parentVar),
-      iriTerm(resolvePropertyPredicateIri(prop.id)),
+      resolvePropertyPredicateTerm(prop.id),
       varTerm(bnVar),
     );
     // FILTER(isBlank(?bnVar))

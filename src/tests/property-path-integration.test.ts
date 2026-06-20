@@ -112,11 +112,11 @@ const goldenSelect = async (
 };
 
 // Shape URI prefix used in generated IDs
-const O = 'https://data.lincd.org/module/-_linked-core/shape/orgshape';
-const R = 'https://data.lincd.org/module/-_linked-core/shape/roleshape';
-const SP = 'https://data.lincd.org/module/-_linked-core/shape/simplepersonshape';
-const CH = 'https://data.lincd.org/module/-_linked-core/shape/childshape';
-const CO = 'https://data.lincd.org/module/-_linked-core/shape/contactshape';
+const O = 'https://linked.cm/shape/core/OrgShape';
+const R = 'https://linked.cm/shape/core/RoleShape';
+const SP = 'https://linked.cm/shape/core/SimplePersonShape';
+const CH = 'https://linked.cm/shape/core/ChildShape';
+const CO = 'https://linked.cm/shape/core/ContactShape';
 
 // ---------------------------------------------------------------------------
 // Integration tests

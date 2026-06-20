@@ -1,11 +1,11 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import type {PropertyShape} from '../shapes/SHACL.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
 import {shacl} from '../ontologies/shacl.js';
 import {CoreSet} from '../collections/CoreSet.js';
 import {CoreMap} from '../collections/CoreMap.js';
 import {getPropertyShapeByLabel,getShapeClass} from '../utils/ShapeClass.js';
-import {NodeReferenceValue,Prettify,ShapeReferenceValue} from './QueryFactory.js';
+import {NodeReferenceValue,type Prettify,type ShapeReferenceValue} from './QueryFactory.js';
 import {xsd} from '../ontologies/xsd.js';
 import type {IRSelectQuery} from './IntermediateRepresentation.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
@@ -771,7 +771,17 @@ export class QueryBuilderObject<
     return new BoundComponent<this, CompQueryRes>(component, this);
   }
 
-  limit(lim: number) {
+  /**
+   * Pagination is applied to a nested *select*, not to a bare traversal — use
+   * `p.friends.select(f => f.name).limit(n)`. Calling `.limit()` directly on a
+   * traversal would silently do nothing, so we fail loudly instead.
+   * (Top-level result pagination lives on the outer query builder.)
+   */
+  limit(lim: number): never {
+    throw new Error(
+      `.limit(${lim}) is not supported directly on a traversal — use ` +
+      '.select(...).limit(n) on the nested collection (single-subject queries only).',
+    );
   }
 
   /**

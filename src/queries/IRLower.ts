@@ -1,8 +1,8 @@
-import {
+import type {
   CanonicalDesugaredSelectQuery,
   CanonicalWhereExpression,
 } from './IRCanonicalize.js';
-import {
+import type {
   DesugaredExpressionSelect,
   DesugaredExpressionWhere,
   DesugaredExistsWhere,
@@ -12,7 +12,7 @@ import {
   DesugaredWhere,
 } from './IRDesugar.js';
 import {resolveExpressionRefs, ExistsCondition} from '../expressions/ExpressionNode.js';
-import {
+import type {
   IRExpression,
   IRGraphPattern,
   IROrderByItem,
@@ -56,6 +56,10 @@ class LoweringContext {
   private patterns: IRGraphPattern[] = [];
   private traverseMap = new Map<string, string>();
   private filterMap = new Map<string, IRExpression>();
+  private innerPaginationMap = new Map<
+    string,
+    {limit?: number; offset?: number; orderBy?: import('./IntermediateRepresentation.js').IRInnerOrderBy[]}
+  >();
   readonly rootAlias: string;
 
   constructor() {
@@ -101,12 +105,34 @@ class LoweringContext {
     this.filterMap.set(toAlias, filter);
   }
 
+  /**
+   * Attaches inner LIMIT/OFFSET/ORDER BY (from a nested select) to the traverse
+   * pattern targeting `toAlias`. Merged into the pattern in `getPatterns()`.
+   */
+  attachInnerPagination(
+    toAlias: string,
+    pagination: {limit?: number; offset?: number; orderBy?: import('./IntermediateRepresentation.js').IRInnerOrderBy[]},
+  ): void {
+    this.innerPaginationMap.set(toAlias, pagination);
+  }
+
   getPatterns(): IRGraphPattern[] {
     return this.patterns.map((p) => {
-      if (p.kind === 'traverse' && this.filterMap.has(p.to)) {
-        return {...p, filter: this.filterMap.get(p.to)!};
+      if (p.kind !== 'traverse') return p;
+      let pattern = p;
+      if (this.filterMap.has(p.to)) {
+        pattern = {...pattern, filter: this.filterMap.get(p.to)!};
       }
-      return p;
+      const pagination = this.innerPaginationMap.get(p.to);
+      if (pagination) {
+        pattern = {
+          ...pattern,
+          ...(typeof pagination.limit === 'number' ? {innerLimit: pagination.limit} : {}),
+          ...(typeof pagination.offset === 'number' ? {innerOffset: pagination.offset} : {}),
+          ...(pagination.orderBy ? {innerOrderBy: pagination.orderBy} : {}),
+        };
+      }
+      return pattern;
     });
   }
 }
@@ -286,10 +312,30 @@ export const lowerSelectQuery = (
     }
 
     if (selection.kind === 'sub_select') {
+      const combinedParentPath = [...parentPath, ...selection.parentPath];
+      // Nested-select inner LIMIT/OFFSET/ORDER BY → attach to the root→child
+      // traverse (the alias reached by walking combinedParentPath). The serializer
+      // wraps that traverse in a SPARQL sub-SELECT. Single-subject is enforced in
+      // irToAlgebra; here we only record the intent.
+      const hasInnerPagination =
+        typeof selection.innerLimit === 'number' ||
+        typeof selection.innerOffset === 'number' ||
+        (selection.innerOrderBy && selection.innerOrderBy.length > 0);
+      if (hasInnerPagination) {
+        const childAlias = aliasAfterPath(combinedParentPath);
+        ctx.attachInnerPagination(childAlias, {
+          limit: selection.innerLimit,
+          offset: selection.innerOffset,
+          orderBy: selection.innerOrderBy?.map((o) => ({
+            property: o.propertyShapeId,
+            direction: o.direction,
+          })),
+        });
+      }
       return collectProjectionSeeds(
         selection.selections,
         key,
-        [...parentPath, ...selection.parentPath],
+        combinedParentPath,
       );
     }
 

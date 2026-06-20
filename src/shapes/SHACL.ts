@@ -3,15 +3,66 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import {NodeReferenceValue, toNodeReference} from '../utils/NodeReference.js';
-import {Shape, ShapeConstructor} from './Shape.js';
+import {type NodeReferenceValue, toNodeReference} from '../utils/NodeReference.js';
+import {Shape, type ShapeConstructor} from './Shape.js';
 import {shacl} from '../ontologies/shacl.js';
 import {URI} from '../utils/URI.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import {normalizePropertyPath, type PropertyPathDecoratorInput} from '../paths/normalizePropertyPath.js';
 
-export const LINCD_DATA_ROOT: string = 'https://data.lincd.org/';
+/**
+ * Default identity root for shape & package IRIs. Public/first-party packages
+ * publish under `linked.cm` (arch-02 §Domains). Packages may override per-package
+ * via `linkedPackage(name, { baseUri })` — CN injects a workspace-scoped root
+ * (`{workspaceSlug}.id.create.now`) for private packages; first-party packages
+ * keep this default.
+ */
+export const LINKED_DATA_ROOT: string = 'https://linked.cm/';
+
+/**
+ * Derive the public package slug — the npm package **basename** with the
+ * `@scope/` dropped, kebab-cased (arch-02 §Slug rules: `^[a-z0-9]+(?:-[a-z0-9]+)*$`).
+ * The package name is the single source of truth; there is no separate slug.
+ *   `@_linked/core` → `core`, `@linked.cm/blog` → `blog`, `mypkg` → `mypkg`.
+ *
+ * Both first-party (`@_linked`) and community (`@linked.cm`) packages publish into
+ * the one `linked.cm/{shape,pkg}` space, so the basename must be globally unique —
+ * enforced by the registry, which reserves the (handful of) first-party names.
+ */
+export function packageNameToSlug(packageName: string): string {
+  return packageName
+    .replace(/^@[^/]+\//, '') // drop the npm scope (@scope/), keep the basename
+    .replace(/[^a-zA-Z0-9]+/g, '-') // any run of non-alphanumerics → single hyphen
+    .replace(/^-+|-+$/g, '') // trim stray hyphens
+    .toLowerCase();
+}
+
+/**
+ * Where each package publishes its IRIs (the identity root). The slug is always
+ * derived from the package name; only the root is configurable — `linkedPackage`
+ * defaults it to `LINKED_DATA_ROOT` (linked.cm), and CN injects a workspace-scoped
+ * root (`{workspaceSlug}.id.create.now`) for private packages.
+ */
+const packageBaseUri = new Map<string, string>();
+
+/** Record a package's publish root. Called by `linkedPackage()`. */
+export function setPackagePublishConfig(
+  packageName: string,
+  config?: {baseUri?: string},
+): void {
+  packageBaseUri.set(packageName, config?.baseUri ?? LINKED_DATA_ROOT);
+}
+
+/** Resolve a package's publish root, defaulting to linked.cm if undeclared. */
+function resolveBaseUri(packageName: string): string {
+  return packageBaseUri.get(packageName) ?? LINKED_DATA_ROOT;
+}
+
+/** Public/first-party package IRI — arch-02: `{baseUri}pkg/{slug}`. */
+export function getPackageUri(packageName: string): string {
+  return `${resolveBaseUri(packageName)}pkg/${packageNameToSlug(packageName)}`;
+}
 
 type NodeKindConfig = NodeReferenceValue | NodeReferenceValue[];
 
@@ -851,9 +902,9 @@ export function disallowProperty(
 }
 
 export function getNodeShapeUri(packageName: string, shapeName: string): string {
-  return `${LINCD_DATA_ROOT}module/${URI.sanitize(packageName)}/shape/${URI.sanitize(
-    shapeName,
-  )}`;
+  // arch-02: `{baseUri}shape/{packageSlug}/{ShapeName}` — ShapeName kept PascalCase
+  // (it is a class name, already URI-safe), packageSlug derived from the name.
+  return `${resolveBaseUri(packageName)}shape/${packageNameToSlug(packageName)}/${shapeName}`;
 }
 
 const nodeShapeCallbacks = new Map<string, ((shape: NodeShape) => void)[]>();

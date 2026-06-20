@@ -1,6 +1,6 @@
-import {DesugaredSelectionPath, DesugaredWhere} from './IRDesugar.js';
+import type {DesugaredSelectionPath, DesugaredWhere} from './IRDesugar.js';
 import {IRAliasScope} from './IRAliasScope.js';
-import {IRExpression, IRProjectionItem, IRResultMapEntry} from './IntermediateRepresentation.js';
+import type {IRExpression, IRProjectionItem, IRResultMapEntry} from './IntermediateRepresentation.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 
 /**

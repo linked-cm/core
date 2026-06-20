@@ -1,14 +1,14 @@
 import type {NodeShape} from '../shapes/SHACL.js';
 import {
-  NodeDescriptionValue,
+  type NodeDescriptionValue,
   NodeReferenceValue,
-  PropUpdateValue,
-  SetModificationValue,
-  SinglePropertyUpdateValue,
+  type PropUpdateValue,
+  type SetModificationValue,
+  type SinglePropertyUpdateValue,
   isSetModificationValue,
 } from './QueryFactory.js';
 import {isExpressionNode, resolveExpressionRefs} from '../expressions/ExpressionNode.js';
-import {
+import type {
   IRCreateMutation,
   IRDeleteMutation,
   IRDeleteAllMutation,

@@ -1,4 +1,4 @@
-import {NodeReferenceValue} from '../utils/NodeReference.js';
+import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {createNameSpace} from '../utils/NameSpace.js';
 import {Prefix} from '../utils/Prefix.js';
 

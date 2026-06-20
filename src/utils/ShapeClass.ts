@@ -1,7 +1,7 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
-import {ICoreIterable} from '../interfaces/ICoreIterable.js';
-import {NodeReferenceValue} from './NodeReference.js';
+import type {ICoreIterable} from '../interfaces/ICoreIterable.js';
+import type {NodeReferenceValue} from './NodeReference.js';
 
 const resolveTargetClassId = (
   targetClass?: NodeReferenceValue | null,

@@ -2,8 +2,8 @@ import {describe, expect, test} from '@jest/globals';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
 import {LinkedStorage} from '../utils/LinkedStorage';
-import {IDataset} from '../interfaces/IDataset';
-import {NodeReferenceValue} from '../utils/NodeReference';
+import type {IDataset} from '../interfaces/IDataset';
+import type {NodeReferenceValue} from '../utils/NodeReference';
 
 const {linkedShape} = linkedPackage('store-routing-test');
 

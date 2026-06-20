@@ -1,7 +1,7 @@
-import {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
-import {UpdatePartial} from './QueryFactory.js';
-import {CreateQueryFactory, CreateQuery, CreateResponse} from './CreateQuery.js';
+import type {UpdatePartial} from './QueryFactory.js';
+import {CreateQueryFactory, type CreateQuery, type CreateResponse} from './CreateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 
 /**

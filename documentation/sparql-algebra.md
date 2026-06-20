@@ -69,6 +69,7 @@ Structural building blocks for WHERE clauses, aligned with SPARQL 1.2 algebra:
 | `minus` | `left`, `right` | MINUS (set difference) |
 | `extend` | `inner`, `variable`, `expression` | BIND (expression AS ?var) |
 | `graph` | `iri`, `inner` | GRAPH (named graph) |
+| `subselect` | `projection[]`, `inner`, `orderBy?`, `limit?`, `offset?` | `{ SELECT … WHERE { … } ORDER BY … LIMIT … OFFSET … }` (a nested sub-SELECT used as a group graph pattern) |
 
 ```ts
 type SparqlAlgebraNode =
@@ -79,8 +80,14 @@ type SparqlAlgebraNode =
   | SparqlUnion
   | SparqlMinus
   | SparqlExtend
-  | SparqlGraph;
+  | SparqlGraph
+  | SparqlSubSelect;
 ```
+
+`subselect` is emitted for **nested-select inner pagination** (`p.friends.select(...).limit(n)`): the
+root→child traverse is wrapped in a sub-SELECT so a related collection can be bounded per parent. It is only
+produced when the outer query targets a single subject (a plain sub-SELECT `LIMIT` is uncorrelated and would
+bound globally otherwise); `irToAlgebra` throws if that precondition does not hold.
 
 ### Expressions
 
@@ -357,6 +364,7 @@ case 'logical_expr': {
 | `minus` | `left\nMINUS {\n  right\n}` |
 | `extend` | `inner\nBIND(expression AS ?variable)` |
 | `graph` | `GRAPH <iri> {\n  inner\n}` |
+| `subselect` | `{\n  SELECT ?p… WHERE {\n    inner\n  } ORDER BY … LIMIT … OFFSET …\n}` (trailing clauses omitted when unset) |
 
 ---
 

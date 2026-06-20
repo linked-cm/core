@@ -1,12 +1,22 @@
 import {CoreMap} from '../collections/CoreMap.js';
 import {CoreSet} from '../collections/CoreSet.js';
-import {IDataset} from '../interfaces/IDataset.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
 import {setQueryDispatch} from '../queries/queryDispatch.js';
 import {getShapeClass} from './ShapeClass.js';
+
+// plan-011 — count physical evaluations of THIS module on the one shared
+// global object. With the single-loader fix there should be exactly one copy;
+// the single-instance guard in backend.ts reports this count if storage config
+// ever lands on a different copy. Deliberately avoids Date/Math.random
+// (unavailable / non-deterministic per repo constraints).
+const linkedStorageGlobal: any =
+  typeof globalThis !== 'undefined' ? globalThis : ({} as any);
+linkedStorageGlobal.__linkedStorageInstanceCount =
+  (linkedStorageGlobal.__linkedStorageInstanceCount ?? 0) + 1;
 
 /**
  * Primary routing layer (arch-04 §The IDataset abstraction).
@@ -22,6 +32,11 @@ export abstract class LinkedStorage {
   private static defaultDataset?: IDataset;
   private static shapeToDataset: CoreMap<Function, IDataset> =
     new CoreMap();
+
+  /** plan-011 — how many physical copies of this module have evaluated. */
+  static getLoadedInstanceCount(): number {
+    return linkedStorageGlobal.__linkedStorageInstanceCount ?? 0;
+  }
 
   static isInitialised() {
     return !!this.defaultDataset;

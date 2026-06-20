@@ -1,4 +1,4 @@
-import {ExpressionInput, ExpressionNode} from './ExpressionNode.js';
+import {type ExpressionInput, ExpressionNode} from './ExpressionNode.js';
 import {Shape} from '../shapes/Shape.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
 
