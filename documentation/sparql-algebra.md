@@ -182,13 +182,14 @@ Converts an `IRSelectQuery` to a `SparqlSelectPlan`. The algorithm:
 1. **Root type triple** — `?a0 rdf:type <ShapeURI>` becomes the required BGP.
 2. **Traverse patterns** — each `IRTraversePattern` becomes a triple: `?from <property> ?to`. Filtered traversals (inline `.where()`) are collected separately.
 3. **Property discovery** — walks all projection, where, and orderBy expressions to find `property_expr` references. Projection-only and conditionally-needed bindings stay OPTIONAL, but top-level WHERE bindings that are mandatory for row survival are emitted as required triples in the main BGP.
-4. **Filtered OPTIONAL blocks** — inline `.where()` filters produce OPTIONAL blocks containing the traverse triple, filter property triples, and FILTER expression together.
-5. **WHERE clause** — `query.where` becomes either a FILTER (for non-aggregate expressions) or HAVING (for expressions containing aggregates like COUNT > N).
-6. **Subject targeting** — `query.subjectId` becomes an additional FILTER: `?a0 = <subjectUri>`.
-7. **Projection** — root alias + property variables + aggregate/expression projections.
-8. **Traversal aliases** — traversal target variables (`?a1`, `?a2`, etc.) are auto-included in the SELECT for result grouping.
-9. **GROUP BY inference** — if any aggregate is present, all non-aggregate projected variables become GROUP BY targets.
-10. **ORDER BY / LIMIT / OFFSET** — passed through from the IR.
+4. **Optional traversal subtrees** — when a singular projected traversal is optional, descendant traversals that depend on its alias stay inside the same OPTIONAL subtree. This prevents child triples from matching unrelated graph data while preserving root rows where the optional parent is missing.
+5. **Filtered OPTIONAL blocks** — inline `.where()` filters produce OPTIONAL blocks containing the traverse triple, filter property triples, and FILTER expression together.
+6. **WHERE clause** — `query.where` becomes either a FILTER (for non-aggregate expressions) or HAVING (for expressions containing aggregates like COUNT > N).
+7. **Subject targeting** — `query.subjectId` becomes an additional FILTER: `?a0 = <subjectUri>`.
+8. **Projection** — root alias + property variables + aggregate/expression projections.
+9. **Traversal aliases** — traversal target variables (`?a1`, `?a2`, etc.) are auto-included in the SELECT for result grouping.
+10. **GROUP BY inference** — if any aggregate is present, all non-aggregate projected variables become GROUP BY targets.
+11. **ORDER BY / LIMIT / OFFSET** — passed through from the IR.
 
 #### Example: flat select
 
@@ -248,6 +249,26 @@ WHERE {
   OPTIONAL {
     ?a0 <hobby> ?a1 .
     FILTER(?a1 = "Jogging")
+  }
+}
+```
+
+#### Example: optional parent with dependent child traversal
+
+DSL: `Player.select((p) => p.currentTeam.select((t) => t.attendsEvents.select((e) => e.name)))`
+
+Because `currentTeam` is single-valued and projected, it is optional. The dependent `attendsEvents` traversal must stay inside the same OPTIONAL block, even though it is multi-valued:
+
+```sparql
+SELECT DISTINCT ?a0 ?a2_name ?a1 ?a2
+WHERE {
+  ?a0 rdf:type <Player> .
+  OPTIONAL {
+    ?a0 <currentTeam> ?a1 .
+    ?a1 <attendsEvents> ?a2 .
+    OPTIONAL {
+      ?a2 <name> ?a2_name .
+    }
   }
 }
 ```

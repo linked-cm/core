@@ -371,8 +371,9 @@ function collectRequiredTraversalAliases(
 function buildOptionalTraversalSubtree(
   alias: string,
   traversePatternMap: ReadonlyMap<string, IRTraversePattern>,
-  childOptionalAliasesByParent: ReadonlyMap<string, string[]>,
+  childAliasesByParent: ReadonlyMap<string, string[]>,
   propertyTriplesByAlias: ReadonlyMap<string, SparqlTriple[]>,
+  optionalTraversalAliases: ReadonlySet<string>,
 ): SparqlAlgebraNode {
   const pattern = traversePatternMap.get(alias);
   if (!pattern) {
@@ -391,16 +392,17 @@ function buildOptionalTraversalSubtree(
     });
   }
 
-  for (const childAlias of childOptionalAliasesByParent.get(alias) ?? []) {
-    subtree = wrapOptional(
-      subtree,
-      buildOptionalTraversalSubtree(
-        childAlias,
-        traversePatternMap,
-        childOptionalAliasesByParent,
-        propertyTriplesByAlias,
-      ),
+  for (const childAlias of childAliasesByParent.get(alias) ?? []) {
+    const childSubtree = buildOptionalTraversalSubtree(
+      childAlias,
+      traversePatternMap,
+      childAliasesByParent,
+      propertyTriplesByAlias,
+      optionalTraversalAliases,
     );
+    subtree = optionalTraversalAliases.has(childAlias)
+      ? wrapOptional(subtree, childSubtree)
+      : joinNodes(subtree, childSubtree);
   }
 
   return subtree;
@@ -603,16 +605,37 @@ export function selectToAlgebra(
     }),
   );
 
+  const childAliasesByParent = new Map<string, string[]>();
+  for (const pattern of traversePatternsInOrder) {
+    const siblings = childAliasesByParent.get(pattern.from) ?? [];
+    siblings.push(pattern.to);
+    childAliasesByParent.set(pattern.from, siblings);
+  }
+
+  const optionalScopedTraversalAliases = new Set<string>();
+  const markOptionalScope = (alias: string): void => {
+    if (optionalScopedTraversalAliases.has(alias)) return;
+    optionalScopedTraversalAliases.add(alias);
+    for (const childAlias of childAliasesByParent.get(alias) ?? []) {
+      markOptionalScope(childAlias);
+    }
+  };
+  for (const alias of optionalTraversalAliases) {
+    markOptionalScope(alias);
+  }
+
   const requiredTraverseTriples = traverseTriples.filter((triple) =>
     !(triple.object.kind === 'variable' &&
-      optionalTraversalAliases.has(triple.object.name))
+      optionalTraversalAliases.has(triple.object.name)) &&
+    !(triple.subject.kind === 'variable' &&
+      optionalScopedTraversalAliases.has(triple.subject.name))
   );
 
   const nestedOptionalPropertyTriplesByAlias = new Map<string, SparqlTriple[]>();
   const topLevelOptionalPropertyTriples: SparqlTriple[] = [];
   for (const propTriple of optionalPropertyTriples) {
     if (propTriple.subject.kind === 'variable' &&
-      optionalTraversalAliases.has(propTriple.subject.name)) {
+      optionalScopedTraversalAliases.has(propTriple.subject.name)) {
       const triples = nestedOptionalPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
       triples.push(propTriple);
       nestedOptionalPropertyTriplesByAlias.set(propTriple.subject.name, triples);
@@ -621,18 +644,10 @@ export function selectToAlgebra(
     }
   }
 
-  const childOptionalAliasesByParent = new Map<string, string[]>();
-  for (const pattern of traversePatternsInOrder) {
-    if (!optionalTraversalAliases.has(pattern.to)) continue;
-    const siblings = childOptionalAliasesByParent.get(pattern.from) ?? [];
-    siblings.push(pattern.to);
-    childOptionalAliasesByParent.set(pattern.from, siblings);
-  }
-
   const rootOptionalTraversalAliases = traversePatternsInOrder
     .filter((pattern) =>
       optionalTraversalAliases.has(pattern.to) &&
-      !optionalTraversalAliases.has(pattern.from),
+      !optionalScopedTraversalAliases.has(pattern.from),
     )
     .map((pattern) => pattern.to);
 
@@ -670,8 +685,9 @@ export function selectToAlgebra(
       buildOptionalTraversalSubtree(
         alias,
         traversePatternMap,
-        childOptionalAliasesByParent,
+        childAliasesByParent,
         nestedOptionalPropertyTriplesByAlias,
+        optionalTraversalAliases,
       ),
     );
   }

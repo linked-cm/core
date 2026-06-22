@@ -11,7 +11,14 @@ import {queryFactories} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {selectToSparql} from '../sparql/irToAlgebra';
 import {setQueryContext} from '../queries/QueryContext';
-import {Person} from '../test-helpers/query-fixtures';
+import {
+  Event,
+  Person,
+  attendsEvents,
+  canonicalCurrentTeam,
+  playerClass,
+  tmpEntityBase,
+} from '../test-helpers/query-fixtures';
 
 import '../ontologies/rdf';
 import '../ontologies/xsd';
@@ -26,6 +33,9 @@ const P = 'https://data.lincd.org/module/-_linked-core/shape/person';
 const E = 'https://data.lincd.org/module/-_linked-core/shape/employee';
 const D = 'https://data.lincd.org/module/-_linked-core/shape/dog';
 const S = 'https://data.lincd.org/module/lincd/shape/shape';
+const PLAYER = playerClass.id;
+const EVENT = Event.shape.id;
+const ENT = tmpEntityBase;
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -200,6 +210,15 @@ WHERE {
   }
   FILTER(?a0 = <linked://tmp/entities/p1>)
 }`);
+  });
+
+  test('subject-targeted nested select keeps all nested rows without LIMIT 1', async () => {
+    const sparql = await goldenSelect(queryFactories.selectOptionalCurrentTeamAttendsEvents);
+
+    expect(sparql).toContain(`FILTER(?a0 = <${ENT}player1>)`);
+    expect(sparql).not.toContain('LIMIT 1');
+    expect(sparql).toContain(`<${canonicalCurrentTeam.id}>`);
+    expect(sparql).toContain(`<${attendsEvents.id}>`);
   });
 
   test('selectNonExisting', async () => {
@@ -884,6 +903,34 @@ ORDER BY DESC(?a0_name)`);
 // ---------------------------------------------------------------------------
 
 describe('SPARQL golden — sub-selects', () => {
+  test('selectOptionalCurrentTeamAttendsEvents scopes child traversal inside parent OPTIONAL', async () => {
+    const sparql = await goldenSelect(queryFactories.selectOptionalCurrentTeamAttendsEvents);
+    expect(sparql).toBe(
+`PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?a0 ?a2_name ?a1 ?a2
+WHERE {
+  ?a0 rdf:type <${PLAYER}> .
+  OPTIONAL {
+    ?a0 <${canonicalCurrentTeam.id}> ?a1 .
+    ?a1 <${attendsEvents.id}> ?a2 .
+    OPTIONAL {
+      ?a2 <${EVENT}/name> ?a2_name .
+    }
+  }
+  FILTER(?a0 = <${ENT}player1>)
+}`);
+
+    expect(sparql).toContain(`  OPTIONAL {
+    ?a0 <${canonicalCurrentTeam.id}> ?a1 .
+    ?a1 <${attendsEvents.id}> ?a2 .
+    OPTIONAL {
+      ?a2 <${EVENT}/name> ?a2_name .
+    }
+  }`);
+    expect(sparql).not.toContain(`}
+  ?a1 <${attendsEvents.id}> ?a2 .`);
+  });
+
   test('subSelectSingleProp', async () => {
     const sparql = await goldenSelect(queryFactories.subSelectSingleProp);
     expect(sparql).toBe(

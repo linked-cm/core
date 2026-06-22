@@ -40,7 +40,9 @@ export const employeeName = prop('employeeName');
 export const employeeDepartment = prop('employeeDepartment');
 export const teamClass = {id: 'http://example.org/Team'};
 export const playerClass = {id: 'http://example.org/Player'};
+export const eventClass = {id: 'http://example.org/Event'};
 export const canonicalCurrentTeam = {id: 'http://lincd.org/ont/irlcg/currentTeam'};
+export const attendsEvents = {id: 'http://lincd.org/ont/irlcg/attendsEvents'};
 
 @linkedShape
 export class Pet extends Shape {
@@ -138,12 +140,27 @@ export class Employee extends Person {
 }
 
 @linkedShape
+export class Event extends Shape {
+  static targetClass = eventClass;
+
+  @literalProperty({path: name, maxCount: 1})
+  get name(): string {
+    return '';
+  }
+}
+
+@linkedShape
 export class Team extends Shape {
   static targetClass = teamClass;
 
   @literalProperty({path: name, maxCount: 1})
   get name(): string {
     return '';
+  }
+
+  @objectProperty({path: attendsEvents, shape: Event})
+  get attendsEvents(): ShapeSet<Event> {
+    return null;
   }
 }
 
@@ -410,6 +427,12 @@ export const queryFactories = {
     Person.update(updateNestedWithPredefinedId).for(entity('p1'))) as () => any,
   updateBirthDate: (() => Person.update(updateBirthDate).for(entity('p1'))) as () => any,
   selectCurrentTeam: () => Player.select((p) => p.currentTeam).for(entity('player1')),
+  selectOptionalCurrentTeamAttendsEvents: () =>
+    Player.select((p) =>
+      p.currentTeam.select((t) =>
+        t.attendsEvents.select((e) => ({name: e.name})),
+      ),
+    ).for(entity('player1')),
   updateCurrentTeam: (() => Player.update(updateCurrentTeam).for(entity('player1'))) as () => any,
   updateUnsetCurrentTeam: (() =>
     Player.update(updateUnsetCurrentTeam).for(entity('player1'))) as () => any,

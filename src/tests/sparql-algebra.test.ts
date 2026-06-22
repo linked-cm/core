@@ -2,6 +2,9 @@ import {describe, expect, test} from '@jest/globals';
 import {
   Employee,
   Person,
+  attendsEvents,
+  canonicalCurrentTeam,
+  playerClass,
   queryFactories,
   tmpEntityBase,
 } from '../test-helpers/query-fixtures';
@@ -76,6 +79,40 @@ function collectOptionalTriples(node: SparqlAlgebraNode): SparqlTriple[] {
   return triples;
 }
 
+/** Collect triples in required scope, excluding LeftJoin right-hand sides. */
+function collectRequiredTriples(node: SparqlAlgebraNode): SparqlTriple[] {
+  const triples: SparqlTriple[] = [];
+  const walkRequired = (n: SparqlAlgebraNode): void => {
+    switch (n.type) {
+      case 'bgp':
+        triples.push(...(n as SparqlBGP).triples);
+        break;
+      case 'join':
+        walkRequired(n.left);
+        walkRequired(n.right);
+        break;
+      case 'left_join':
+        walkRequired(n.left);
+        break;
+      case 'filter':
+        walkRequired(n.inner);
+        break;
+      case 'union':
+      case 'minus':
+      case 'extend':
+      case 'graph':
+        walkAlgebra(n, (inner) => {
+          if (inner.type === 'bgp') {
+            triples.push(...(inner as SparqlBGP).triples);
+          }
+        });
+        break;
+    }
+  };
+  walkRequired(node);
+  return triples;
+}
+
 /** Collect all Filter nodes from the algebra tree. */
 function collectFilters(node: SparqlAlgebraNode): SparqlFilter[] {
   const filters: SparqlFilter[] = [];
@@ -142,6 +179,28 @@ function countTriplesByPredicate(
   return triples.filter(
     (t) => t.predicate.kind === 'iri' && t.predicate.value === predicateUri,
   ).length;
+}
+
+function hasPredicate(
+  triples: SparqlTriple[],
+  predicateUri: string,
+): boolean {
+  return countTriplesByPredicate(triples, predicateUri) > 0;
+}
+
+function hasLeftJoinRightWithPredicates(
+  node: SparqlAlgebraNode,
+  predicateUris: string[],
+): boolean {
+  let found = false;
+  walkAlgebra(node, (n) => {
+    if (found || n.type !== 'left_join') return;
+    const rightTriples = collectAllTriples((n as SparqlLeftJoin).right);
+    found = predicateUris.every((predicateUri) =>
+      hasPredicate(rightTriples, predicateUri),
+    );
+  });
+  return found;
 }
 
 /** Find the innermost algebra node (strip away Filter wrappers). */
@@ -226,6 +285,33 @@ describe('selectToAlgebra — basic selection', () => {
 });
 
 describe('selectToAlgebra — nested traversals', () => {
+  test('optional parent traversal scopes dependent child traversal inside same subtree', async () => {
+    const plan = await capturePlan(() =>
+      queryFactories.selectOptionalCurrentTeamAttendsEvents(),
+    );
+
+    const requiredTriples = collectRequiredTriples(plan.algebra);
+    expect(hasPredicate(requiredTriples, RDF_TYPE)).toBe(true);
+    expect(
+      requiredTriples.some(
+        (triple) =>
+          triple.predicate.kind === 'iri' &&
+          triple.predicate.value === RDF_TYPE &&
+          triple.object.kind === 'iri' &&
+          triple.object.value === playerClass.id,
+      ),
+    ).toBe(true);
+    expect(hasPredicate(requiredTriples, canonicalCurrentTeam.id)).toBe(false);
+    expect(hasPredicate(requiredTriples, attendsEvents.id)).toBe(false);
+
+    expect(
+      hasLeftJoinRightWithPredicates(plan.algebra, [
+        canonicalCurrentTeam.id,
+        attendsEvents.id,
+      ]),
+    ).toBe(true);
+  });
+
   test('selectFriendsName produces traverse + property triple', async () => {
     const plan = await capturePlan(() => queryFactories.selectFriendsName());
 

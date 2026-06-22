@@ -12,6 +12,7 @@ import {describe, expect, test} from '@jest/globals';
 import {
   Player,
   canonicalCurrentTeam,
+  playerClass,
   queryFactories,
   tmpEntityBase,
 } from '../test-helpers/query-fixtures';
@@ -43,7 +44,7 @@ import '../ontologies/xsd';
 // ---------------------------------------------------------------------------
 
 const P = 'https://data.lincd.org/module/-_linked-core/shape/person';
-const PLAYER = Player.shape.id;
+const PLAYER = playerClass.id;
 const ENT = tmpEntityBase; // linked://tmp/entities/
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,7 @@ describe('SPARQL golden — create mutations', () => {
 
     expect(currentTeamPropertyId).not.toBe(canonicalCurrentTeam.id);
     expect(sparql).toContain(`<${ENT}player-created> rdf:type <${PLAYER}>`);
+    expect(sparql).not.toContain(`<${ENT}player-created> rdf:type <${Player.shape.id}>`);
     expect(sparql).toContain(
       `<${ENT}player-created> <${canonicalCurrentTeam.id}> <${ENT}team351> .`,
     );

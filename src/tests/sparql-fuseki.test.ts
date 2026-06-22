@@ -8,7 +8,18 @@
  * Coverage: all 75 query factories from query-fixtures.ts
  */
 import {describe, expect, test, beforeAll, afterAll} from '@jest/globals';
-import {queryFactories, Person, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {
+  Event,
+  Person,
+  Player,
+  attendsEvents,
+  canonicalCurrentTeam,
+  eventClass,
+  playerClass,
+  queryFactories,
+  teamClass,
+  tmpEntityBase,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {
   selectToSparql,
@@ -54,6 +65,7 @@ const P = 'https://data.lincd.org/module/-_linked-core/shape/person';
 const D = 'https://data.lincd.org/module/-_linked-core/shape/dog';
 const PET = 'https://data.lincd.org/module/-_linked-core/shape/pet';
 const E = 'https://data.lincd.org/module/-_linked-core/shape/employee';
+const EVENT = Event.shape.id;
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const ENT = tmpEntityBase; // linked://tmp/entities/
@@ -108,6 +120,17 @@ const TEST_DATA = `
 <${ENT}e2> <${RDF_TYPE}> <${E}> .
 <${ENT}e2> <${E}/name> "Bob" .
 <${ENT}e2> <${E}/department> "Sales" .
+<${ENT}player1> <${RDF_TYPE}> <${playerClass.id}> .
+<${ENT}player1> <${canonicalCurrentTeam.id}> <${ENT}teamA> .
+<${ENT}player2> <${RDF_TYPE}> <${playerClass.id}> .
+<${ENT}teamA> <${RDF_TYPE}> <${teamClass.id}> .
+<${ENT}teamA> <${attendsEvents.id}> <${ENT}eventA> .
+<${ENT}teamB> <${RDF_TYPE}> <${teamClass.id}> .
+<${ENT}teamB> <${attendsEvents.id}> <${ENT}eventB> .
+<${ENT}eventA> <${RDF_TYPE}> <${eventClass.id}> .
+<${ENT}eventA> <${EVENT}/name> "Target Event" .
+<${ENT}eventB> <${RDF_TYPE}> <${eventClass.id}> .
+<${ENT}eventB> <${EVENT}/name> "Unrelated Event" .
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -150,6 +173,17 @@ async function runSelectMapped(
 ) {
   const {ir, results} = await runSelect(factoryName);
   return mapSparqlSelectResult(results, ir);
+}
+
+async function runSelectMappedFromFactory(
+  factory: () => Promise<unknown>,
+): Promise<{sparql: string; rows: ResultRow[]}> {
+  const ir = await captureQuery(factory) as IRSelectQuery;
+  const sparql = selectToSparql(ir);
+  const results = await executeSparqlQuery(sparql);
+  const mapped = mapSparqlSelectResult(results, ir);
+  expect(Array.isArray(mapped)).toBe(true);
+  return {sparql, rows: mapped as ResultRow[]};
 }
 
 /** Find a row by substring match on its id. */
@@ -565,6 +599,45 @@ describe('Fuseki SELECT — nested traversals', () => {
 // =========================================================================
 
 describe('Fuseki SELECT — sub-selects', () => {
+  test('optional currentTeam keeps players without team and scopes attendsEvents to present team', async () => {
+    if (!fusekiAvailable) return;
+
+    const {sparql, rows} = await runSelectMappedFromFactory(() =>
+      Player.select((p) =>
+        p.currentTeam.select((team) =>
+          team.attendsEvents.select((event) => ({name: event.name})),
+        ),
+      ),
+    );
+
+    expect(sparql).toContain(`OPTIONAL {
+    ?a0 <${canonicalCurrentTeam.id}> ?a1 .
+    ?a1 <${attendsEvents.id}> ?a2 .`);
+    expect(sparql).not.toContain(`}
+  ?a1 <${attendsEvents.id}> ?a2 .`);
+
+    expect(rows.length).toBe(2);
+
+    const playerWithTeam = findRowById(rows, 'player1');
+    expect(playerWithTeam).toBeDefined();
+    const currentTeam = playerWithTeam!.currentTeam as ResultRow;
+    expect(currentTeam).toBeDefined();
+    expect(currentTeam).not.toBeNull();
+    expect(currentTeam.id).toContain('teamA');
+
+    const events = currentTeam.attendsEvents as ResultRow[];
+    expect(Array.isArray(events)).toBe(true);
+    expect(events.length).toBe(1);
+    expect(events[0].id).toContain('eventA');
+    expect(events[0].name).toBe('Target Event');
+    expect(events.some((event) => event.id.includes('eventB'))).toBe(false);
+    expect(events.some((event) => event.name === 'Unrelated Event')).toBe(false);
+
+    const playerWithoutTeam = findRowById(rows, 'player2');
+    expect(playerWithoutTeam).toBeDefined();
+    expect(playerWithoutTeam!.currentTeam).toBeNull();
+  });
+
   test('subSelectSingleProp — bestFriend.select(name)', async () => {
     if (!fusekiAvailable) return;
 
