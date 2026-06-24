@@ -15,6 +15,7 @@ import type {
 } from '../queries/IntermediateRepresentation.js';
 import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
+import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import type {
   SparqlSelectPlan,
   SparqlInsertDataPlan,
@@ -1601,15 +1602,23 @@ function processUpdateFields(
   insertPatterns: SparqlTriple[];
   oldValueTriples: SparqlTriple[];
   extends: Array<{variable: string; expression: SparqlExpression}>;
+  cascadeOptionals: SparqlAlgebraNode[];
 } {
   const deletePatterns: SparqlTriple[] = [];
   const insertPatterns: SparqlTriple[] = [];
   const oldValueTriples: SparqlTriple[] = [];
   const extends_: Array<{variable: string; expression: SparqlExpression}> = [];
+  // Owned-subtree cascade (plan-001 P4): replacing a `contains` property must also
+  // delete the old object's owned subtree, not just the one-hop edge.
+  const {containsPreds: updContainsPreds} = collectContainment();
+  const containsOldVars: string[] = [];
 
   for (const field of data.fields) {
     const propertyTerm = resolvePropertyPredicateTerm(field.property);
     const suffix = propertySuffix(field.property);
+    if (propertyTerm.kind === 'iri' && updContainsPreds.includes(propertyTerm.value)) {
+      containsOldVars.push(`old_${suffix}`);
+    }
 
     // Check for set modification ({add, remove})
     if (
@@ -1744,7 +1753,21 @@ function processUpdateFields(
     }
   }
 
-  return {deletePatterns, insertPatterns, oldValueTriples, extends: extends_};
+  // Append cascade for each replaced `contains` property's old value.
+  const cascadeOptionals: SparqlAlgebraNode[] = [];
+  containsOldVars.forEach((oldVar, n) => {
+    const cascade = buildOwnedCascade(varTerm(oldVar), `uc${n}_`);
+    deletePatterns.push(...cascade.deletePatterns);
+    cascadeOptionals.push(...cascade.whereOptionals);
+  });
+
+  return {
+    deletePatterns,
+    insertPatterns,
+    oldValueTriples,
+    extends: extends_,
+    cascadeOptionals,
+  };
 }
 
 /**
@@ -1803,6 +1826,11 @@ export function updateToAlgebra(
     }
   }
 
+  // Owned-subtree cascade OPTIONALs for replaced `contains` properties.
+  for (const optional of result.cascadeOptionals) {
+    whereAlgebra = {type: 'left_join', left: whereAlgebra, right: optional};
+  }
+
   // Add BIND expressions for computed fields
   for (const ext of result.extends) {
     whereAlgebra = {
@@ -1821,6 +1849,95 @@ export function updateToAlgebra(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Owned-subtree cascade (plan-001 P4)
+//
+// Composition cleanup driven by two declarative flags:
+//   - a property marked `contains` → the cascade FOLLOWS that edge,
+//   - a shape marked `dependent`   → its instances may be DELETED when reached.
+// Both are read from the live registry, so no vocabulary is hardcoded. From a root
+// node we follow `(c1|c2|…)+` over all contains predicates and, for each dependent
+// targetClass, wildcard-delete the reached typed nodes. Requiring an asserted
+// `?owned a <dependentType>` naturally excludes shared predicate IRIs (e.g. a simple
+// `sh:path`) and `rdf:nil` (never typed), so only owned structural nodes are removed.
+// ---------------------------------------------------------------------------
+
+/** True when the shape (or an ancestor) declares at least one `contains` property. */
+function shapeHasContainsProperty(shapeId: string): boolean {
+  const nodeShape = getShapeClass(shapeId)?.shape;
+  if (!nodeShape || typeof nodeShape.getPropertyShapes !== 'function') return false;
+  return nodeShape
+    .getPropertyShapes(true)
+    .some((ps) => (ps as {contains?: boolean}).contains);
+}
+
+/** Gather contains-predicate IRIs and dependent targetClass IRIs from the registry. */
+function collectContainment(): {containsPreds: string[]; dependentTypes: string[]} {
+  const containsPreds = new Set<string>();
+  const dependentTypes = new Set<string>();
+  for (const [, shapeClass] of getAllShapeClasses()) {
+    const nodeShape = shapeClass?.shape;
+    if (!nodeShape) continue;
+    if ((nodeShape as {dependent?: boolean}).dependent && nodeShape.targetClass?.id) {
+      dependentTypes.add(nodeShape.targetClass.id);
+    }
+    const propertyShapes =
+      typeof nodeShape.getPropertyShapes === 'function'
+        ? nodeShape.getPropertyShapes(false)
+        : [];
+    for (const ps of propertyShapes) {
+      if ((ps as {contains?: boolean}).contains) {
+        const predId = getSimplePathId(ps.path);
+        if (predId) containsPreds.add(predId);
+      }
+    }
+  }
+  return {containsPreds: [...containsPreds], dependentTypes: [...dependentTypes]};
+}
+
+/**
+ * Build DELETE patterns + WHERE OPTIONAL blocks that cascade-delete the owned subtree
+ * reachable from `rootTerm` via `contains` edges. `varPrefix` keeps generated variables
+ * unique across multiple roots in one query. Returns empty when nothing is owned.
+ */
+export function buildOwnedCascade(
+  rootTerm: SparqlTerm,
+  varPrefix: string,
+): {deletePatterns: SparqlTriple[]; whereOptionals: SparqlAlgebraNode[]} {
+  const {containsPreds, dependentTypes} = collectContainment();
+  if (containsPreds.length === 0 || dependentTypes.length === 0) {
+    return {deletePatterns: [], whereOptionals: []};
+  }
+  // (c1|c2|…)+  — follow one-or-more contains edges from the root.
+  const pathExpr: PathExpr =
+    containsPreds.length === 1
+      ? {oneOrMore: {id: containsPreds[0]}}
+      : {oneOrMore: {alt: containsPreds.map((id) => ({id}))}};
+  const pathTerm: SparqlTerm = {
+    kind: 'path',
+    value: pathExprToSparql(pathExpr),
+    uris: collectPathUris(pathExpr),
+  };
+
+  const deletePatterns: SparqlTriple[] = [];
+  const whereOptionals: SparqlAlgebraNode[] = [];
+  dependentTypes.forEach((typeId, i) => {
+    const owned = varTerm(`${varPrefix}own${i}`);
+    const p = varTerm(`${varPrefix}op${i}`);
+    const o = varTerm(`${varPrefix}ov${i}`);
+    deletePatterns.push(tripleOf(owned, p, o));
+    whereOptionals.push({
+      type: 'bgp',
+      triples: [
+        tripleOf(rootTerm, pathTerm, owned),
+        tripleOf(owned, iriTerm(RDF_TYPE), iriTerm(typeId)),
+        tripleOf(owned, p, o),
+      ],
+    });
+  });
+  return {deletePatterns, whereOptionals};
+}
+
 /**
  * Converts an IRDeleteMutation to a SparqlDeleteInsertPlan (DELETE + WHERE).
  */
@@ -1831,6 +1948,7 @@ export function deleteToAlgebra(
   const deletePatterns: SparqlTriple[] = [];
   const requiredTriples: SparqlTriple[] = [];
   const optionalTriples: SparqlTriple[] = [];
+  const cascadeOptionals: SparqlAlgebraNode[] = [];
 
   for (let i = 0; i < query.ids.length; i++) {
     const subjectTerm = iriTerm(query.ids[i].id);
@@ -1847,9 +1965,17 @@ export function deleteToAlgebra(
     // object-wildcard is OPTIONAL (entity may have no incoming references)
     requiredTriples.push(subjWild, typeGuard);
     optionalTriples.push(objWild);
+
+    // Cascade-delete the owned subtree — only for shapes that actually own something
+    // (have a `contains` property); a plain entity delete is left untouched.
+    if (shapeHasContainsProperty(query.shape)) {
+      const cascade = buildOwnedCascade(subjectTerm, `c${idx}_`);
+      deletePatterns.push(...cascade.deletePatterns);
+      cascadeOptionals.push(...cascade.whereOptionals);
+    }
   }
 
-  // Build WHERE algebra: required BGP + OPTIONAL for each object-wildcard
+  // Build WHERE algebra: required BGP + OPTIONAL for each object-wildcard + cascade OPTIONALs
   let whereAlgebra: SparqlAlgebraNode = {type: 'bgp', triples: requiredTriples};
   for (const triple of optionalTriples) {
     whereAlgebra = {
@@ -1857,6 +1983,9 @@ export function deleteToAlgebra(
       left: whereAlgebra,
       right: {type: 'bgp', triples: [triple]},
     };
+  }
+  for (const optional of cascadeOptionals) {
+    whereAlgebra = {type: 'left_join', left: whereAlgebra, right: optional};
   }
 
   return {
@@ -2119,6 +2248,11 @@ export function updateWhereToAlgebra(
         right: {type: 'bgp', triples: [traversalTriple]},
       };
     }
+  }
+
+  // Owned-subtree cascade OPTIONALs for replaced `contains` properties.
+  for (const optional of result.cascadeOptionals) {
+    whereAlgebra = {type: 'left_join', left: whereAlgebra, right: optional};
   }
 
   // Add BIND expressions for computed fields
