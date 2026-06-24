@@ -269,7 +269,7 @@ needs Docker + container startup; run at phase boundaries that touch the cascade
 - [x] P3 List/PathNode/rdfList
 - [x] P4 owned-cascade (delete+update) — rdf:rest* in DELETE WHERE confirmed viable
 - [ ] P5 meta-model accessors
-- [ ] P6 path translator
+- [x] P6 path translator
 - [ ] P7 syncShapes
 - [ ] P8 integration + e2e Fuseki
 
