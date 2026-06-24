@@ -15,7 +15,6 @@ import {rdf} from '../ontologies/rdf.js';
  * (or `rdf:nil`). The cell is `dependent` (it has no independent existence) and `rest` is
  * a `contains` edge, so deleting/replacing a list cascade-cleans the whole spine — while
  * `first` is NOT a `contains` edge, so the list's *contents* (shared IRIs/values) are kept.
- * See plan-001.
  */
 @linkedShape({dependent: true})
 export class List<T = unknown> extends Shape {

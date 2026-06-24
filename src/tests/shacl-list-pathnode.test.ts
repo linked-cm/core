@@ -28,7 +28,7 @@ const sparqlFor = (items: unknown[], opts?: {base?: string}) =>
     (Holder.create({items: rdfList(items, opts)}) as any).withId('https://example.org/h').build(),
   );
 
-describe('plan-001 P3 — List / PathNode / rdfList', () => {
+describe('List / PathNode / rdfList', () => {
   test('rdfList two items → ordered first/rest/nil chain', () => {
     const sparql = sparqlFor(['a', 'b']);
     expect(sparql).toContain('rdf:first "a"');

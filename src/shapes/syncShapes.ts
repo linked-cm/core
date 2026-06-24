@@ -11,7 +11,7 @@ import {serializePathToNodeData} from './serializePathToNodeData.js';
 
 /**
  * The npm scope of framework shapes (NodeShape/PropertyShape/List/PathNode/Shape) that
- * describe the meta-model itself and must never be synced as user data. See plan-001 D4.
+ * describe the meta-model itself and must never be synced as user data.
  */
 const FRAMEWORK_PACKAGE = '@_linked/core';
 
@@ -49,8 +49,10 @@ function buildNodeShapeData(nodeShape: NodeShape, shapeIri: string): Record<stri
   if (nodeShape.description) d.description = nodeShape.description;
   if (nodeShape.extends) d.extends = nodeShape.extends;
   if (nodeShape.dependent) d.dependent = true;
-  const closed = (nodeShape as {closed?: boolean}).closed;
-  if (closed !== undefined) d.closed = closed;
+  if (nodeShape.closed !== undefined) d.closed = nodeShape.closed;
+  if (nodeShape.ignoredProperties && nodeShape.ignoredProperties.length) {
+    d.ignoredProperties = nodeShape.ignoredProperties;
+  }
   // Flatten: emit own + inherited property shapes (deduped by label) under this shape.
   d.properties = nodeShape
     .getUniquePropertyShapes()

@@ -17,7 +17,7 @@ const usesShapeClass = ns('usesShapeClass');
 const editInline = ns('editInline');
 const isExtending = ns('isExtending');
 
-// Containment / lifecycle vocabulary (plan-001).
+// Containment / lifecycle vocabulary.
 //   contains  — property characteristic: the cascade follows this edge (composition).
 //   dependent — shape characteristic: instances may be deleted when reached via a `contains` edge.
 //   PathNode  — class for SHACL property-path operator nodes (sh:inversePath/alternativePath/…).

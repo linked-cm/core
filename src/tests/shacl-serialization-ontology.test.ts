@@ -10,7 +10,7 @@ import {coreOntology} from '../ontologies/linked-core';
 const SH = 'http://www.w3.org/ns/shacl#';
 const LC = 'https://linked.cm/ont/linked-core/';
 
-describe('plan-001 P1 — ontology terms', () => {
+describe('ontology terms', () => {
   test('shacl predicates present', () => {
     expect(shacl.equals.id).toBe(`${SH}equals`);
     expect(shacl.disjoint.id).toBe(`${SH}disjoint`);

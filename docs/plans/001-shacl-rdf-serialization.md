@@ -279,12 +279,13 @@ resolved.
 `packageName`) would have been synced as a user shape — `syncShapes` now skips shapes with no
 `packageName`.
 
-### Gaps / follow-ups (none block the feature)
-1. **`closed` / `ignoredProperties` dead path** — meta-model accessors exist, but `applyLinkedShape`
-   never copies `ShapeConfig.closed`/`ignoredProperties` onto the NodeShape, so they never serialize.
-   Either wire them (like `dependent`) or drop the accessors. *(small, real)*
-2. **Update-side cascade not e2e-verified** — wired into `processUpdateFields` and unit-tested at the
-   SPARQL-generation level, but sync uses delete+recreate so it isn't exercised against Fuseki.
+### Gaps / follow-ups
+1. **`closed` / `ignoredProperties`** — ✅ **resolved (iteration 1):** `ShapeConfig.closed`/
+   `ignoredProperties` now flow through `applyLinkedShape` → `NodeShape` → serialization;
+   e2e-verified (Phase A asserts `sh:closed`/`sh:ignoredProperties`).
+2. **Update-side cascade** — ✅ **resolved (iteration 1):** new e2e Phase C creates an `sh:in`
+   list then `update()`s it and asserts the old list spine is cascade-deleted while the new
+   member persists.
 3. **`sortBy` / `defaultValue` not serialized** — non-SHACL extras; intentional omission.
 4. **No-op re-sync idempotency** not explicitly tested (delete+recreate is idempotent by construction).
 5. **Full-graph churn** — delete+recreate rewrites every shape each sync (per D1; a skip-unchanged

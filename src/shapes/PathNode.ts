@@ -19,7 +19,6 @@ import {List} from './List.js';
  * `dependent`, so a property-shape's complex `sh:path` cascade-cleans on delete/replace.
  * Operands are polymorphic (a predicate IRI, a nested `PathNode`, or a `List`), so no fixed
  * `valueShape` is declared except for `alternativePath`, which is always an `rdf:List`.
- * See plan-001 (D8/D9).
  */
 @linkedShape({dependent: true})
 export class PathNode extends Shape {

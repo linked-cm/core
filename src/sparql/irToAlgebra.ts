@@ -1608,7 +1608,7 @@ function processUpdateFields(
   const insertPatterns: SparqlTriple[] = [];
   const oldValueTriples: SparqlTriple[] = [];
   const extends_: Array<{variable: string; expression: SparqlExpression}> = [];
-  // Owned-subtree cascade (plan-001 P4): replacing a `contains` property must also
+  // Owned-subtree cascade: replacing a `contains` property must also
   // delete the old object's owned subtree, not just the one-hop edge.
   const {containsPreds: updContainsPreds} = collectContainment();
   const containsOldVars: string[] = [];
@@ -1850,7 +1850,7 @@ export function updateToAlgebra(
 }
 
 // ---------------------------------------------------------------------------
-// Owned-subtree cascade (plan-001 P4)
+// Owned-subtree cascade
 //
 // Composition cleanup driven by two declarative flags:
 //   - a property marked `contains` → the cascade FOLLOWS that edge,

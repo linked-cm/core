@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  *
- * End-to-end shape-sync test (plan-001 P8): materialize shapes into Fuseki, mutate the
+ * End-to-end shape-sync test: materialize shapes into Fuseki, mutate the
  * code-side shapes, re-sync, and verify updates persist, orphans/old subtrees are cleaned,
  * and shared IRIs (enum members, predicate IRIs) survive. Reuses the existing Fuseki harness;
  * skips gracefully when Fuseki is unavailable.
@@ -24,12 +24,14 @@ import {Shape} from '../shapes/Shape';
 import {literalProperty, objectProperty, PropertyShape} from '../shapes/SHACL';
 import {getAllShapeClasses} from '../utils/ShapeClass';
 import {syncShapes} from '../shapes/syncShapes';
+import {rdfList} from '../shapes/List';
+import {UpdateBuilder} from '../queries/UpdateBuilder';
 import {xsd} from '../ontologies/xsd';
 
 const {linkedShape} = linkedPackage('shapesync-e2e');
 const ex = (n: string) => ({id: `https://example.org/e2e#${n}`});
 
-@linkedShape
+@linkedShape({closed: true, ignoredProperties: [ex('extra')]})
 class E2EPerson extends Shape {
   static targetClass = ex('Person');
   @literalProperty({path: ex('name'), minCount: 1, maxCount: 1, datatype: xsd.string})
@@ -89,7 +91,7 @@ beforeAll(async () => {
   await runSync(); // Phase A
 });
 
-describe('plan-001 P8 — shape sync e2e (Fuseki)', () => {
+describe('shape sync e2e (Fuseki)', () => {
   test('Phase A: shapes materialize into the store', async () => {
     if (!available) return;
     // NodeShape + targetClass
@@ -109,6 +111,9 @@ describe('plan-001 P8 — shape sync e2e (Fuseki)', () => {
     expect(
       await has(`<${P()}/region> <${SH}path>/<${RDF}first> <${ex('worksAt').id}>`),
     ).toBe(true);
+    // node-level closed + ignoredProperties
+    expect(await has(`<${P()}> <${SH}closed> true`)).toBe(true);
+    expect(await has(`<${P()}> <${SH}ignoredProperties> <${ex('extra').id}>`)).toBe(true);
     // both shapes present
     expect(await has(`<${G()}> <${RDF}type> <${SH}NodeShape>`)).toBe(true);
   });
@@ -170,5 +175,30 @@ describe('plan-001 P8 — shape sync e2e (Fuseki)', () => {
     // SAFETY: shared predicate IRI and shared enum IRI survived the cascade
     expect(await has(`<${ex('name').id}> <${RDF}type> <${ex('Predicate').id}>`)).toBe(true);
     expect(await has(`<${ex('Active').id}> <${RDF}type> <${ex('StatusValue').id}>`)).toBe(true);
+  });
+
+  test('Phase C: update() of a contains property cascade-cleans the old list subtree', async () => {
+    if (!available) return;
+    const psIri = 'https://example.org/e2e#upd/prop';
+
+    // create a property shape whose sh:in is an rdf:List of 3 IRI members
+    await (
+      (PropertyShape.create({
+        in: rdfList([ex('m1'), ex('m2'), ex('m3')], {base: `${psIri}/inA`}),
+      } as any).withId(psIri) as any)
+    ).exec();
+    expect(await count(`<${psIri}> <${SH}in>/<${RDF}rest>*/<${RDF}first> ?v`)).toBe(3);
+
+    // update sh:in to a single member (new list base so old spine must be cascade-deleted)
+    await (
+      UpdateBuilder.from(PropertyShape)
+        .for(psIri)
+        .set({in: rdfList([ex('m1')], {base: `${psIri}/inB`})} as any) as any
+    ).exec();
+
+    // only the new member is reachable, and the old cells (m2/m3) are gone entirely
+    expect(await count(`<${psIri}> <${SH}in>/<${RDF}rest>*/<${RDF}first> ?v`)).toBe(1);
+    expect(await has(`?cell <${RDF}first> <${ex('m2').id}>`)).toBe(false);
+    expect(await has(`?cell <${RDF}first> <${ex('m3').id}>`)).toBe(false);
   });
 });

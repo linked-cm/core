@@ -40,7 +40,7 @@ class TBox extends Shape {
   }
 }
 
-describe('plan-001 P4 — owned-subtree cascade', () => {
+describe('owned-subtree cascade', () => {
   test('delete cascades via contains edges to dependent-typed nodes', () => {
     const sparql = deleteToSparql(
       DeleteBuilder.from(TBox, {id: 'http://example.org/c#b1'}).build() as IRDeleteMutation,

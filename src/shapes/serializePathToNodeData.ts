@@ -18,14 +18,14 @@ export type PathNodeData =
   | {shape: typeof List | typeof PathNode; __id?: string; [k: string]: unknown};
 
 /**
- * Translate a `PathExpr` into create-pipeline node-data for `sh:path` (plan-001 D9).
+ * Translate a `PathExpr` into create-pipeline node-data for `sh:path`.
  *
  * - simple `PathRef` → `{id}` (a shared predicate IRI; NOT owned)
  * - sequence → an `rdf:List` of segments (via {@link rdfList})
  * - inverse / alternative / cardinality → a `PathNode` operator node (alt's operand is an `rdf:List`)
  *
  * `base` seeds deterministic ids for the minted owned nodes (`{base}/inv`, `{base}/seq/0`, …) so a
- * re-sync overwrites them in place; the owned subtree is cleaned by the containment cascade (P4).
+ * re-sync overwrites them in place; the owned subtree is cleaned by the containment cascade.
  */
 export function serializePathToNodeData(path: PathExpr, base: string): PathNodeData {
   const serialize = (e: PathExpr, b: string): PathNodeData => {

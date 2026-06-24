@@ -48,9 +48,18 @@ export type ShapeConfig = {
   description?: string;
   /**
    * Marks this shape's instances as *dependent* (composition / no independent existence):
-   * they may be cascade-deleted when reached through a `contains` property. See plan-001.
+   * they may be cascade-deleted when reached through a `contains` property.
    */
   dependent?: boolean;
+  /**
+   * Close the shape (sh:closed): target nodes with properties outside this shape are invalid.
+   */
+  closed?: boolean;
+  /**
+   * Properties permitted in addition to the declared ones when the shape is closed
+   * (sh:ignoredProperties).
+   */
+  ignoredProperties?: NodeReferenceValue[];
 };
 
 export type PackageMetadata = {
@@ -316,6 +325,14 @@ export function linkedPackage(
         {
           nodeShape.dependent = true;
         }
+        if (options.closed !== undefined)
+        {
+          nodeShape.closed = options.closed;
+        }
+        if (options.ignoredProperties)
+        {
+          nodeShape.ignoredProperties = options.ignoredProperties;
+        }
       }
 
       // also keep track of the reverse: nodeShape to typescript class
@@ -532,7 +549,7 @@ corePackage.linkedShape({
   description:
     'Represents a SHACL PropertyShape; specifies rules for one property of a NodeShape (path, datatype, cardinality). (validation rule, property constraint)',
   // A property shape has no independent existence — it is owned by its NodeShape via the
-  // `contains` sh:property edge, so deleting the NodeShape cascade-deletes it. See plan-001.
+  // `contains` sh:property edge, so deleting the NodeShape cascade-deletes it.
   dependent: true,
 })(PropertyShape);
 // ValidationReport / ValidationResult removed in core metadata rewrite
@@ -622,7 +639,7 @@ createPropertyShape(
   {
     // No fixed valueShape: sh:path is polymorphic (a predicate IRI, an rdf:List for a
     // sequence, or a PathNode for inverse/alt/cardinality). Omitting valueShape lets the
-    // create pipeline use each value's own shape (plan-001 D9). Simple paths are passed as
+    // create pipeline use each value's own shape. Simple paths are passed as
     // {id} node references, complex paths as List/PathNode node-data.
     path: shacl.path,
     contains: true, // a property shape owns its complex path structure (List/PathNode)
@@ -712,7 +729,7 @@ createPropertyShape(
 );
 
 // ---------------------------------------------------------------------------
-// plan-001 P5 — remaining SHACL meta-model accessors for shape serialization.
+// Remaining SHACL meta-model accessors for shape serialization.
 // Labels match PropertyShape.getResult() / NodeShape fields so syncShapes() can
 // build instances directly. `sh:in` is owned (contains, valueShape List).
 // ---------------------------------------------------------------------------

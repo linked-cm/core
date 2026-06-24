@@ -31,7 +31,7 @@ const sparql = (path: any) =>
       .build(),
   );
 
-describe('plan-001 P6 — serializePathToNodeData', () => {
+describe('serializePathToNodeData', () => {
   test('simple PathRef → {id}', () => {
     expect(serializePathToNodeData({id: 'http://ex.org/a'}, B)).toEqual({id: 'http://ex.org/a'});
   });

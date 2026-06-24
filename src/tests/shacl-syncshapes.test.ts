@@ -53,7 +53,7 @@ function installMock(existingIds: string[]) {
   });
 }
 
-describe('plan-001 P7 — syncShapes', () => {
+describe('syncShapes', () => {
   const userIri = () => TUser.shape.id;
 
   beforeEach(() => installMock([userIri(), ORPHAN]));

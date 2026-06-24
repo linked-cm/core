@@ -11,7 +11,7 @@ import {xsd} from '../ontologies/xsd';
 import '../ontologies/rdf';
 import '../ontologies/shacl';
 
-describe('plan-001 P5 — meta-model serialization', () => {
+describe('meta-model serialization', () => {
   test('NodeShape.create serializes node + property + constraints', () => {
     const shapeIri = 'https://example.org/shape/Person';
     const ir = (NodeShape.create({

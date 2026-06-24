@@ -20,6 +20,14 @@ class OwnedThing extends Shape {
   }
 }
 
+@linkedShape({closed: true, ignoredProperties: [prop('extra')]})
+class ClosedThing extends Shape {
+  @literalProperty({path: prop('x'), maxCount: 1})
+  get x(): string {
+    return '';
+  }
+}
+
 @linkedShape
 class Container extends Shape {
   @objectProperty({path: prop('owns'), shape: OwnedThing, contains: true})
@@ -33,7 +41,7 @@ class Container extends Shape {
   }
 }
 
-describe('plan-001 P2 — contains/dependent flags', () => {
+describe('contains/dependent flags', () => {
   test('objectProperty contains stored on PropertyShape', () => {
     expect(Container.shape.getPropertyShape('owns', false).contains).toBe(true);
     // a property without `contains` is falsy
@@ -43,5 +51,11 @@ describe('plan-001 P2 — contains/dependent flags', () => {
   test('linkedShape dependent stored on NodeShape', () => {
     expect(OwnedThing.shape.dependent).toBe(true);
     expect(Container.shape.dependent).toBeFalsy();
+  });
+
+  test('linkedShape closed / ignoredProperties stored on NodeShape', () => {
+    expect(ClosedThing.shape.closed).toBe(true);
+    expect(ClosedThing.shape.ignoredProperties).toEqual([prop('extra')]);
+    expect(Container.shape.closed).toBeUndefined();
   });
 });
