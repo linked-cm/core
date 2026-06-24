@@ -271,7 +271,7 @@ needs Docker + container startup; run at phase boundaries that touch the cascade
 - [x] P5 meta-model accessors
 - [x] P6 path translator
 - [x] P7 syncShapes
-- [ ] P8 integration + e2e Fuseki
+- [x] P8 integration + e2e Fuseki — `npm test` 1132 pass, `test:fuseki` 86 pass, `yarn build` ok
 
 ## Task breakdown (phases)
 
