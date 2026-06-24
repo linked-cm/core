@@ -1,6 +1,6 @@
 ---
 summary: Serialize registered NodeShapes to the store as SHACL via the query engine — reuse the Package.ts meta-model, add a containment cascade (contains + dependent), List/PathNode shapes, and syncShapes() upsert. Supersedes ideation in ideas/015.
-status: Tasks
+status: Implementation
 source: ideas/015-shacl-rdf-serialization.md
 related: ideas/013-shacl-property-paths.md, ideas/005-named-graph-support.md, reports/011-shacl-property-paths-and-prefix-resolution.md
 scope: packages/core only (no CN changes; CN consumes syncShapes() later)
@@ -261,6 +261,17 @@ the `test:fuseki` script, and the graceful-skip-when-down pattern from `sparql-f
 
 **Full/slow suite (review):** `npm run test:fuseki` (Docker). Skipped in the quick gate because it
 needs Docker + container startup; run at phase boundaries that touch the cascade and at review.
+
+## Implementation progress
+
+- [x] P1 ontology terms & contracts
+- [ ] P2 contains/dependent flags
+- [ ] P3 List/PathNode/rdfList
+- [ ] P4 owned-cascade (delete+update)
+- [ ] P5 meta-model accessors
+- [ ] P6 path translator
+- [ ] P7 syncShapes
+- [ ] P8 integration + e2e Fuseki
 
 ## Task breakdown (phases)
 
