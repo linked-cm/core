@@ -81,6 +81,8 @@ describe('plan-001 P7 — syncShapes', () => {
     expect(creates).not.toContain('https://linked.cm/shape/core/NodeShape');
     expect(creates).not.toContain('https://linked.cm/shape/core/List');
     expect(deletes).not.toContain('https://linked.cm/shape/core/PropertyShape');
+    // base Shape has no packageName and must also be excluded
+    expect(creates).not.toContain('https://linked.cm/shape/core/Shape');
   });
 
   test('per-shape ordering: delete runs before create', async () => {

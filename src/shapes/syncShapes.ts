@@ -76,7 +76,10 @@ export async function syncShapes(): Promise<Array<() => Promise<void>>> {
   const userShapes: Array<{iri: string; nodeShape: NodeShape}> = [];
   for (const [iri, shapeClass] of getAllShapeClasses()) {
     if (!shapeClass?.shape) continue;
-    if ((shapeClass as {packageName?: string}).packageName === FRAMEWORK_PACKAGE) continue;
+    const pkg = (shapeClass as {packageName?: string}).packageName;
+    // Skip framework/meta shapes: the core package, and the base `Shape` which is registered
+    // directly (no applyLinkedShape) and therefore carries no packageName.
+    if (!pkg || pkg === FRAMEWORK_PACKAGE) continue;
     userShapes.push({iri, nodeShape: shapeClass.shape});
   }
   const localShapeIris = new Set(userShapes.map((s) => s.iri));
