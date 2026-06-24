@@ -1,6 +1,6 @@
 ---
 summary: Serialize registered NodeShapes to the store as SHACL via the query engine — reuse the Package.ts meta-model, add a containment cascade (contains + dependent), List/PathNode shapes, and syncShapes() upsert. Supersedes ideation in ideas/015.
-status: Implementation
+status: Review
 source: ideas/015-shacl-rdf-serialization.md
 related: ideas/013-shacl-property-paths.md, ideas/005-named-graph-support.md, reports/011-shacl-property-paths-and-prefix-resolution.md
 scope: packages/core only (no CN changes; CN consumes syncShapes() later)
@@ -261,6 +261,37 @@ the `test:fuseki` script, and the graceful-skip-when-down pattern from `sparql-f
 
 **Full/slow suite (review):** `npm run test:fuseki` (Docker). Skipped in the quick gate because it
 needs Docker + container startup; run at phase boundaries that touch the cascade and at review.
+
+## Review
+
+Implemented across 8 phases (P1–P8), one commit each. Validation: `npm test` **1132 passed**
+(114 Fuseki-gated skipped), `npm run test:fuseki` **86 passed** (incl. the new e2e), `yarn build`
+**exit 0** (all new modules emitted). All accepted decisions D1–D10 delivered.
+
+**Verified end-to-end (Fuseki):** shapes materialize (NodeShape, targetClass, property shapes,
+all scalar constraints, `sh:in` as `rdf:List`, sequence `sh:path` as `rdf:List`); re-sync after
+code edits persists updates (maxCount change, added property), cleans removed property shapes,
+shrunk `sh:in` lists, swapped simple↔complex paths, and orphaned shapes — while shared predicate
+IRIs and enum-member IRIs survive (cascade safety). The `rdf:rest*`-in-DELETE-WHERE risk is
+resolved.
+
+**Bug found & fixed during review:** base `Shape` (registered without `applyLinkedShape`, no
+`packageName`) would have been synced as a user shape — `syncShapes` now skips shapes with no
+`packageName`.
+
+### Gaps / follow-ups (none block the feature)
+1. **`closed` / `ignoredProperties` dead path** — meta-model accessors exist, but `applyLinkedShape`
+   never copies `ShapeConfig.closed`/`ignoredProperties` onto the NodeShape, so they never serialize.
+   Either wire them (like `dependent`) or drop the accessors. *(small, real)*
+2. **Update-side cascade not e2e-verified** — wired into `processUpdateFields` and unit-tested at the
+   SPARQL-generation level, but sync uses delete+recreate so it isn't exercised against Fuseki.
+3. **`sortBy` / `defaultValue` not serialized** — non-SHACL extras; intentional omission.
+4. **No-op re-sync idempotency** not explicitly tested (delete+recreate is idempotent by construction).
+5. **Full-graph churn** — delete+recreate rewrites every shape each sync (per D1; a skip-unchanged
+   optimization is possible later).
+6. **CN wiring** — `syncShapes()` is exported but nothing calls it yet (out of scope; CN follow-up).
+7. **Backlog (as planned):** reverse import (SHACL RDF → NodeShape); heavier `{__rdfList}` IR
+   primitive; `editInline` review/migration.
 
 ## Implementation progress
 
