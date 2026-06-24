@@ -37,6 +37,14 @@ const node = ns('node');
 const nodeKind = ns('nodeKind');
 const Shape = ns('Shape');
 
+const equals = ns('equals');
+const disjoint = ns('disjoint');
+const hasValue = ns('hasValue');
+const order = ns('order');
+const group = ns('group');
+const closed = ns('closed');
+const ignoredProperties = ns('ignoredProperties');
+
 const alternativePath = ns('alternativePath');
 const inversePath = ns('inversePath');
 const zeroOrMorePath = ns('zeroOrMorePath');
@@ -110,6 +118,13 @@ export const shacl = {
   IRIOrLiteral,
   nodeKind,
   inList,
+  equals,
+  disjoint,
+  hasValue,
+  order,
+  group,
+  closed,
+  ignoredProperties,
   languageIn,
   lessThan,
   lessThanOrEquals,
