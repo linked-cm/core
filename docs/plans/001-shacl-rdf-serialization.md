@@ -266,7 +266,7 @@ needs Docker + container startup; run at phase boundaries that touch the cascade
 
 - [x] P1 ontology terms & contracts
 - [x] P2 contains/dependent flags
-- [ ] P3 List/PathNode/rdfList
+- [x] P3 List/PathNode/rdfList
 - [ ] P4 owned-cascade (delete+update)
 - [ ] P5 meta-model accessors
 - [ ] P6 path translator
