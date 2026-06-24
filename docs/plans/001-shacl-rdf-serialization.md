@@ -42,9 +42,12 @@ validation triplestores. **Code is canonical; the store is a rebuildable project
   `disjoint`, `hasValue`, `order`, `group`, `name`, `lessThan`, `lessThanOrEquals`, `node`/valueShape,
   `closed`, `ignoredProperties`). **No new `SHACLNodeShape` classes.** Serialize via
   `NodeShape.create({...}).withId(shapeIri)`.
-- **D6 — Writes reuse nested-create; no new mutation primitive.** `rdf:List`/path structures are
-  written as nested node-data chains via the existing recursive `create` lowering
-  (`generateNodeDataTriples`). The earlier "rdfList engine primitive" (old todo #4) is **dropped.**
+- **D6 — Writes reuse nested-create; public `rdfList()` helper (no engine primitive).** `rdf:List`
+  and path structures are written as nested `List` node-data chains via the existing recursive
+  `create` lowering (`generateNodeDataTriples`) — no new IR/mutation-engine variant. We expose a
+  **public `rdfList()` DSL helper** (in scope) that builds that chain, so users can write ordered
+  collections (`Playlist.create({ tracks: rdfList([t1,t2,t3]) })`) instead of unordered sets. The
+  SHACL `in` serializer uses the same helper. (The heavier `{__rdfList}` IR primitive remains dropped.)
 - **D7 — Containment cascade = `contains` (edge) + `dependent` (node), Plan A.** New declarative flags:
   - `linked:contains` on a property → the cascade *follows* this edge (and it doubles as composition
     semantics; persisted as a triple on the property shape).
@@ -90,7 +93,7 @@ no synthetic shape).
 1. Ontology: add missing `shacl.ts` predicates + `linked-core.ts` `contains`/`dependent`/`PathNode`.
 2. Decorator/shape support: `contains` on object-property config; `dependent` on shape config; store
    both on PropertyShape/NodeShape; persist as triples in the meta-model.
-3. Rewrite `List` (pure shape, `rest` contains) + add `PathNode` shape.
+3. Rewrite `List` (pure shape, `rest` contains) + add `PathNode` shape + public `rdfList()` helper.
 4. Containment cascade: shared helper (`contains` traversal + blank/`dependent` discriminator +
    `rdf:rest*`, exclude `rdf:nil`); wire into `delete`-by-id and `update` old-value removal.
 5. Extend the `Package.ts` meta-model with the missing NodeShape/PropertyShape accessors (+ contains
@@ -111,13 +114,13 @@ no synthetic shape).
 | `src/ontologies/shacl.ts` | add `sh:equals`, `sh:disjoint`, `sh:hasValue`, `sh:order`, `sh:group`, `sh:closed`, `sh:ignoredProperties` |
 | `src/ontologies/linked-core.ts` | add `contains`, the `dependent` term, and `PathNode` class IRI |
 | `src/shapes/SHACL.ts` | `PropertyShape.contains?: boolean`; `NodeShape.dependent?: boolean`; `contains` on `ObjectPropertyShapeConfig`; `dependent` on shape config; `createPropertyShape` sets `contains` |
-| `src/shapes/List.ts` | rewrite to pure shape (`first` not-contains, `rest` contains+self valueShape, `dependent`); drop `items`/helpers |
+| `src/shapes/List.ts` | rewrite to pure shape (`first` not-contains, `rest` contains+self valueShape, `dependent`); drop `items`/old helpers; add public `rdfList()` helper (D6) |
 | `src/shapes/PathNode.ts` (new) | operator-node meta-shape (`dependent`, `contains` path-operator accessors) |
 | `src/shapes/serializePathToNodeData.ts` (new) | `PathExpr → {id} \| List \| PathNode` node-data translator (reuses `serializePathToSHACL` structure) |
 | `src/shapes/syncShapes.ts` (new) | enumerate → identity-read → return delete→create + orphan-delete thunks |
 | `src/utils/Package.ts` | read `dependent` in `applyLinkedShape` (set + persist on NodeShape); extend meta-model accessors; mark `properties`/`path`/`in` as `contains`; register `List`/`PathNode` |
 | `src/sparql/irToAlgebra.ts` | shared **owned-cascade** helper; wire into `deleteToAlgebra` and the `update` old-value removal |
-| `src/index.ts` | export `syncShapes`, `List`, `PathNode` |
+| `src/index.ts` | export `syncShapes`, `List`, `PathNode`, `rdfList` |
 | `src/tests/*.test.ts` | unit tests (below) |
 | `src/tests/sparql-fuseki-shape-sync.test.ts` (new) | e2e (matches existing `sparql-fuseki` pattern) |
 
@@ -129,6 +132,10 @@ interface ObjectPropertyShapeConfig { /* … */ contains?: boolean }
 interface ShapeConfig             { /* … */ dependent?: boolean }   // used by linkedShape()
 class PropertyShape { /* … */ contains?: boolean }
 class NodeShape     { /* … */ dependent?: boolean }
+
+// List.ts — public ordered-list helper (D6). Builds the nested List node-data chain.
+//  base set → deterministic cell ids ({base}/0,1,…); omitted → engine-minted ids.
+function rdfList<T>(items: T[], opts?: { base?: string }): NodeDescriptionValue;
 
 // serializePathToNodeData.ts — the only per-type write-translator (D9)
 //  simple → {id}; sequence → List node-data; inverse/alt/cardinality → PathNode node-data
@@ -217,7 +224,8 @@ No architecture changes required; one approved deferral (reverse import → back
 **Unit tests (jest, golden-SPARQL via `captureQuery` + `*ToSparql`):**
 1. Ontology terms exist (`shacl.ts`, `linked-core.ts`).
 2. `contains`/`dependent` flags stored on PropertyShape/NodeShape and **persisted** in meta-model output.
-3. `List` create → correct `rdf:first`/`rdf:rest`/`rdf:nil` chain.
+3. `List` create + `rdfList()` helper → correct ordered `rdf:first`/`rdf:rest`/`rdf:nil` chain
+   (golden SPARQL; deterministic ids when `base` given).
 4. `serializePathToNodeData` — each `PathExpr` form (simple / seq / inverse / alt / `*` `+` `?`) →
    correct `{id}`/`List`/`PathNode` and golden `sh:path` SPARQL.
 5. Full shape serialization — `NodeShape.create(...)` → `sh:NodeShape` + `sh:property` + all
@@ -267,5 +275,6 @@ needs Docker + container startup; run at phase boundaries that touch the cascade
 ## Backlog candidates (propose, not actioned)
 
 - Review/migrate `editInline` (likely replaced by `contains` / a shape/view config).
-- General first-class `rdfList()` DSL primitive for user ergonomics (`{tags: rdfList([...])}`).
-- `update`-side cascade as a standalone general feature beyond sync's needs.
+- Heavier first-class `{__rdfList}` IR/mutation-engine primitive (the public `rdfList()` helper in
+  D6 covers the ergonomics without it).
+- Reverse import (SHACL RDF → NodeShape) round-trip.
