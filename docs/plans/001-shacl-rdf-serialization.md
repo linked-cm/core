@@ -291,8 +291,13 @@ resolved.
 5. **Full-graph churn** — delete+recreate rewrites every shape each sync (per D1; a skip-unchanged
    optimization is possible later).
 6. **CN wiring** — `syncShapes()` is exported but nothing calls it yet (out of scope; CN follow-up).
-7. **Backlog (as planned):** reverse import (SHACL RDF → NodeShape); heavier `{__rdfList}` IR
-   primitive; `editInline` review/migration.
+7. **Closed (not deferred):**
+   - **`{__rdfList}` IR/mutation-engine primitive — won't build.** `rdfList()` is the complete public
+     API for ordered lists; the primitive would be a same-output internal refactor adding a second
+     mechanism and re-touching core lowering for no functional gain.
+   - **Reverse import (SHACL RDF → NodeShape) — out of scope for core.** It will be built in CN, not
+     `@_linked/core`.
+8. **Backlog (still open):** `editInline` review/migration (decide whether `contains` subsumes it).
 
 ## Implementation progress
 
