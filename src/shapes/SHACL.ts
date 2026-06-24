@@ -203,6 +203,11 @@ export interface ObjectPropertyShapeConfig extends PropertyShapeConfig {
    * You need to provide a class that extends Shape.
    */
   shape?: typeof Shape | [string, string];
+  /**
+   * Marks this property as *containment* (composition): the value(s) are owned by the subject
+   * and the delete/update cascade removes the owned subtree. See plan-001.
+   */
+  contains?: boolean;
 }
 
 export interface PropertyShapeConfig {
@@ -336,6 +341,11 @@ export class NodeShape extends Shape {
   description?: string;
   targetClass?: NodeReferenceValue;
   extends?: NodeReferenceValue;
+  /**
+   * Composition marker (plan-001): instances of this shape are *dependent* — they have no
+   * independent existence and may be cascade-deleted when reached through a `contains` property.
+   */
+  dependent?: boolean;
   private propertyShapes: PropertyShape[] = [];
 
   constructor(node?: string | NodeReferenceValue) {
@@ -469,6 +479,11 @@ export class PropertyShape extends Shape {
   defaultValue?: unknown;
   sortBy?: PathExpr;
   valueShape?: NodeReferenceValue;
+  /**
+   * Composition marker (plan-001): the value(s) of this property are *owned* by the subject.
+   * The delete/update cascade follows this edge and removes the owned subtree.
+   */
+  contains?: boolean;
   parentNodeShape?: NodeShape;
 
   constructor() {
@@ -733,6 +748,10 @@ export function createPropertyShape<
     propertyShape.class = toNodeReference(
       (config as ObjectPropertyShapeConfig).class,
     );
+  }
+
+  if ((config as ObjectPropertyShapeConfig).contains) {
+    propertyShape.contains = true;
   }
 
   if (config.equals) {

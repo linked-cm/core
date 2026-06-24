@@ -46,6 +46,11 @@ export type ShapeConfig = {
    * will be stored as rdfs:comment on the shape node
    */
   description?: string;
+  /**
+   * Marks this shape's instances as *dependent* (composition / no independent existence):
+   * they may be cascade-deleted when reached through a `contains` property. See plan-001.
+   */
+  dependent?: boolean;
 };
 
 export type PackageMetadata = {
@@ -306,6 +311,10 @@ export function linkedPackage(
         if (options.description)
         {
           nodeShape.description = options.description;
+        }
+        if (options.dependent)
+        {
+          nodeShape.dependent = true;
         }
       }
 
