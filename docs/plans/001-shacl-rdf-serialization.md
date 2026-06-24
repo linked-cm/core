@@ -1,6 +1,6 @@
 ---
 summary: Serialize registered NodeShapes to the store as SHACL via the query engine — reuse the Package.ts meta-model, add a containment cascade (contains + dependent), List/PathNode shapes, and syncShapes() upsert. Supersedes ideation in ideas/015.
-status: Ideation
+status: Plan
 source: ideas/015-shacl-rdf-serialization.md
 related: ideas/013-shacl-property-paths.md, ideas/005-named-graph-support.md, reports/011-shacl-property-paths-and-prefix-resolution.md
 scope: packages/core only (no CN changes; CN consumes syncShapes() later)
@@ -103,6 +103,153 @@ no synthetic shape).
    paths, `sh:in`, cascade delete (lists/paths/property-shapes; nil & predicate-IRI safety), sync
    upsert/orphan-delete.
 9. `yarn linked build` + run suite; fix.
+
+## Files expected to change
+
+| File | Change |
+|---|---|
+| `src/ontologies/shacl.ts` | add `sh:equals`, `sh:disjoint`, `sh:hasValue`, `sh:order`, `sh:group`, `sh:closed`, `sh:ignoredProperties` |
+| `src/ontologies/linked-core.ts` | add `contains`, the `dependent` term, and `PathNode` class IRI |
+| `src/shapes/SHACL.ts` | `PropertyShape.contains?: boolean`; `NodeShape.dependent?: boolean`; `contains` on `ObjectPropertyShapeConfig`; `dependent` on shape config; `createPropertyShape` sets `contains` |
+| `src/shapes/List.ts` | rewrite to pure shape (`first` not-contains, `rest` contains+self valueShape, `dependent`); drop `items`/helpers |
+| `src/shapes/PathNode.ts` (new) | operator-node meta-shape (`dependent`, `contains` path-operator accessors) |
+| `src/shapes/serializePathToNodeData.ts` (new) | `PathExpr → {id} \| List \| PathNode` node-data translator (reuses `serializePathToSHACL` structure) |
+| `src/shapes/syncShapes.ts` (new) | enumerate → identity-read → return delete→create + orphan-delete thunks |
+| `src/utils/Package.ts` | read `dependent` in `applyLinkedShape` (set + persist on NodeShape); extend meta-model accessors; mark `properties`/`path`/`in` as `contains`; register `List`/`PathNode` |
+| `src/sparql/irToAlgebra.ts` | shared **owned-cascade** helper; wire into `deleteToAlgebra` and the `update` old-value removal |
+| `src/index.ts` | export `syncShapes`, `List`, `PathNode` |
+| `src/tests/*.test.ts` | unit tests (below) |
+| `src/tests/sparql-fuseki-shape-sync.test.ts` (new) | e2e (matches existing `sparql-fuseki` pattern) |
+
+## Inter-component contracts (signatures)
+
+```ts
+// SHACL.ts — config + stored flags
+interface ObjectPropertyShapeConfig { /* … */ contains?: boolean }
+interface ShapeConfig             { /* … */ dependent?: boolean }   // used by linkedShape()
+class PropertyShape { /* … */ contains?: boolean }
+class NodeShape     { /* … */ dependent?: boolean }
+
+// serializePathToNodeData.ts — the only per-type write-translator (D9)
+//  simple → {id}; sequence → List node-data; inverse/alt/cardinality → PathNode node-data
+function serializePathToNodeData(
+  path: PathExpr, baseIri: string,
+): NodeReferenceValue | NodeDescriptionValue;
+
+// irToAlgebra.ts — shared owned-cascade (used by delete AND update)
+//  follows `contains` edges from rootVar; deletes reached nodes that are blank OR
+//  carry a `dependent`-flagged type; excludes rdf:nil; rdf:rest* for the list spine.
+function buildOwnedCascade(
+  rootVar: string, shapeId: string,
+): { deletePatterns: SparqlTriple[]; whereOptional: SparqlAlgebraNode | null };
+
+// syncShapes.ts — returns built-but-unexecuted, order-correct thunks (D3)
+function syncShapes(
+  options?: { dataset?: IDataset },   // defaults to global query dispatch
+): Promise<Array<() => Promise<void>>>;
+// caller: await Promise.all((await syncShapes()).map(run => run()))
+```
+
+## Small examples
+
+```ts
+// Serializing one shape (D5/D6): build via the existing meta-model, deterministic id.
+NodeShape.create({
+  targetClass: {id: targetClassIri},
+  description, closed,
+  properties: propertyShapes.map(ps => ({
+    __id: `${shapeIri}/${ps.label}`,
+    path: serializePathToNodeData(ps.path, `${shapeIri}/${ps.label}`),
+    minCount: ps.minCount, datatype: ps.datatype, /* … */ name: ps.name,
+    in: ps.in ? listNodeData(ps.in, `${shapeIri}/${ps.label}/in`) : undefined,
+    contains: ps.contains,
+  })),
+}).withId(shapeIri);
+
+// rdf:List as nested List node-data (D6) — no engine primitive needed.
+function listNodeData(items, base) {
+  return items.reduceRight((rest, item, i) =>
+    ({ shape: List, __id: `${base}/${i}`, first: item, rest }), {id: rdf.nil.id});
+}
+```
+
+## Potential pitfalls
+
+- **`rdf:rest*` in DELETE WHERE** (main risk) — algebra has `{kind:'path'}` terms; prove the
+  delete path supports it before relying on it. Fallback: bounded structural levels + a small loop.
+- **Don't break the `path` query accessor** — leave its single `valueShape` intact; path
+  polymorphism lives only in the translator (D9).
+- **Circular deps** — `List`/`PathNode` + new meta-model accessors must be set up in `Package.ts`
+  *after* `NodeShape`/`PropertyShape` (the existing pattern), not via inline decorators.
+- **Registry timing** — `getAllShapeClasses()` only has shapes whose modules were imported; tests
+  must import the shape package before `syncShapes()`.
+- **Cascade safety** — must exclude `rdf:nil` and never delete shared enum IRIs / predicate IRIs
+  (the blank-or-`dependent` discriminator handles this; assert it explicitly in tests).
+- **Ordering** — keep per-shape `delete → create` chained inside one thunk; never flatten
+  delete/create of the same IRI into a single `Promise.all`.
+- **Shared cascade helper** — delete-by-id and update must call the *same* helper to avoid drift.
+
+## Architecture compliance
+
+Discovered via `docs/architecture` (CN repo; `@_linked/core` has no local `architecture/` dir — its
+docs are `ideas`/`reports`). Relevant docs:
+
+- **[05-code-as-canonical](../../../../docs/architecture/05-code-as-canonical.md) (primary).** Defines
+  "code-native structures → queryable graph metadata" and the code↔graph sync model. `syncShapes()`
+  *is* the forward (code → graph) materialization for shapes; **code stays canonical, the store is a
+  rebuildable cache** (D1 delete+recreate). Reverse import (graph → code) is **not** in scope →
+  backlog.
+- **[04-storage-model](../../../../docs/architecture/04-storage-model.md).** Writes go through
+  queries → `IDataset`; default graph now (D2); named-graph isolation deferred to `ideas/005`.
+- **[10-code-structure](../../../../docs/architecture/10-code-structure.md) §Testing.** Package unit
+  logic = Jest in `packages/*/src/**/*.test.ts`; we add jest unit + a Fuseki integration test,
+  matching core's established `sparql-fuseki.test.ts` convention (no browser layer in core).
+
+No architecture changes required; one approved deferral (reverse import → backlog).
+
+## Test strategy
+
+**Impacted package:** `@_linked/core` only.
+
+**Quick regression gate (after each phase, ~1-2 min):** `npm test` (jest, `--runInBand`). Source:
+`package.json` scripts.
+
+**Unit tests (jest, golden-SPARQL via `captureQuery` + `*ToSparql`):**
+1. Ontology terms exist (`shacl.ts`, `linked-core.ts`).
+2. `contains`/`dependent` flags stored on PropertyShape/NodeShape and **persisted** in meta-model output.
+3. `List` create → correct `rdf:first`/`rdf:rest`/`rdf:nil` chain.
+4. `serializePathToNodeData` — each `PathExpr` form (simple / seq / inverse / alt / `*` `+` `?`) →
+   correct `{id}`/`List`/`PathNode` and golden `sh:path` SPARQL.
+5. Full shape serialization — `NodeShape.create(...)` → `sh:NodeShape` + `sh:property` + all
+   constraints (golden).
+6. Cascade generation — `deleteToAlgebra` for a property shape with list/path follows
+   `contains`/`rdf:rest*`, excludes `rdf:nil`, leaves simple predicate IRIs (string assertions, no store).
+7. `syncShapes` plan — given a registry + mocked read, routes create vs orphan-delete and returns
+   correctly-ordered thunks.
+
+**End-to-end (jest + Fuseki in Docker) — `npm run test:fuseki`** (deferred to review; gated/skipped if
+Fuseki unavailable). NEW `src/tests/sparql-fuseki-shape-sync.test.ts`:
+- **Setup:** `docker-compose.test.yml` (existing) spins Fuseki; create a **dedicated/fresh test
+  dataset** (`createTestDataset`); wire `FusekiStore` as the global dispatch (`setQueryDispatch`) so
+  the `syncShapes` read + thunks hit Fuseki.
+- **Fixture shape package** exercising every feature: scalar props, all constraints
+  (min/max/datatype/nodeKind/class/order/group/name/equals/disjoint/hasValue), `sh:in` with **both**
+  literals and IRIs, `valueShape`, complex paths (sequence/inverse/alt/cardinality), inheritance, and
+  a `contains`/`dependent` user property.
+- **Phase A — materialize & store:** run `syncShapes()` → await thunks → SPARQL-query Fuseki →
+  assert every shape, property shape, list chain, path structure, and constraint persisted correctly.
+- **Phase B — mutate & re-sync (persistence + cleanup):** change the fixtures — alter a constraint,
+  add a property, **remove** a property, swap a path **simple↔complex**, **shrink** an `sh:in` list,
+  **remove a whole shape** — run `syncShapes()` again → assert:
+  - updates persisted (new constraint/property present);
+  - orphan property shapes deleted; removed shape gone;
+  - old list cells gone (shrunk list has no dangling cells); old path structures gone (no leftover
+    `PathNode`/`List` after simple↔complex swap);
+  - **safety:** shared enum IRIs, predicate IRIs, and `rdf:nil` still intact.
+- **Teardown:** `deleteTestDataset`.
+
+**Full/slow suite (review):** `npm run test:fuseki` (Docker). Skipped in the quick gate because it
+needs Docker + container startup; run at phase boundaries that touch the cascade and at review.
 
 ## Verification items for plan/impl (not user decisions)
 
