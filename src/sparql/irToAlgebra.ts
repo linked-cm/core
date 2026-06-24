@@ -1612,13 +1612,13 @@ function processUpdateFields(
   // delete the old object's owned subtree, not just the one-hop edge.
   const {containsPreds: updContainsPreds} = collectContainment();
   const containsOldVars: string[] = [];
+  const cascadeOptionals: SparqlAlgebraNode[] = [];
 
   for (const field of data.fields) {
     const propertyTerm = resolvePropertyPredicateTerm(field.property);
     const suffix = propertySuffix(field.property);
-    if (propertyTerm.kind === 'iri' && updContainsPreds.includes(propertyTerm.value)) {
-      containsOldVars.push(`old_${suffix}`);
-    }
+    const isContainsField =
+      propertyTerm.kind === 'iri' && updContainsPreds.includes(propertyTerm.value);
 
     // Check for set modification ({add, remove})
     if (
@@ -1633,11 +1633,17 @@ function processUpdateFields(
       const setMod = field.value as IRSetModificationValue;
 
       if (setMod.remove) {
-        for (const removeItem of setMod.remove) {
+        setMod.remove.forEach((removeItem, ri) => {
           const removeTerm = iriTerm((removeItem as NodeReferenceValue).id);
           deletePatterns.push(tripleOf(subjectTerm, propertyTerm, removeTerm));
           oldValueTriples.push(tripleOf(subjectTerm, propertyTerm, removeTerm));
-        }
+          // For a `contains` set, removing a value also removes its owned subtree.
+          if (isContainsField) {
+            const cascade = buildOwnedCascade(removeTerm, `ucr_${suffix}_${ri}_`);
+            deletePatterns.push(...cascade.deletePatterns);
+            cascadeOptionals.push(...cascade.whereOptionals);
+          }
+        });
       }
 
       if (setMod.add) {
@@ -1656,6 +1662,12 @@ function processUpdateFields(
       }
 
       continue;
+    }
+
+    // Non-set-modification replace of a `contains` property: cascade the old value's
+    // subtree (every branch below binds `old_${suffix}` in the WHERE).
+    if (isContainsField) {
+      containsOldVars.push(`old_${suffix}`);
     }
 
     // Unset (undefined/null) — delete only
@@ -1754,7 +1766,6 @@ function processUpdateFields(
   }
 
   // Append cascade for each replaced `contains` property's old value.
-  const cascadeOptionals: SparqlAlgebraNode[] = [];
   containsOldVars.forEach((oldVar, n) => {
     const cascade = buildOwnedCascade(varTerm(oldVar), `uc${n}_`);
     deletePatterns.push(...cascade.deletePatterns);

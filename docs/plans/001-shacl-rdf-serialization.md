@@ -279,6 +279,20 @@ resolved.
 `packageName`) would have been synced as a user shape — `syncShapes` now skips shapes with no
 `packageName`.
 
+### Final adversarial review (whole branch)
+Reviewed `git diff origin/dev..HEAD` for correctness. The critical chain was verified sound:
+`syncShapes` deletes via `DeleteBuilder.from(NodeShape,{id})` so `query.shape` is the **meta**
+NodeShape (which carries `contains` `sh:property`) → the cascade gate fires and reaches/cleans
+`sh:PropertyShape` (dependent) subtrees. No variable collisions; `getSimplePathId` returns the IRI
+for all contains preds (none dropped); casts match real signatures.
+- **Found & fixed:** updating a `contains` property via **set-modification** (`{add, remove}`) pushed
+  an `old_` cascade var that the set-mod branch never binds → a dead OPTIONAL and *no* cleanup of a
+  removed value's subtree. Now each removed value is cascaded from its (bound) IRI; the dead push is
+  gone. Covered by a new unit test.
+- **Noted (not changed):** the cascade alternation/OPTIONAL set is global (all contains preds +
+  dependent types), harmless but broad — a possible scoping optimization later. Pre-existing
+  `propertySuffix` not running through `sanitizeVarName` is inherited, not a regression.
+
 ### Gaps / follow-ups
 1. **`closed` / `ignoredProperties`** — ✅ **resolved (iteration 1):** `ShapeConfig.closed`/
    `ignoredProperties` now flow through `applyLinkedShape` → `NodeShape` → serialization;

@@ -40,6 +40,15 @@ class TBox extends Shape {
   }
 }
 
+@linkedShape
+class TBag extends Shape {
+  static targetClass = ex('TBag');
+  @objectProperty({path: ex('items'), shape: TCell, contains: true})
+  get items(): TCell[] {
+    return [];
+  }
+}
+
 describe('owned-subtree cascade', () => {
   test('delete cascades via contains edges to dependent-typed nodes', () => {
     const sparql = deleteToSparql(
@@ -81,6 +90,19 @@ describe('owned-subtree cascade', () => {
       'https://linked.cm/ont/linked-core/PathNode',
       'http://example.org/c#TCell',
     ]));
+  });
+
+  test('update set-modification remove on a contains property cascades the removed subtree', () => {
+    const sparql = updateToSparql(
+      UpdateBuilder.from(TBag)
+        .for('http://example.org/c#bag1')
+        .set({items: {remove: [{id: 'http://example.org/c#oldcell'}]}} as any)
+        .build() as IRUpdateMutation,
+    );
+    // the removed value is a cascade root, followed by the contains property path
+    expect(sparql).toContain('http://example.org/c#oldcell');
+    expect(sparql).toMatch(/\)\+ /);
+    expect(sparql).toContain('http://example.org/c#TCell');
   });
 
   test('update replacing a contains property cascades the old value subtree', () => {
