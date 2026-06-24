@@ -1,6 +1,6 @@
 ---
 summary: Serialize registered NodeShapes to the store as SHACL via the query engine — reuse the Package.ts meta-model, add a containment cascade (contains + dependent), List/PathNode shapes, and syncShapes() upsert. Supersedes ideation in ideas/015.
-status: Plan
+status: Tasks
 source: ideas/015-shacl-rdf-serialization.md
 related: ideas/013-shacl-property-paths.md, ideas/005-named-graph-support.md, reports/011-shacl-property-paths-and-prefix-resolution.md
 scope: packages/core only (no CN changes; CN consumes syncShapes() later)
@@ -261,6 +261,185 @@ the `test:fuseki` script, and the graceful-skip-when-down pattern from `sparql-f
 
 **Full/slow suite (review):** `npm run test:fuseki` (Docker). Skipped in the quick gate because it
 needs Docker + container startup; run at phase boundaries that touch the cascade and at review.
+
+## Task breakdown (phases)
+
+**Dependency graph / parallelism**
+```
+P1 (ontology+contracts)
+  └─ P2 (contains/dependent flags)
+        ├─ P3 (List/PathNode/rdfList)        ┐ parallel
+        └─ P4 (owned-cascade: delete+update) ┘ (P4 uses hand-crafted shapes as stubs)
+              P3 ─┬─ P5 (meta-model accessors) ┐ parallel
+                  └─ P6 (path translator)      ┘
+                        └─ P7 (syncShapes)  [needs P4,P5,P6,P3]
+                              └─ P8 (integration + e2e Fuseki)
+```
+One commit per phase (code + plan-doc status touch together). Quick gate after each phase:
+`npx jest --config jest.config.js -i --testPathPattern='<phase test>'` + a core typecheck
+(`npm run compile`; full build is `yarn linked build`). Full gate (`npm run test:fuseki`, Docker)
+deferred to P8 / review.
+
+---
+
+### Phase 1 — Ontology terms & contracts  *(no deps; foundational)*
+**Files:** `src/ontologies/shacl.ts`, `src/ontologies/linked-core.ts`.
+**Tasks:**
+- `shacl.ts`: add `ns(...)` consts + `shacl` exports for `equals`, `disjoint`, `hasValue`, `order`,
+  `group`, `closed`, `ignoredProperties` (follow existing `_class`/`_in` keyword-rename pattern).
+- `linked-core.ts`: add `contains`, `dependent` (predicate terms) and `PathNode` (class IRI) to the
+  `coreOntology` export.
+**Test spec** (`src/tests/shacl-serialization-ontology.test.ts`):
+- `shacl predicates present` — assert `shacl.equals.id === 'http://www.w3.org/ns/shacl#equals'` and
+  likewise for disjoint/hasValue/order/group/closed/ignoredProperties.
+- `linked-core terms present` — assert `coreOntology.contains.id`, `coreOntology.dependent.id`,
+  `coreOntology.PathNode.id` resolve under `https://linked.cm/ont/linked-core/`.
+**Validation:** quick gate test file passes; `npm run compile` exits 0.
+
+---
+
+### Phase 2 — `contains` / `dependent` flags (config + storage + persistence)  *(deps: P1)*
+**Files:** `src/shapes/SHACL.ts`, `src/utils/Package.ts`.
+**Tasks:**
+- `SHACL.ts`: add `contains?: boolean` to `ObjectPropertyShapeConfig` (+ base `PropertyShapeConfig`
+  if useful); add `contains?: boolean` field to `PropertyShape`; `createPropertyShape` copies
+  `config.contains` → `propertyShape.contains`. Add `dependent?: boolean` to the shape config type
+  used by `linkedShape` (`ShapeConfig`); add `dependent?: boolean` field to `NodeShape`.
+- `Package.ts` `applyLinkedShape`: read `options.dependent` → set `nodeShape.dependent`.
+- Persistence (meta-model wiring is finalized in P5, but define the predicates now): `contains` →
+  `coreOntology.contains` on the property shape; `dependent` → `coreOntology.dependent` on the node
+  shape. Add a `@literalProperty`-style accessor (xsd:boolean) in the P5 meta-model for each.
+**Test spec** (`src/tests/shacl-serialization-flags.test.ts`):
+- `objectProperty contains stored` — decorate a shape with `@objectProperty({path, shape, contains:true})`;
+  assert its `PropertyShape.contains === true`; a property without it → `undefined`/`false`.
+- `linkedShape dependent stored` — `@linkedShape({dependent:true})` → assert `Shape.shape.dependent === true`.
+**Validation:** quick gate test file passes; `npm run compile` exits 0.
+
+---
+
+### Phase 3 — `List` rewrite + `PathNode` + `rdfList()` helper  *(deps: P1,P2; parallel with P4)*
+**Files:** `src/shapes/List.ts` (rewrite), `src/shapes/PathNode.ts` (new), `src/index.ts` (exports).
+**Tasks:**
+- Rewrite `List`: pure shape, `targetClass rdf.List`, `dependent:true`; `first` (object property,
+  `maxCount:1`, **no** contains); `rest` (object property, `maxCount:1`, `valueShape:List`,
+  **contains:true**). Remove `items`/`fromItems`/`getContents`/`addItem(s)`/`isEmpty`.
+- `rdfList<T>(items, opts?)` helper (export from `List.ts` + barrel): builds nested `List` node-data
+  chain terminating at `{id: rdf.nil.id}`; deterministic `__id` `{base}/{i}` when `opts.base` set.
+- `PathNode`: new shape, `targetClass coreOntology.PathNode`, `dependent:true`, with **contains**
+  object-properties `inversePath`(sh:inversePath), `alternativePath`(sh:alternativePath, valueShape
+  `List`), `zeroOrMorePath`, `oneOrMorePath`, `zeroOrOnePath`.
+**Test spec** (`src/tests/shacl-list-pathnode.test.ts`, golden via `captureQuery`+`createToSparql`):
+- `rdfList two items` — `List`/`rdfList(['a','b'])` create → SPARQL contains `rdf:first "a"`,
+  `rdf:rest` to a second cell, second cell `rdf:first "b"` + `rdf:rest rdf:nil`.
+- `rdfList deterministic ids` — `rdfList([...], {base:'x/in'})` → cell subjects `<x/in/0>`, `<x/in/1>`.
+- `rdfList IRIs not literals` — `rdfList([{id:'ex:A'},{id:'ex:B'}])` → `rdf:first <ex:A>` (IRI term).
+- `List.rest is contains, first is not` — assert `List.shape.getPropertyShape('rest').contains===true`
+  and `getPropertyShape('first').contains` is falsy; `List.shape.dependent===true`.
+- `PathNode dependent + contains` — assert `PathNode.shape.dependent===true` and its operator
+  accessors all `contains===true`.
+**Validation:** quick gate test file passes; `npm run compile` exits 0.
+
+---
+
+### Phase 4 — Owned-cascade helper, wired into `delete` + `update`  *(deps: P1,P2; parallel with P3)*
+**Files:** `src/sparql/irToAlgebra.ts`.
+**Stub note:** does not need P3's real shapes — tests hand-craft a NodeShape/PropertyShape with
+`contains`/`dependent` flags + a self-referential `rest` to exercise the cascade.
+**Tasks:**
+- Add `buildOwnedCascade(rootVar, shapeId)` → `{deletePatterns, whereOptional}`: from `rootVar`,
+  follow each `contains` property of the shape (and recursively of `dependent` valueShapes) to reached
+  nodes; emit wildcard delete `?n ?p ?o`; gate WHERE so a node is collected iff **blank OR
+  `?n a ?t` with `?t IN dependentSet`** and `?n != rdf:nil`; use `rdf:rest*` for self-referential
+  (`List`) spines. `dependentSet` computed from `getAllShapeClasses()` where `shape.dependent`.
+- Wire into `deleteToAlgebra` (extend the existing per-id delete; coexist with `walkBlankNodeTree`).
+- Wire into the `update` old-value removal path (`processNodeDataFieldsForUpdate`) so replacing a
+  `contains` property also runs the cascade on the old object.
+**Test spec** (`src/tests/shacl-cascade.test.ts`, string/structural assertions on generated SPARQL):
+- `delete cascades list spine` — delete a property-shape whose `in` points to a List → DELETE block
+  includes a `rdf:rest*`-reachable `?cell ?p ?o` and a `FILTER` excluding `rdf:nil`.
+- `delete keeps simple predicate` — a property-shape with a simple `sh:path` IRI → cascade does **not**
+  emit a delete for that predicate IRI (it's not blank/dependent).
+- `update replaces + cascades old list` — update `in` → DELETE old `sh:in` edge **and** old cell spine,
+  INSERT new.
+- `dependentSet derived from flags` — register a `dependent` test shape; assert its targetClass appears
+  in the cascade's type filter; a non-dependent shape's type does not.
+**Validation:** quick gate test file passes; `npm run compile` exits 0.
+
+---
+
+### Phase 5 — Extend `Package.ts` meta-model accessors  *(deps: P1,P2,P3; parallel with P6)*
+**Files:** `src/utils/Package.ts` (meta-model block ~L540-620).
+**Tasks:**
+- Add `createPropertyShape(...)` definitions on `NodeShape` for: `closed`(sh:closed, xsd:boolean),
+  `ignoredProperties`(sh:ignoredProperties), `dependent`(coreOntology.dependent, xsd:boolean); and on
+  `PropertyShape` for: `minCount`, `maxCount`, `datatype`, `nodeKind`, `class`, `in`(valueShape `List`),
+  `equals`, `disjoint`, `lessThan`, `lessThanOrEquals`, `hasValue`, `order`, `group`, `name`, `node`
+  (valueShape), `contains`(coreOntology.contains, xsd:boolean). Map each to the right `shacl.*`/literal.
+- Mark `contains:true` on the meta-model `properties` (sh:property), `path` (sh:path), and new `in`
+  (sh:in) property shapes. Leave `path`'s existing `valueShape` untouched (D9).
+**Test spec** (`src/tests/shacl-metamodel.test.ts`):
+- `NodeShape.create serializes constraints` — `NodeShape.create({targetClass, description, properties:
+  [{__id, path:{id:'ex:n'}, minCount:1, datatype:xsd.string, name:'Name'}]}).withId('s')` → golden
+  SPARQL with `s a sh:NodeShape`, `s sh:property <s-prop>`, `<s-prop> sh:path ex:n`, `sh:minCount 1`,
+  `sh:datatype xsd:string`, `sh:name "Name"`.
+- `meta-model contains flags` — assert `NodeShape.shape.getPropertyShape('properties').contains` and
+  `PropertyShape.shape.getPropertyShape('path'/'in').contains` are `true`.
+**Validation:** quick gate test file passes; `npm run compile` exits 0; no regression in existing
+`sparql-mutation-golden`/`metadata` tests (`npx jest -i --testPathPattern='metadata|mutation-golden'`).
+
+---
+
+### Phase 6 — Path write-translator  *(deps: P3; parallel with P5)*
+**Files:** `src/shapes/serializePathToNodeData.ts` (new), reuse logic from `src/paths/serializePathToSHACL.ts`.
+**Tasks:**
+- `serializePathToNodeData(path: PathExpr, base: string)`: `PathRef` → `{id: refIri}`; `{seq}` →
+  `rdfList(segments.map(serialize), {base})`; `{inv}` → `{shape:PathNode, __id, inversePath: serialize(inner)}`;
+  `{alt}` → `{shape:PathNode, __id, alternativePath: rdfList(...)}`; `{zeroOrMore|oneOrMore|zeroOrOne}` →
+  `{shape:PathNode, __id, <op>: serialize(inner)}`; throw on `negatedPropertySet` (as the existing serializer does).
+**Test spec** (`src/tests/shacl-path-translator.test.ts`):
+- `simple → {id}` — `serializePathToNodeData({id:'ex:a'}, base)` returns `{id:'ex:a'}`.
+- `sequence → List` — `{seq:[a,b]}` → node-data whose create SPARQL is an rdf:List of `ex:a`,`ex:b`.
+- `inverse → PathNode` — `{inv:'ex:p'}` → `sh:inversePath ex:p` on a `linked:PathNode`-typed node.
+- `alternative → PathNode+List`; `zeroOrMore → sh:zeroOrMorePath`; assert each golden.
+- `nested ^(a/b)` — inverse-of-sequence → `PathNode{ sh:inversePath: List(a,b) }`.
+**Validation:** quick gate test file passes; `npm run compile` exits 0.
+
+---
+
+### Phase 7 — `syncShapes()` orchestrator  *(deps: P3,P4,P5,P6)*
+**Files:** `src/shapes/syncShapes.ts` (new), `src/index.ts` (export).
+**Tasks:**
+- Enumerate `getAllShapeClasses()`, exclude `constructor.packageName === '@_linked/core'` (D4).
+- Identity-read existing `sh:NodeShape` / `sh:PropertyShape` subjects (via `Shape.select`/`selectAll`
+  or a `SHACLNodeShape`-style select) — for **orphan detection only**.
+- Build per-shape data via `NodeShape.create({...}).withId(shapeIri)` using P5 accessors + P6 path
+  translator + `rdfList` for `in`; property-shape `__id = {shapeIri}/{label}` (D-decisions).
+- Return `Array<() => Promise<void>>`: per in-code shape a `() => delete(shapeIri)...then(create)`
+  thunk (delete cascades via P4); plus orphan-delete thunks for store-only shapes/property-shapes.
+- `options.dataset` overrides the global dispatch for the read (testability).
+**Test spec** (`src/tests/shacl-syncshapes.test.ts`, mocked read/dispatch — no Fuseki):
+- `returns thunks` — assert return is array of functions.
+- `routing` — given a registry with shapes {A new, B existing} and store with {B, C orphan}: assert
+  thunk set covers A (create), B (delete→create), C (orphan delete); each thunk’s captured queries
+  are correct kinds/ids.
+- `excludes framework shapes` — NodeShape/PropertyShape/List/PathNode not present in the plan.
+- `per-shape ordering` — a single shape's thunk issues delete **before** create (capture order).
+**Validation:** quick gate test file passes; `npm run compile` exits 0.
+
+---
+
+### Phase 8 — Integration + e2e Fuseki  *(deps: P7; final)*
+**Files:** `src/tests/sparql-fuseki-shape-sync.test.ts` (new), `src/index.ts` (verify barrel).
+**Tasks:** wire real components end-to-end; verify barrel exports; author the e2e test (reusing
+`fuseki-test-store` + `FusekiStore` + `docker-compose.test.yml` + `test:fuseki`, graceful-skip if down).
+**Test spec** — see **Test strategy → End-to-end** above (Phase A materialize→store→assert; Phase B
+mutate→re-sync→assert persistence + orphan/cell/path cleanup + safety for enum IRIs / predicate IRIs
+/ `rdf:nil`; dedicated dataset; teardown).
+**Validation:**
+- Quick gate: full unit suite `npm test` exits 0; `npm run compile` exits 0.
+- **Full gate (required this phase):** `npm run test:fuseki` — all e2e cases green (or cleanly skipped
+  only if Docker truly unavailable; must be run before review sign-off).
+- Final build: `yarn linked build` succeeds.
 
 ## Verification items for plan/impl (not user decisions)
 
