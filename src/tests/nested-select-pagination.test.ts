@@ -239,17 +239,21 @@ describe('nested-select pagination — multi-parent rejection', () => {
 // ---------------------------------------------------------------------------
 
 describe('nested-select pagination — regression (no inner limit)', () => {
-  test('no inner limit → required traverse + OPTIONAL property (unchanged shape)', async () => {
+  test('no inner limit → optional traverse + OPTIONAL property (projection-only left-join)', async () => {
     const ir = (await captureQuery(nestedNoLimit)) as IRSelectQuery;
     const sparql = selectToSparql(ir);
+    // Projection-only multi-valued traversal lowers to a nested OPTIONAL so a
+    // parent with no friends is preserved (friends: []), not inner-joined away.
     expect(sparql).toBe(
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
   ?a0 rdf:type <${P}> .
-  ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/name> ?a1_name .
+    ?a0 <${P}/friends> ?a1 .
+    OPTIONAL {
+      ?a1 <${P}/name> ?a1_name .
+    }
   }
   FILTER(?a0 = <${ENT}pp1>)
 }`);

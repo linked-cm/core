@@ -46,6 +46,20 @@ export type ShapeConfig = {
    * will be stored as rdfs:comment on the shape node
    */
   description?: string;
+  /**
+   * Marks this shape's instances as *dependent* (composition / no independent existence):
+   * they may be cascade-deleted when reached through a `contains` property.
+   */
+  dependent?: boolean;
+  /**
+   * Close the shape (sh:closed): target nodes with properties outside this shape are invalid.
+   */
+  closed?: boolean;
+  /**
+   * Properties permitted in addition to the declared ones when the shape is closed
+   * (sh:ignoredProperties).
+   */
+  ignoredProperties?: NodeReferenceValue[];
 };
 
 export type PackageMetadata = {
@@ -307,6 +321,18 @@ export function linkedPackage(
         {
           nodeShape.description = options.description;
         }
+        if (options.dependent)
+        {
+          nodeShape.dependent = true;
+        }
+        if (options.closed !== undefined)
+        {
+          nodeShape.closed = options.closed;
+        }
+        if (options.ignoredProperties)
+        {
+          nodeShape.ignoredProperties = options.ignoredProperties;
+        }
       }
 
       // also keep track of the reverse: nodeShape to typescript class
@@ -522,6 +548,9 @@ corePackage.linkedShape({
 corePackage.linkedShape({
   description:
     'Represents a SHACL PropertyShape; specifies rules for one property of a NodeShape (path, datatype, cardinality). (validation rule, property constraint)',
+  // A property shape has no independent existence — it is owned by its NodeShape via the
+  // `contains` sh:property edge, so deleting the NodeShape cascade-deletes it.
+  dependent: true,
 })(PropertyShape);
 // ValidationReport / ValidationResult removed in core metadata rewrite
 
@@ -560,6 +589,7 @@ createPropertyShape(
   {
     path: shacl.property,
     shape: PropertyShape,
+    contains: true, // a NodeShape owns its property shapes (cascade on delete)
   },
   'properties',
   shacl.IRI,
@@ -607,8 +637,12 @@ createPropertyShape({
 //these values will be consequent properties that follow each other. Other property paths are not supported yet.
 createPropertyShape(
   {
+    // No fixed valueShape: sh:path is polymorphic (a predicate IRI, an rdf:List for a
+    // sequence, or a PathNode for inverse/alt/cardinality). Omitting valueShape lets the
+    // create pipeline use each value's own shape. Simple paths are passed as
+    // {id} node references, complex paths as List/PathNode node-data.
     path: shacl.path,
-    shape: Shape,
+    contains: true, // a property shape owns its complex path structure (List/PathNode)
   },
   'path',
   shacl.IRI,
@@ -694,4 +728,75 @@ createPropertyShape(
   PropertyShape,
 );
 
-//PropertyShape.inList
+// ---------------------------------------------------------------------------
+// Remaining SHACL meta-model accessors for shape serialization.
+// Labels match PropertyShape.getResult() / NodeShape fields so syncShapes() can
+// build instances directly. `sh:in` is owned (contains, valueShape List).
+// ---------------------------------------------------------------------------
+
+// PropertyShape.class
+createPropertyShape(
+  {path: shacl.class, shape: Shape, maxCount: 1},
+  'class',
+  shacl.IRI,
+  PropertyShape,
+);
+
+// PropertyShape.in → an rdf:List (owned)
+createPropertyShape(
+  {path: shacl.in, shape: ['@_linked/core', 'List'], maxCount: 1, contains: true},
+  'in',
+  shacl.IRI,
+  PropertyShape,
+);
+
+// PropertyShape pair constraints (values are property IRIs)
+createPropertyShape({path: shacl.equals, shape: Shape, maxCount: 1}, 'equals', shacl.IRI, PropertyShape);
+createPropertyShape({path: shacl.disjoint, shape: Shape, maxCount: 1}, 'disjoint', shacl.IRI, PropertyShape);
+createPropertyShape({path: shacl.lessThan, shape: Shape, maxCount: 1}, 'lessThan', shacl.IRI, PropertyShape);
+createPropertyShape(
+  {path: shacl.lessThanOrEquals, shape: Shape, maxCount: 1},
+  'lessThanOrEquals',
+  shacl.IRI,
+  PropertyShape,
+);
+
+// PropertyShape.hasValue (literal or IRI — generic)
+createPropertyShape({path: shacl.hasValue, maxCount: 1}, 'hasValue', null, PropertyShape);
+
+// PropertyShape.order / group
+createPropertyShape(
+  {path: shacl.order, datatype: xsd.integer, maxCount: 1},
+  'order',
+  shacl.Literal,
+  PropertyShape,
+);
+createPropertyShape({path: shacl.group, maxCount: 1}, 'group', shacl.Literal, PropertyShape);
+
+// PropertyShape.contains (linked_core:contains — persists the composition flag)
+createPropertyShape(
+  {path: coreOntology.contains, datatype: xsd.boolean, maxCount: 1},
+  'contains',
+  shacl.Literal,
+  PropertyShape,
+);
+
+// NodeShape.closed / ignoredProperties / dependent
+createPropertyShape(
+  {path: shacl.closed, datatype: xsd.boolean, maxCount: 1},
+  'closed',
+  shacl.Literal,
+  NodeShape,
+);
+createPropertyShape(
+  {path: shacl.ignoredProperties, shape: Shape},
+  'ignoredProperties',
+  shacl.IRI,
+  NodeShape,
+);
+createPropertyShape(
+  {path: coreOntology.dependent, datatype: xsd.boolean, maxCount: 1},
+  'dependent',
+  shacl.Literal,
+  NodeShape,
+);

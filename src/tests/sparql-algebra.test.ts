@@ -371,6 +371,56 @@ describe('selectToAlgebra — nested traversals', () => {
     ).toBe(true);
   });
 
+  test('selectFriendsName nests a multi-valued traversal under OPTIONAL', async () => {
+    // friends is a multi-valued ShapeSet (no maxCount). A projection-only
+    // multi-valued traversal must be lowered to a nested OPTIONAL so a parent
+    // with no friends is preserved (friends: []) rather than inner-joined away.
+    const plan = await capturePlan(() => queryFactories.selectFriendsName());
+
+    // The friends traverse must NOT sit in the required root BGP.
+    const innerAlgebra = stripFilters(plan.algebra);
+    let rootBgp: SparqlBGP | null = null;
+    walkAlgebra(innerAlgebra, (n) => {
+      if (n.type === 'bgp' && !rootBgp) {
+        const bgp = n as SparqlBGP;
+        if (bgp.triples.some((t) => t.predicate.kind === 'iri' && t.predicate.value === RDF_TYPE)) {
+          rootBgp = bgp;
+        }
+      }
+    });
+    expect(rootBgp).not.toBeNull();
+    expect(
+      rootBgp!.triples.some(
+        (t) =>
+          t.predicate.kind === 'iri' &&
+          t.predicate.value === `${Person.shape.id}/friends`,
+      ),
+    ).toBe(false);
+
+    // The friends traverse and the child name property both live inside OPTIONAL.
+    const optionalTriples = collectOptionalTriples(plan.algebra);
+    expect(
+      optionalTriples.some(
+        (t) =>
+          t.subject.kind === 'variable' &&
+          t.subject.name === 'a0' &&
+          t.predicate.kind === 'iri' &&
+          t.predicate.value === `${Person.shape.id}/friends` &&
+          t.object.kind === 'variable' &&
+          t.object.name === 'a1',
+      ),
+    ).toBe(true);
+    expect(
+      optionalTriples.some(
+        (t) =>
+          t.subject.kind === 'variable' &&
+          t.subject.name === 'a1' &&
+          t.predicate.kind === 'iri' &&
+          t.predicate.value === `${Person.shape.id}/name`,
+      ),
+    ).toBe(true);
+  });
+
   test('selectDeepNested produces multiple traverse triples', async () => {
     const plan = await capturePlan(() => queryFactories.selectDeepNested());
 

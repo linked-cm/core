@@ -197,3 +197,19 @@ Both could share the shape-walking logic (iterating NodeShape properties, readin
 ### Current state
 
 The old `syncShapes()` in `lincd-server` is marked deprecated. The active code path just builds an in-memory index (no DB writes). The DB sync code is commented out. Once this feature is implemented in `@_linked/core`, the old code can be fully removed.
+
+## Implementation refinements (current core)
+
+Sharpening the routes above against the current engine — purely query-based, no public quad/triple write path:
+
+- **Output should be queries, not a triple array.** Everything in core now goes through `CreateQuery`/`UpdateQuery` → `IDataset`; there is no public quad-write path. So the serializer's public surface should produce those (Route B / the Sync extension) and let whatever store the app maps them to persist the shapes. Route A's `Triple[]` is useful only as an internal intermediate, not the API.
+
+- **Named, deterministic property-shape IRIs — not blank nodes.** Re-serializing a shape must *replace* its property shapes (a re-edit can't leave stale ones behind), and `CreateBuilder` builds named subjects far more naturally than anonymous blank-node trees. Use deterministic IRIs (e.g. `{shapeIri}/property/{accessorName}`) so each property shape is addressable for diff/replace and directly queryable (`?shape sh:property ?p . ?p sh:path ?path`). Reserve blank nodes for the structures that truly need them — `sh:path` sequences/inverses and `sh:in` RDF lists.
+
+- **Complex `sh:path` is the crux.** `serializePathToSHACL` already emits the correct blank-node tree for a `PathExpr` *as triples*, but `CreateBuilder` builds subjects from a data object and likely cannot emit an arbitrary nested blank-node `sh:path` / `sh:in` RDF list. Decide early: (a) extend `CreateBuilder` to emit nested blank-node structures, or (b) hybrid — `CreateBuilder` for the scalar constraints, splice `serializePathToSHACL`'s output for the path. (b) is the lower-risk start and reuses what already works.
+
+- **Walk `getPropertyShapes(true)`** — the canonical accessor (the same one `irToAlgebra`/`MutationQuery` use), which includes inherited property shapes. Then decide inheritance handling: **flatten** (emit all, including inherited) is simplest and self-contained; `sh:node` to a separately-serialized parent shape is more faithful to the class hierarchy but requires serializing the parent too. Flatten is the pragmatic default.
+
+- **Emit every predicate the shape declares, not a fixed SHACL allow-list.** Drive the field→predicate emission off what the `PropertyShape`/`NodeShape` actually carries, so linked-ecosystem extension predicates on a property (e.g. a future display/importance annotation) round-trip without touching the serializer.
+
+- **Share one predicate↔field map with the parser.** If round-trip (SHACL RDF → `NodeShape`) lands, the import side must use the *same* predicate↔field mapping as export — keep it in a single table so the two directions can't drift.

@@ -26,6 +26,10 @@ import * as NameSpace from './utils/NameSpace.js';
 import * as ShapeClass from './utils/ShapeClass.js';
 import * as cached from './utils/cached.js';
 import * as List from './shapes/List.js';
+import * as PathNode from './shapes/PathNode.js';
+export {syncShapes} from './shapes/syncShapes.js';
+export {rdfList} from './shapes/List.js';
+export {serializePathToNodeData} from './shapes/serializePathToNodeData.js';
 import * as ICoreIterable from './interfaces/ICoreIterable.js';
 import * as IFileStore from './interfaces/IFileStore.js';
 import * as IDataset from './interfaces/IDataset.js';
@@ -94,6 +98,7 @@ export function initModularApp() {
     URI,
     ShapeClass,
     List,
+    PathNode,
     ICoreIterable,
     IFileStore,
     IDataset,

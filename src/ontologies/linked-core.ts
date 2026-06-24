@@ -17,6 +17,14 @@ const usesShapeClass = ns('usesShapeClass');
 const editInline = ns('editInline');
 const isExtending = ns('isExtending');
 
+// Containment / lifecycle vocabulary.
+//   contains  — property characteristic: the cascade follows this edge (composition).
+//   dependent — shape characteristic: instances may be deleted when reached via a `contains` edge.
+//   PathNode  — class for SHACL property-path operator nodes (sh:inversePath/alternativePath/…).
+const contains = ns('contains');
+const dependent = ns('dependent');
+const PathNode = ns('PathNode');
+
 export const coreOntology = {
   Package,
   ShapeClass,
@@ -25,4 +33,7 @@ export const coreOntology = {
   usesShapeClass,
   editInline,
   isExtending,
+  contains,
+  dependent,
+  PathNode,
 };

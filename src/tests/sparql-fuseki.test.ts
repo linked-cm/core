@@ -362,8 +362,9 @@ describe('Fuseki SELECT — nested traversals', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on friends traverse — only p1 and p2 have friends
-    expect(rows.length).toBe(2);
+    // Multi-valued projected traversal lowers to OPTIONAL (left-join) — every
+    // person is returned, including p3/p4 who have no friends (friends: []).
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -382,6 +383,16 @@ describe('Fuseki SELECT — nested traversals', () => {
     const p2FriendNames = p2Friends.map((f) => f.name).filter(Boolean);
     expect(p2FriendNames).toContain('Jinx');
     expect(p2FriendNames).toContain('Quinn');
+
+    // p3 and p4 have no friends — they are preserved with an empty array,
+    // not dropped (this is the core multi-valued left-join fix).
+    const p3 = findRowById(rows, 'p3');
+    expect(p3).toBeDefined();
+    expect(p3!.friends).toEqual([]);
+
+    const p4 = findRowById(rows, 'p4');
+    expect(p4).toBeDefined();
+    expect(p4!.friends).toEqual([]);
   });
 
   test('selectNestedFriendsName — double nested (friends.friends.name)', async () => {
@@ -391,28 +402,38 @@ describe('Fuseki SELECT — nested traversals', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on both friends traversals.
-    // p1→friends→[p2, p3]. p2→friends→[p3, p4]. p3 has no friends.
-    // p2→friends→[p3, p4]. Neither p3 nor p4 has friends.
-    // Only p1 qualifies (via p2 who has friends).
-    expect(rows.length).toBe(1);
+    // Both friends traversals are now OPTIONAL (left-join) at every level.
+    // p1→friends→[p2, p3]; p2→friends→[p3, p4]; p3/p4 have no friends.
+    // Every root person is preserved, with empty child arrays where absent.
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
 
-    // p1's friends — only p2 survives INNER JOIN (p3 has no friends)
+    // p1's friends — both p2 and p3 are preserved (p3 with empty grandchildren).
     const p1Friends = p1!.friends as ResultRow[];
     expect(Array.isArray(p1Friends)).toBe(true);
-    expect(p1Friends.length).toBe(1);
-    expect(p1Friends[0].id).toContain('p2');
+    expect(p1Friends.length).toBe(2);
 
-    // p2's friends (second-level nesting)
-    const p2Friends = p1Friends[0].friends as ResultRow[];
+    const friendP2 = p1Friends.find((f) => f.id.includes('p2'));
+    expect(friendP2).toBeDefined();
+    // p2's friends (second-level nesting): p3 and p4.
+    const p2Friends = friendP2!.friends as ResultRow[];
     expect(Array.isArray(p2Friends)).toBe(true);
     expect(p2Friends.length).toBe(2);
     const friendNames = p2Friends.map((f) => f.name);
     expect(friendNames).toContain('Jinx');
     expect(friendNames).toContain('Quinn');
+
+    // p3 is also a friend of p1 but has no friends of its own — empty array.
+    const friendP3 = p1Friends.find((f) => f.id.includes('p3'));
+    expect(friendP3).toBeDefined();
+    expect(friendP3!.friends).toEqual([]);
+
+    // Roots with no friends at all are still returned with an empty array.
+    const p4 = findRowById(rows, 'p4');
+    expect(p4).toBeDefined();
+    expect(p4!.friends).toEqual([]);
   });
 
   test('selectMultiplePaths — name, friends, bestFriend.name', async () => {
@@ -470,9 +491,9 @@ describe('Fuseki SELECT — nested traversals', () => {
     const result = await runSelectMapped('selectDeepNested');
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
-    // Friends is still required, but deeper singular traversals are now
-    // nullable. p1 and p2 both survive because they have friends.
-    expect(rows.length).toBe(2);
+    // Friends is now an OPTIONAL (left-join) traversal too, so all four roots
+    // survive; p3/p4 (no friends) carry an empty array.
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -484,6 +505,10 @@ describe('Fuseki SELECT — nested traversals', () => {
     expect(bestFriend).toBeDefined();
     expect(bestFriend.id).toContain('p3');
     expect(bestFriend.bestFriend).toBeNull();
+
+    const p4 = findRowById(rows, 'p4');
+    expect(p4).toBeDefined();
+    expect(p4!.friends).toEqual([]);
   });
 
   test('nestedObjectProperty — friends.bestFriend', async () => {
@@ -493,11 +518,11 @@ describe('Fuseki SELECT — nested traversals', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on friends, OPTIONAL on bestFriend within traversal.
+    // OPTIONAL on friends (left-join), OPTIONAL on bestFriend within traversal.
     // p1→friends→[p2, p3]. p2→bestFriend→p3. p3→no bestFriend.
     // p2→friends→[p3, p4]. Neither has bestFriend.
-    // Both p1 and p2 have friends → both qualify.
-    expect(rows.length).toBe(2);
+    // All four roots are returned; p3/p4 carry empty friends arrays.
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -532,8 +557,8 @@ describe('Fuseki SELECT — nested traversals', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // Same fixture/SPARQL as nestedObjectProperty — OPTIONAL bestFriend
-    expect(rows.length).toBe(2);
+    // Same fixture/SPARQL as nestedObjectProperty — OPTIONAL friends + bestFriend
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -588,8 +613,8 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on friends — p1 and p2 have friends
-    expect(rows.length).toBe(2);
+    // OPTIONAL on friends (left-join) — all four persons returned (p3/p4 empty)
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -612,8 +637,8 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on friends — p1 and p2 have friends
-    expect(rows.length).toBe(2);
+    // OPTIONAL on friends (left-join) — all four persons returned (p3/p4 empty)
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -665,7 +690,8 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    expect(rows.length).toBe(2);
+    // friends is OPTIONAL (left-join) → all four roots returned (p3/p4 empty)
+    expect(rows.length).toBe(4);
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
 
@@ -714,8 +740,8 @@ describe('Fuseki SELECT — sub-selects', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on friends — p1 and p2 have friends
-    expect(rows.length).toBe(2);
+    // OPTIONAL on friends (left-join) — all four persons returned (p3/p4 empty)
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -736,7 +762,8 @@ describe('Fuseki SELECT — sub-selects', () => {
     const result = await runSelectMapped('nestedQueries2');
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
-    expect(rows.length).toBe(2);
+    // friends is now OPTIONAL → all four roots returned (p3/p4 with empty arrays)
+    expect(rows.length).toBe(4);
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
 
@@ -1346,8 +1373,9 @@ describe('Fuseki SELECT — shape casting', () => {
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
 
-    // INNER JOIN on pets traverse — p1 has pets [dog1], p2 has pets [dog2]
-    expect(rows.length).toBe(2);
+    // OPTIONAL on pets traverse (left-join) — all four persons returned;
+    // p1 has pets [dog1], p2 has pets [dog2], p3/p4 have none (pets: []).
+    expect(rows.length).toBe(4);
 
     const p1 = findRowById(rows, 'p1');
     expect(p1).toBeDefined();
@@ -1366,6 +1394,14 @@ describe('Fuseki SELECT — shape casting', () => {
     expect(p2Pets[0].id).toContain('dog2');
     // dog2 has no guardDogLevel in test data
     expect(p2Pets[0].guardDogLevel).toBeNull();
+
+    // p3/p4 have no pets — preserved with empty arrays (multi-valued left-join).
+    const p3 = findRowById(rows, 'p3');
+    expect(p3).toBeDefined();
+    expect(p3!.pets).toEqual([]);
+    const p4 = findRowById(rows, 'p4');
+    expect(p4).toBeDefined();
+    expect(p4!.pets).toEqual([]);
   });
 
   test('selectShapeAs — firstPet.as(Dog).guardDogLevel', async () => {
