@@ -1,5 +1,74 @@
 # Changelog
 
+## 2.7.0
+
+### Minor Changes
+
+- [#93](https://github.com/linked-cm/core/pull/93) [`89b3f55`](https://github.com/linked-cm/core/commit/89b3f5503329d88d0e6d9fe0a2a1418e06a58252) Thanks [@flyon](https://github.com/flyon)! - Development-mode source resolution and an instance-count diagnostic.
+
+  - **Conditional `development` exports.** `package.json` now declares a `development` export condition resolving to `./src/*.ts` (and `./src/index.ts` for the root). Vite's browser-side resolver picks the TypeScript source in dev mode, enabling HMR-on-source for `@_linked/core` from a consuming app. Production resolution (`import` → `lib/esm`, `require` → `lib/cjs`, `types`) is unchanged.
+  - **`LinkedStorage.getLoadedInstanceCount(): number`** — new public static method reporting how many `@_linked/core` instances are registered on the global tree (a diagnostic for the Vite-SSR-vs-Node-resolver dual-load split).
+
+- [#93](https://github.com/linked-cm/core/pull/93) [`89b3f55`](https://github.com/linked-cm/core/commit/89b3f5503329d88d0e6d9fe0a2a1418e06a58252) Thanks [@flyon](https://github.com/flyon)! - Shape, package, and framework-vocabulary IRIs now use the canonical `linked.cm` namespace, with a configurable per-package publish root.
+
+  **New scheme (arch-aligned):**
+
+  - Shape IRIs: `https://linked.cm/shape/{packageSlug}/{ShapeName}` (PascalCase shape name; previously `https://data.lincd.org/module/{sanitized}/shape/{lowercased}`).
+  - Package IRIs: `https://linked.cm/pkg/{packageSlug}` (previously `…/module/{name}`).
+  - Framework vocabulary: `https://linked.cm/ont/linked-core/` (prefix `linked_core`; previously `https://purl.org/on/lincd/`, prefix `lincd`). The `Module` term is renamed to `Package`.
+
+  **New / changed public API:**
+
+  - `linkedPackage(name, { baseUri? })` — packages declare where they publish. `baseUri` defaults to `https://linked.cm/` (first-party); CN injects a workspace-scoped root (`{workspaceSlug}.id.create.now`) for private packages. The IRI slug is the package **basename** with the npm scope dropped (`@_linked/core` → `core`, `@linked.cm/blog` → `blog`); there is no separate slug param. Slugs must be globally unique within the publish root — the registry enforces this and reserves the first-party (`@_linked`) names.
+  - New exports `LINKED_DATA_ROOT`, `getPackageUri()`, `setPackagePublishConfig()`, `packageNameToSlug()` (replaces the removed `LINCD_DATA_ROOT`).
+  - The framework ontology export is now `coreOntology` (was `lincd`).
+
+  **Breaking:** generated shape/package/term IRIs change. Consumers that hardcoded `data.lincd.org` IRIs, imported `LINCD_DATA_ROOT`, or used the `lincd` ontology export must update. Stored data keyed on the old IRIs needs migration.
+
+- [#93](https://github.com/linked-cm/core/pull/93) [`89b3f55`](https://github.com/linked-cm/core/commit/89b3f5503329d88d0e6d9fe0a2a1418e06a58252) Thanks [@flyon](https://github.com/flyon)! - SPARQL generation: structured property paths on named properties, and inner pagination for nested selects.
+
+  **Structured `sh:path` on named properties now resolve correctly.** A query that references a named property whose SHACL `sh:path` is structured (a sequence `[a, b]`, an inverse `^p`, or an alternative `a|b`) previously collapsed to a shadow IRI and matched nothing. It now emits the correct SPARQL property-path predicate. Simple single-predicate properties are unaffected (output unchanged).
+
+  **Nested selects can now bound a related collection with `.limit()` / `.offset()` / `.orderBy()`** — when the outer query targets a single subject:
+
+  ```ts
+  // Up to 2 friends, ordered, for one person
+  Person.select((p) =>
+    p.friends
+      .select((f) => f.name)
+      .orderBy((f) => f.name)
+      .limit(2)
+  ).for({ id });
+  ```
+
+  This emits a real SPARQL sub-`SELECT … ORDER BY … LIMIT … OFFSET …` that bounds the collection per parent. `orderBy` accepts a proxy callback (`f => f.name`) or a property-name string and defaults to ascending.
+
+  Notes:
+
+  - Per-group pagination across **multiple** parents is not supported and now throws a clear error instead of silently applying a global limit. The same applies to `.limit()` on a deeper (grandchild) collection, and to `.limit()` called directly on a traversal without `.select(...)`.
+  - Queries with no inner pagination are emitted exactly as before.
+
+### Patch Changes
+
+- [#93](https://github.com/linked-cm/core/pull/93) [`89b3f55`](https://github.com/linked-cm/core/commit/89b3f5503329d88d0e6d9fe0a2a1418e06a58252) Thanks [@flyon](https://github.com/flyon)! - `initTree()` is now idempotent: if `global.lincd` already exists (which
+  happens structurally under Vite SSR — Vite resolves `@_linked/core/utils/Package`
+  from `src/`, and any `/* @vite-ignore */` dynamic import via Node's resolver
+  gets it from `lib/esm/`), the function attaches to the existing registry
+  instead of throwing or warning.
+
+  Previous behavior used a `_lincdMultiWarned` one-shot flag that logged a
+  warning on the second initialization. This was framed as "interim" but
+  was actually the correct semantic for the Vite-SSR-vs-Node-resolver split.
+  The new code expresses the same behavior as the explicit design rather
+  than as a workaround.
+
+  No API change. Existing consumers see the same `lincd` global tree they
+  saw before. Apps that previously saw "Multiple versions of Linked are
+  loaded — accepted during HMR/Vite interim" in their dev log will no
+  longer see that line.
+
+  Context: see create-now plan-011 report (docs/reports/009-legacy-lincd-eradication.md).
+
 ## 2.6.0
 
 ### Minor Changes
