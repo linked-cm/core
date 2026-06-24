@@ -228,7 +228,10 @@ No architecture changes required; one approved deferral (reverse import → back
    correctly-ordered thunks.
 
 **End-to-end (jest + Fuseki in Docker) — `npm run test:fuseki`** (deferred to review; gated/skipped if
-Fuseki unavailable). NEW `src/tests/sparql-fuseki-shape-sync.test.ts`:
+Fuseki unavailable). NEW `src/tests/sparql-fuseki-shape-sync.test.ts`, **reusing the existing core
+Fuseki harness** — `src/test-helpers/fuseki-test-store.ts` (`ensureFuseki`, `createTestDataset`,
+`deleteTestDataset`, `clearAllData`, `executeSparqlQuery`), `FusekiStore`, `src/tests/docker-compose.test.yml`,
+the `test:fuseki` script, and the graceful-skip-when-down pattern from `sparql-fuseki.test.ts`. No new harness:
 - **Setup:** `docker-compose.test.yml` (existing) spins Fuseki; create a **dedicated/fresh test
   dataset** (`createTestDataset`); wire `FusekiStore` as the global dispatch (`setQueryDispatch`) so
   the `syncShapes` read + thunks hit Fuseki.
