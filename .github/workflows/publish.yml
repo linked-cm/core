@@ -58,8 +58,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-  sync-version-to-dev:
-    name: Sync Version to Dev
+  backmerge-to-dev:
+    # Full back-merge of main into dev after a release. Unlike a version-only sync, this also
+    # carries the CHANGELOG and — critically — the changeset *deletions* the release made, so dev
+    # never keeps already-released changesets that would otherwise re-release on the next dev->main.
+    name: Back-merge main into dev
     needs: release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -67,7 +70,6 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      # Same App token so the sync PR into dev also runs CI without manual approval.
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v2
@@ -75,34 +77,36 @@ jobs:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
-      - name: Checkout dev
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: dev
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Sync package.json version from main via PR
+      - name: Open & auto-merge back-merge PR (main -> dev)
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          MAIN_VERSION=$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
-          DEV_VERSION=$(node -p "require('./package.json').version")
-          if [ "$MAIN_VERSION" != "$DEV_VERSION" ]; then
-            BRANCH="chore/sync-version-${MAIN_VERSION}"
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git checkout -b "$BRANCH"
-            npm version "$MAIN_VERSION" --no-git-tag-version --allow-same-version
-            git add package.json package-lock.json
-            git commit -m "chore: sync package.json version to $MAIN_VERSION from main"
-            git push origin "$BRANCH"
-            gh pr create \
-              --base dev \
-              --head "$BRANCH" \
-              --title "chore: sync package.json version to $MAIN_VERSION from main" \
-              --body "Automated version sync from main after release."
+          git fetch origin main dev
+          # Nothing to do when dev already contains main.
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "dev already contains main — nothing to back-merge."
+            exit 0
           fi
+          # Reuse an existing open back-merge PR if present, else open one.
+          pr=$(gh pr list --base dev --head main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            url=$(gh pr create --base dev --head main \
+              --title "chore: back-merge main into dev (post-release sync)" \
+              --body "Automated post-release back-merge: brings the version bump, CHANGELOG, and changeset deletions from main into dev so dev stays clean and a future dev->main never re-releases consumed changesets.")
+            pr="${url##*/}"
+            echo "Opened back-merge PR #$pr"
+          else
+            echo "Reusing existing back-merge PR #$pr"
+          fi
+          # Auto-merge once required checks pass (needs "Allow auto-merge" enabled on the repo).
+          gh pr merge "$pr" --auto --merge \
+            || echo "Auto-merge unavailable (disabled or conflicts) — PR #$pr left open for manual merge."
 
   dev-release:
     name: Publish Dev Release
