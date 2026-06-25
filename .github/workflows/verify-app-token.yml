@@ -2,8 +2,7 @@ name: Verify App Token
 # Throwaway workflow to confirm RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY org secrets
 # and the App installation are correctly wired. Never prints the token. Delete after use.
 on:
-  push:
-    branches: [chore/verify-app-token]
+  pull_request:
   workflow_dispatch:
 
 jobs:
