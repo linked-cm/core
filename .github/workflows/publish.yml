@@ -18,8 +18,20 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
+      # Author the version PR as the org release App (not the default GITHUB_TOKEN) so its
+      # CI runs without a manual "Approve and run" gate. Requires org secrets RELEASE_APP_ID
+      # and RELEASE_APP_PRIVATE_KEY (one GitHub App installed org-wide).
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,7 +56,7 @@ jobs:
           title: "chore: version package for release"
           commit: "chore: version package for release"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
   sync-version-to-dev:
     name: Sync Version to Dev
@@ -55,15 +67,24 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Same App token so the sync PR into dev also runs CI without manual approval.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Checkout dev
         uses: actions/checkout@v4
         with:
           ref: dev
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Sync package.json version from main via PR
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           MAIN_VERSION=$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
           DEV_VERSION=$(node -p "require('./package.json').version")
