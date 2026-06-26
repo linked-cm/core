@@ -271,6 +271,15 @@ function buildPrefixBlock(usedUris: Set<string>): string {
   return lines.join('\n');
 }
 
+function graphBlock(
+  graph: string,
+  body: string,
+  collector: UriCollector,
+): string {
+  collectUri(collector, graph);
+  return `GRAPH ${formatUri(graph)} {\n${indent(body)}\n}`;
+}
+
 // ---------------------------------------------------------------------------
 // Top-level plan serializers
 // ---------------------------------------------------------------------------
@@ -375,18 +384,27 @@ export function deleteInsertPlanToSparql(
   const collector: UriCollector = {uris: new Set()};
 
   // DELETE block
-  const deleteTriples = serializeTriples(plan.deletePatterns, collector);
+  let deleteTriples = serializeTriples(plan.deletePatterns, collector);
+  if (plan.graph) {
+    deleteTriples = graphBlock(plan.graph, deleteTriples, collector);
+  }
   const deletePart = `DELETE {\n${indent(deleteTriples)}\n}`;
 
   // INSERT block (may be empty)
   let insertPart = '';
   if (plan.insertPatterns.length > 0) {
-    const insertTriples = serializeTriples(plan.insertPatterns, collector);
+    let insertTriples = serializeTriples(plan.insertPatterns, collector);
+    if (plan.graph) {
+      insertTriples = graphBlock(plan.graph, insertTriples, collector);
+    }
     insertPart = `INSERT {\n${indent(insertTriples)}\n}\n`;
   }
 
   // WHERE block
-  const whereBody = serializeAlgebraNode(plan.whereAlgebra, collector);
+  let whereBody = serializeAlgebraNode(plan.whereAlgebra, collector);
+  if (plan.graph) {
+    whereBody = graphBlock(plan.graph, whereBody, collector);
+  }
   const wherePart = `WHERE {\n${indent(whereBody)}\n}`;
 
   const prefixBlock = buildPrefixBlock(collector.uris);

@@ -1582,6 +1582,7 @@ export function createToAlgebra(
   return {
     type: 'insert_data',
     triples,
+    graph: options?.graph,
   };
 }
 
@@ -1857,6 +1858,7 @@ export function updateToAlgebra(
     deletePatterns: result.deletePatterns,
     insertPatterns: result.insertPatterns,
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 
@@ -1954,7 +1956,7 @@ export function buildOwnedCascade(
  */
 export function deleteToAlgebra(
   query: IRDeleteMutation,
-  _options?: SparqlOptions,
+  options?: SparqlOptions,
 ): SparqlDeleteInsertPlan {
   const deletePatterns: SparqlTriple[] = [];
   const requiredTriples: SparqlTriple[] = [];
@@ -2004,6 +2006,7 @@ export function deleteToAlgebra(
     deletePatterns,
     insertPatterns: [],
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 
@@ -2110,7 +2113,7 @@ function walkBlankNodeTree(
  */
 export function deleteAllToAlgebra(
   query: IRDeleteAllMutation,
-  _options?: SparqlOptions,
+  options?: SparqlOptions,
 ): SparqlDeleteInsertPlan {
   const subjectVar = 'a0';
 
@@ -2135,6 +2138,7 @@ export function deleteAllToAlgebra(
     deletePatterns,
     insertPatterns: [],
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 
@@ -2145,7 +2149,7 @@ export function deleteAllToAlgebra(
  */
 export function deleteWhereToAlgebra(
   query: IRDeleteWhereMutation,
-  _options?: SparqlOptions,
+  options?: SparqlOptions,
 ): SparqlDeleteInsertPlan {
   const subjectVar = 'a0';
   const registry = new VariableRegistry();
@@ -2195,6 +2199,7 @@ export function deleteWhereToAlgebra(
     deletePatterns,
     insertPatterns: [],
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 
@@ -2281,6 +2286,7 @@ export function updateWhereToAlgebra(
     deletePatterns: result.deletePatterns,
     insertPatterns: result.insertPatterns,
     whereAlgebra,
+    graph: options?.graph,
   };
 }
 

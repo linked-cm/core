@@ -4,6 +4,11 @@ import {ulid} from 'ulid';
 export interface SparqlOptions {
   dataRoot?: string;
   prefixes?: Record<string, string>;
+  /**
+   * RDF named graph scope for SPARQL serialization. This is not the SPARQL
+   * protocol `default-graph-uri` parameter or the store's unnamed default graph.
+   */
+  graph?: string;
 }
 
 /**
