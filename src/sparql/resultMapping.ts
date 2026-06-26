@@ -141,6 +141,7 @@ function isUriExpression(expression: IRExpression): boolean {
 
 type FieldDescriptor = {
   key: string;
+  containerKey?: string;
   sparqlVar: string;
   expression: IRExpression;
   /** Maximum cardinality from PropertyShape. Absent → multi-value (collected into array). */
@@ -211,7 +212,7 @@ function insertIntoTree(
   let group = root.nestedGroups.find((g) => g.traverseAlias === target.alias);
   if (!group) {
     group = {
-      key: localName(target.property),
+      key: field.containerKey || localName(target.property),
       traverseAlias: target.alias,
       flatFields: [],
       nestedGroups: [],
@@ -261,6 +262,7 @@ function buildNestingDescriptor(query: IRSelectQuery): NestingDescriptor {
       const resultKey = localName(entry.key);
       const field: FieldDescriptor = {
         key: resultKey,
+        containerKey: entry.containerKey,
         sparqlVar: entry.alias,
         expression: {kind: 'aggregate_expr', name: 'count', args: []} as any,
         maxCount: 1,
@@ -283,7 +285,7 @@ function buildNestingDescriptor(query: IRSelectQuery): NestingDescriptor {
       sourceAlias = rootAlias;
     }
 
-    const field: FieldDescriptor = {key: resultKey, sparqlVar, expression};
+    const field: FieldDescriptor = {key: resultKey, containerKey: entry.containerKey, sparqlVar, expression};
     if (expression.kind === 'property_expr') {
       // property_expr carries maxCount from PropertyShape — absent means multi-value
       if (typeof expression.maxCount === 'number') {
