@@ -1,5 +1,8 @@
 import {describe, expect, test, beforeAll} from '@jest/globals';
-import {Person, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {
+  Person,
+  tmpEntityBase,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {entity, captureDslIR, sanitize} from '../test-helpers/test-utils';
 import {QueryBuilder} from '../queries/QueryBuilder';
@@ -9,6 +12,7 @@ import {FieldSet} from '../queries/FieldSet';
 import {setQueryContext, getQueryContext, PendingQueryContext} from '../queries/QueryContext';
 
 const personShape = Person.shape;
+const localName = (iri: string) => iri.split(/[\/#]/).pop();
 
 beforeAll(() => {
   setQueryContext('user', {id: 'user-1'}, Person);
@@ -201,6 +205,101 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
     const dslIR = await captureDslIR(() => Person.selectAll());
     const builderIR = QueryBuilder.from(Person).selectAll().build();
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
+  });
+});
+
+// =============================================================================
+// Result contract lowering tests
+// =============================================================================
+
+describe('QueryBuilder — result contract lowering', () => {
+  test('flat custom alias preserves resultMap key', async () => {
+    const ir = await captureQuery(() =>
+      Person.select((p) => ({displayName: p.name})),
+    );
+
+    expect(ir.resultMap).toContainEqual({
+      key: 'displayName',
+      alias: expect.any(String),
+    });
+
+    const displayNameEntry = ir.resultMap?.find(
+      (entry) => entry.key === 'displayName',
+    );
+    const projection = ir.projection.find(
+      (item) => item.alias === displayNameEntry?.alias,
+    );
+
+    expect(projection?.expression).toMatchObject({
+      kind: 'property_expr',
+      sourceAlias: 'a0',
+    });
+    expect(localName((projection?.expression as any).property)).toBe('name');
+  });
+
+  test('nested custom container with bare inner field preserves child key', async () => {
+    const ir = await captureQuery(() =>
+      Person.select((p) => ({
+        image: p.bestFriend.select((friend) => [friend.name]),
+      })),
+    );
+
+    const childEntry = ir.resultMap?.find((entry) => {
+      const projection = ir.projection.find((item) => item.alias === entry.alias);
+      return (
+        projection?.expression.kind === 'property_expr' &&
+        projection.expression.sourceAlias !== 'a0' &&
+        localName(projection.expression.property) === 'name'
+      );
+    });
+
+    expect(childEntry).toMatchObject({
+      key: 'name',
+      alias: expect.any(String),
+      containerKey: 'image',
+    });
+
+    const projection = ir.projection.find(
+      (item) => item.alias === childEntry?.alias,
+    );
+    expect(projection?.expression).toMatchObject({
+      kind: 'property_expr',
+    });
+    expect(localName((projection?.expression as any).property)).toBe('name');
+    expect((projection?.expression as any).sourceAlias).not.toBe('a0');
+
+    const traverse = ir.patterns.find(
+      (pattern) =>
+        pattern.kind === 'traverse' && localName(pattern.property) === 'bestFriend',
+    );
+    expect(traverse).toMatchObject({
+      kind: 'traverse',
+      from: 'a0',
+    });
+    expect(localName((traverse as any)?.property)).toBe('bestFriend');
+  });
+
+  test('nested custom container preserves explicit inner alias', async () => {
+    const ir = await captureQuery(() =>
+      Person.select((p) => ({
+        image: p.bestFriend.select((friend) => ({url: friend.name})),
+      })),
+    );
+
+    const childEntry = ir.resultMap?.find((entry) => {
+      const projection = ir.projection.find((item) => item.alias === entry.alias);
+      return (
+        projection?.expression.kind === 'property_expr' &&
+        projection.expression.sourceAlias !== 'a0' &&
+        localName(projection.expression.property) === 'name'
+      );
+    });
+
+    expect(childEntry).toMatchObject({
+      key: 'url',
+      alias: expect.any(String),
+      containerKey: 'image',
+    });
   });
 });
 

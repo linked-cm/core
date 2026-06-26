@@ -7,10 +7,12 @@ import {
 import type {SparqlJsonResults} from '../sparql/resultMapping';
 import type {
   IRCreateMutation,
+  IRExpression,
   IRSelectQuery,
   IRUpdateMutation,
   ResultRow,
 } from '../queries/IntermediateRepresentation';
+import {Person} from '../test-helpers/query-fixtures';
 
 // ---------------------------------------------------------------------------
 // XSD datatype URIs (local constants for test clarity)
@@ -38,6 +40,41 @@ const PROP_GUARD_DOG_LEVEL = 'linked://tmp/props/guardDogLevel';
 const PROP_NICK_NAME = 'linked://tmp/props/nickName';
 
 const E = (suffix: string) => `linked://tmp/entities/${suffix}`;
+const localName = (iri: string) => iri.split(/[\/#]/).pop();
+
+function projectedPropertyVar(query: IRSelectQuery, property: string): string {
+  const projection = query.projection.find(
+    (item) =>
+      item.expression.kind === 'property_expr' &&
+      localName(item.expression.property) === property,
+  );
+  if (!projection) {
+    throw new Error(`No projection found for property ${property}`);
+  }
+
+  const expression = projection.expression as Extract<
+    IRExpression,
+    {kind: 'property_expr'}
+  >;
+  return `${expression.sourceAlias}_${property}`;
+}
+
+function projectedTraversalAlias(query: IRSelectQuery, property: string): string {
+  const projection = query.projection.find(
+    (item) =>
+      item.expression.kind === 'property_expr' &&
+      localName(item.expression.property) === property,
+  );
+  if (!projection) {
+    throw new Error(`No projection found for property ${property}`);
+  }
+
+  const expression = projection.expression as Extract<
+    IRExpression,
+    {kind: 'property_expr'}
+  >;
+  return expression.sourceAlias;
+}
 
 // ---------------------------------------------------------------------------
 // Helper: minimal IR query builders
@@ -217,6 +254,105 @@ describe('mapSparqlSelectResult', () => {
     expect(p2Friends[0].name).toBe('Jinx');
     expect(p2Friends[1].id).toBe(E('p4'));
     expect(p2Friends[1].name).toBe('Quinn');
+  });
+
+  test('flat custom alias hydration preserves alias', () => {
+    const query = Person.select((p) => ({
+      displayName: p.name,
+    })).build() as IRSelectQuery;
+    const nameVar = projectedPropertyVar(query, 'name');
+
+    const json: SparqlJsonResults = {
+      head: {vars: ['a0', nameVar]},
+      results: {
+        bindings: [
+          {
+            a0: {type: 'uri', value: E('p1')},
+            [nameVar]: {type: 'literal', value: 'Semmy'},
+          },
+        ],
+      },
+    };
+
+    const result = mapSparqlSelectResult(json, query) as ResultRow[];
+    expect(result).toEqual([
+      {
+        id: E('p1'),
+        displayName: 'Semmy',
+      },
+    ]);
+  });
+
+  test('nested custom container with bare inner field hydrates child key', () => {
+    const query = Person.select((p) => ({
+      image: p.bestFriend.select((friend) => [friend.name]),
+    })).build() as IRSelectQuery;
+    const imageAlias = projectedTraversalAlias(query, 'name');
+    const nameVar = projectedPropertyVar(query, 'name');
+
+    const json: SparqlJsonResults = {
+      head: {vars: ['a0', imageAlias, nameVar]},
+      results: {
+        bindings: [
+          {
+            a0: {type: 'uri', value: E('p1')},
+            [imageAlias]: {type: 'uri', value: E('image1')},
+            [nameVar]: {
+              type: 'literal',
+              value: '/images/banners/empowerment.webp',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = mapSparqlSelectResult(json, query) as ResultRow[];
+    expect(result).toEqual([
+      {
+        id: E('p1'),
+        image: {
+          id: E('image1'),
+          name: '/images/banners/empowerment.webp',
+        },
+      },
+    ]);
+    expect(((result[0].image as ResultRow) as any).image).toBeUndefined();
+  });
+
+  test('nested custom container preserves explicit inner alias during hydration', () => {
+    const query = Person.select((p) => ({
+      image: p.bestFriend.select((friend) => ({url: friend.name})),
+    })).build() as IRSelectQuery;
+    const imageAlias = projectedTraversalAlias(query, 'name');
+    const nameVar = projectedPropertyVar(query, 'name');
+
+    const json: SparqlJsonResults = {
+      head: {vars: ['a0', imageAlias, nameVar]},
+      results: {
+        bindings: [
+          {
+            a0: {type: 'uri', value: E('p1')},
+            [imageAlias]: {type: 'uri', value: E('image1')},
+            [nameVar]: {
+              type: 'literal',
+              value: '/images/banners/empowerment.webp',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = mapSparqlSelectResult(json, query) as ResultRow[];
+    expect(result).toEqual([
+      {
+        id: E('p1'),
+        image: {
+          id: E('image1'),
+          url: '/images/banners/empowerment.webp',
+        },
+      },
+    ]);
+    expect(((result[0].image as ResultRow) as any).name).toBeUndefined();
   });
 
   test('boolean coercion — "true" string', () => {
