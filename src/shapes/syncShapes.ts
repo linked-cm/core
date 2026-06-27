@@ -3,8 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import {getAllShapeClasses} from '../utils/ShapeClass.js';
+import {getAllShapeClasses, getShapeClass} from '../utils/ShapeClass.js';
 import {NodeShape, PropertyShape} from './SHACL.js';
+import {Shape} from './Shape.js';
 import {DeleteBuilder} from '../queries/DeleteBuilder.js';
 import {rdfList} from './List.js';
 import {serializePathToNodeData} from './serializePathToNodeData.js';
@@ -61,6 +62,25 @@ function buildNodeShapeData(nodeShape: NodeShape, shapeIri: string): Record<stri
 }
 
 /**
+ * The per-shape `delete → create` thunk shared by `syncShapes()` and `syncShape()`. The delete
+ * cascade-cleans the shape's old property-shape / list / path subtrees; the create rebuilds them.
+ */
+function buildSyncThunk(nodeShape: NodeShape, iri: string): () => Promise<void> {
+  return () => {
+    // Build the data fresh on each invocation: the create pipeline mutates the node-data
+    // (it strips nested `shape` keys), so a shared object can't be re-used across runs.
+    const data = buildNodeShapeData(nodeShape, iri);
+    return (DeleteBuilder.from(NodeShape, {id: iri}).exec() as Promise<unknown>)
+      .then(() =>
+        (NodeShape.create(data as never).withId(iri) as unknown as {
+          exec: () => Promise<unknown>;
+        }).exec(),
+      )
+      .then(() => undefined);
+  };
+}
+
+/**
  * Plan an idempotent sync of all code-registered (non-framework) NodeShapes into the store as
  * SHACL data — the forward (code → graph) materialization of arch-05 "code is canonical".
  *
@@ -96,16 +116,7 @@ export async function syncShapes(): Promise<Array<() => Promise<void>>> {
 
   // 3. Per in-code shape: delete (cascade) then recreate.
   for (const {iri, nodeShape} of userShapes) {
-    const data = buildNodeShapeData(nodeShape, iri);
-    thunks.push(() =>
-      (DeleteBuilder.from(NodeShape, {id: iri}).exec() as Promise<unknown>)
-        .then(() =>
-          ((NodeShape.create(data as never).withId(iri) as unknown as {
-            exec: () => Promise<unknown>;
-          }).exec()),
-        )
-        .then(() => undefined),
-    );
+    thunks.push(buildSyncThunk(nodeShape, iri));
   }
 
   // 4. Orphan shapes (in store, not in code) → delete (cascade cleans their owned subtree).
@@ -120,4 +131,45 @@ export async function syncShapes(): Promise<Array<() => Promise<void>>> {
   }
 
   return thunks;
+}
+
+/**
+ * Plan an idempotent sync of ONE code-registered NodeShape into the store as SHACL data.
+ *
+ * Scoped counterpart to {@link syncShapes}: materializes a single shape (delete → recreate, so the
+ * delete cascade-cleans the old property-shape / list / path subtrees and the create rebuilds them)
+ * and does NOT run the store-wide orphan sweep — other shapes in the store are untouched.
+ *
+ * @param target a shape class (e.g. `Person`) or its NodeShape IRI string. An IRI is resolved to
+ *   its registered class via `getShapeClass`; the shape must be code-registered.
+ * @returns a single unexecuted thunk (consistent with {@link syncShapes}), so callers can batch
+ *   several together — e.g. a shape plus its referenced object-property shapes:
+ *   `await Promise.all([syncShape(Person), syncShape(Address)].map((run) => run()))`.
+ * @throws if `target` is a framework/meta shape, is not registered, or has no `.shape`.
+ */
+export function syncShape(target: typeof Shape | string): () => Promise<void> {
+  // Normalize target → its registered shape class.
+  const cls =
+    typeof target === 'string' ? getShapeClass(target) : (target as typeof Shape);
+  if (typeof target === 'string' && !cls) {
+    throw new Error(`syncShape: no registered shape for IRI ${target}`);
+  }
+  const nodeShape = cls?.shape;
+  if (!nodeShape) {
+    throw new Error(
+      typeof target === 'string'
+        ? `syncShape: no registered shape for IRI ${target}`
+        : `syncShape: shape class has no static .shape`,
+    );
+  }
+  const iri = nodeShape.id;
+
+  // Never materialize a framework/meta shape as user data — same invariant syncShapes() enforces
+  // by skipping (the base Shape carries no packageName).
+  const pkg = (cls as {packageName?: string}).packageName;
+  if (!pkg || pkg === FRAMEWORK_PACKAGE) {
+    throw new Error(`syncShape: refusing to sync framework/meta shape ${iri}`);
+  }
+
+  return buildSyncThunk(nodeShape, iri);
 }

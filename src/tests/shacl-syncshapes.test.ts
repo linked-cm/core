@@ -6,9 +6,9 @@
 import {describe, expect, test, beforeEach} from '@jest/globals';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
-import {literalProperty, objectProperty} from '../shapes/SHACL';
+import {literalProperty, objectProperty, NodeShape} from '../shapes/SHACL';
 import {setQueryDispatch} from '../queries/queryDispatch';
-import {syncShapes} from '../shapes/syncShapes';
+import {syncShapes, syncShape} from '../shapes/syncShapes';
 import '../shapes/List';
 import '../shapes/PathNode';
 
@@ -29,6 +29,15 @@ class TUser extends Shape {
   @objectProperty({path: {seq: [ex('a'), ex('b')]}, shape: TUser})
   get chain(): TUser {
     return null;
+  }
+}
+
+@linkedShape
+class TOther extends Shape {
+  static targetClass = ex('Other');
+  @literalProperty({path: ex('label'), maxCount: 1})
+  get label(): string {
+    return '';
   }
 }
 
@@ -98,5 +107,62 @@ describe('syncShapes', () => {
     // Exercises rdfList + serializePathToNodeData through the create build inside the thunk.
     const plan = await syncShapes();
     await expect(Promise.all(plan.map((run) => run()))).resolves.toBeDefined();
+  });
+});
+
+describe('syncShape (single)', () => {
+  const userIri = () => TUser.shape.id;
+  const otherIri = () => TOther.shape.id;
+
+  // Store already contains TUser, TOther, and an orphan not in code.
+  beforeEach(() => installMock([userIri(), otherIri(), ORPHAN]));
+
+  test('returns a single thunk (not an array)', () => {
+    const t = syncShape(TUser);
+    expect(typeof t).toBe('function');
+    expect(Array.isArray(t)).toBe(false);
+  });
+
+  test('materializes only the target shape — no other shape, no orphan sweep', async () => {
+    await syncShape(TUser)();
+    const ids = (k: string) => calls.filter((c) => c.kind === k).map((c) => c.id);
+    // exactly delete + create for the target
+    expect(ids('delete')).toEqual([userIri()]);
+    expect(ids('create')).toEqual([userIri()]);
+    // the other shape is untouched (no collateral delete/create)
+    expect(calls.some((c) => c.id === otherIri())).toBe(false);
+    // and crucially NO orphan sweep — the store-only shape survives (unlike syncShapes)
+    expect(calls.some((c) => c.id === ORPHAN)).toBe(false);
+  });
+
+  test('IRI form resolves to the same result as the class form', async () => {
+    await syncShape(userIri())();
+    const ids = (k: string) => calls.filter((c) => c.kind === k).map((c) => c.id);
+    expect(ids('delete')).toEqual([userIri()]);
+    expect(ids('create')).toEqual([userIri()]);
+  });
+
+  test('delete runs before create, and is idempotent across runs', async () => {
+    const t = syncShape(TUser);
+    await t();
+    await t();
+    // delete→create each run, target only, no duplication of other ids
+    expect(calls.map((c) => `${c.kind}:${c.id}`)).toEqual([
+      `delete:${userIri()}`,
+      `create:${userIri()}`,
+      `delete:${userIri()}`,
+      `create:${userIri()}`,
+    ]);
+  });
+
+  test('rejects a framework/meta shape (class and IRI form)', () => {
+    expect(() => syncShape(NodeShape)).toThrow(/framework|meta/i);
+    expect(() => syncShape('https://linked.cm/shape/core/NodeShape')).toThrow();
+  });
+
+  test('rejects an unregistered IRI', () => {
+    expect(() => syncShape('https://example.org/not-registered')).toThrow(
+      /no registered shape/i,
+    );
   });
 });
