@@ -60,7 +60,7 @@ cascade**) → SPARQL → store.
 | `src/shapes/syncShapes.ts` | enumerate → identity-read → delete+recreate / orphan-delete thunks |
 | `src/utils/Package.ts` | `ShapeConfig.dependent/closed/ignoredProperties` read in `applyLinkedShape`; extended meta-model accessors; `contains` on `sh:property`/`sh:path`/`sh:in`; `PropertyShape` `dependent` |
 | `src/sparql/irToAlgebra.ts` | `buildOwnedCascade`, `collectContainment`, `shapeHasContainsProperty`; cascade wired into `deleteToAlgebra` + `processUpdateFields` |
-| `src/index.ts` | exports `syncShapes`, `rdfList`, `serializePathToNodeData`, `PathNode` |
+| `src/index.ts` | exports `syncShapes`, `syncShape`, `rdfList`, `serializePathToNodeData`, `PathNode` |
 
 ## Public API
 
@@ -69,6 +69,13 @@ cascade**) → SPARQL → store.
 import {syncShapes} from '@_linked/core';
 const plan = await syncShapes();                 // Array<() => Promise<void>>
 await Promise.all(plan.map((run) => run()));      // delete+recreate per shape + orphan deletes
+
+// Sync ONE shape (scoped — no store-wide orphan sweep; see ideas/025):
+import {syncShape} from '@_linked/core';
+await syncShape(Person)();                         // by class
+await syncShape(Person.shape.id)();                // or by NodeShape IRI
+// composes/batches with itself (each returns one unexecuted thunk):
+await Promise.all([syncShape(Person), syncShape(Address)].map((run) => run()));
 
 // Ordered RDF lists (sh:in, sequences, or any user property):
 import {rdfList} from '@_linked/core';
@@ -84,6 +91,16 @@ rdfList(items, {base: `${psIri}/in`});                        // deterministic c
 import {serializePathToNodeData} from '@_linked/core';
 serializePathToNodeData(pathExpr, baseIri);
 ```
+
+### Update — `syncShape(target)` (ideas/025)
+
+Scoped single-shape counterpart to `syncShapes()`: materializes one code-registered NodeShape
+(delete → recreate, cascade-cleaning its owned subtrees) with **no store-wide orphan sweep**, so
+sibling shapes in the store are untouched. Accepts a shape class or NodeShape IRI; throws for
+framework/meta and unregistered shapes. The shared per-shape thunk was factored into a private
+`buildSyncThunk`, which now rebuilds its node-data **per invocation** (the create pipeline mutates
+the data by stripping nested `shape` keys, so a thunk must rebuild to be safely re-runnable —
+this also hardened `syncShapes()`). Covered by `src/tests/shacl-syncshapes.test.ts`.
 
 ## Owned-subtree cascade (the core mechanism)
 
