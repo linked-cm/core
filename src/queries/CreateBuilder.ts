@@ -5,7 +5,7 @@ import {CreateQueryFactory, type CreateQuery, type IRCreateQuery, type CreateRes
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
 import type {NodeShape} from '../shapes/SHACL.js';
-import {encodeNodeData, type CreateMutationJSON} from './MutationSerialization.js';
+import {encodeNodeData, decodeNodeDataToRaw, type CreateMutationJSON} from './MutationSerialization.js';
 
 /**
  * Internal state bag for CreateBuilder.
@@ -60,6 +60,11 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   static from<S extends Shape>(shape: ShapeConstructor<S> | string): CreateBuilder<S> {
     const resolved = resolveShape<S>(shape);
     return new CreateBuilder<S>({shape: resolved});
+  }
+
+  /** Reconstruct a CreateBuilder from its DSL-JSON (inverse of `toJSON`). */
+  static fromJSON(json: CreateMutationJSON): CreateBuilder {
+    return CreateBuilder.from(json.shape).set(decodeNodeDataToRaw(json.data) as any);
   }
 
   // ---------------------------------------------------------------------------

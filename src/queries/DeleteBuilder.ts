@@ -5,7 +5,7 @@ import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
 import type {NodeShape} from '../shapes/SHACL.js';
-import {type WhereClause, processWhereClause} from './SelectQuery.js';
+import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import {
   buildCanonicalDeleteAllMutationIR,
   buildCanonicalDeleteWhereMutationIR,
@@ -13,8 +13,8 @@ import {
 import {toWhere} from './IRDesugar.js';
 import {canonicalizeWhere} from './IRCanonicalize.js';
 import {lowerWhereToIR} from './IRLower.js';
-import {type DeleteMutationJSON} from './MutationSerialization.js';
-import {serializeWherePath} from './QueryBuilderSerialization.js';
+import {type DeleteMutationJSON, decodeNodeDataToRaw} from './MutationSerialization.js';
+import {serializeWherePath, deserializeWherePath} from './QueryBuilderSerialization.js';
 
 type DeleteMode = 'ids' | 'all' | 'where';
 
@@ -26,6 +26,8 @@ interface DeleteBuilderInit<S extends Shape> {
   ids?: NodeId[];
   mode?: DeleteMode;
   whereFn?: WhereClause<S>;
+  /** A pre-resolved where path (used by fromJSON; no live callback). */
+  where?: WherePath;
 }
 
 /**
@@ -46,12 +48,14 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   private readonly _ids?: NodeId[];
   private readonly _mode?: DeleteMode;
   private readonly _whereFn?: WhereClause<S>;
+  private readonly _where?: WherePath;
 
   private constructor(init: DeleteBuilderInit<S>) {
     this._shape = init.shape;
     this._ids = init.ids;
     this._mode = init.mode;
     this._whereFn = init.whereFn;
+    this._where = init.where;
   }
 
   private clone(overrides: Partial<DeleteBuilderInit<S>> = {}): DeleteBuilder<S, any> {
@@ -60,6 +64,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       ids: this._ids,
       mode: this._mode,
       whereFn: this._whereFn,
+      where: this._where,
       ...overrides,
     });
   }
@@ -78,6 +83,19 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       return new DeleteBuilder<S>({shape: resolved, ids: idsArray, mode: 'ids'});
     }
     return new DeleteBuilder<S>({shape: resolved});
+  }
+
+  /** Reconstruct a DeleteBuilder from its DSL-JSON (inverse of `toJSON`). */
+  static fromJSON(json: DeleteMutationJSON): DeleteBuilder {
+    const resolved = resolveShape(json.shape);
+    if (json.mode === 'ids') {
+      return new DeleteBuilder({shape: resolved, ids: json.ids.map((id) => ({id})), mode: 'ids'});
+    }
+    if (json.mode === 'all') {
+      return new DeleteBuilder({shape: resolved, mode: 'all'});
+    }
+    const where = deserializeWherePath(resolved.shape, json.where);
+    return new DeleteBuilder({shape: resolved, mode: 'where', where});
   }
 
   // ---------------------------------------------------------------------------
@@ -122,12 +140,13 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     }
 
     if (mode === 'where') {
-      if (!this._whereFn) {
+      const wherePathSource = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
+      if (!wherePathSource) {
         throw new Error(
           'DeleteBuilder.where() requires a condition callback.',
         );
       }
-      const wherePath = processWhereClause(this._whereFn, this._shape);
+      const wherePath = wherePathSource;
       const desugared = toWhere(wherePath);
       const canonical = canonicalizeWhere(desugared);
       const {where, wherePatterns} = lowerWhereToIR(canonical);
@@ -159,14 +178,15 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       return {op: 'delete', shape, mode: 'all'};
     }
     if (mode === 'where') {
-      if (!this._whereFn) {
+      const wherePath = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
+      if (!wherePath) {
         throw new Error('DeleteBuilder.where() requires a condition callback.');
       }
       return {
         op: 'delete',
         shape,
         mode: 'where',
-        where: serializeWherePath(processWhereClause(this._whereFn, this._shape)),
+        where: serializeWherePath(wherePath),
       };
     }
     if (!this._ids || this._ids.length === 0) {

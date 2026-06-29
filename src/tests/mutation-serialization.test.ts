@@ -3,6 +3,10 @@ import {Person, Dog, queryFactories} from '../test-helpers/query-fixtures';
 import {entity, sanitize} from '../test-helpers/test-utils';
 import {lowerMutationJSON} from '../queries/MutationSerialization';
 import {DeleteBuilder} from '../queries/DeleteBuilder';
+import {CreateBuilder} from '../queries/CreateBuilder';
+import {UpdateBuilder} from '../queries/UpdateBuilder';
+import {lower} from '../queries/lower';
+import {fromJSON} from '../queries/fromJSON';
 
 /**
  * Round-trip proof: for every mutation feature, serializing the builder to
@@ -87,6 +91,46 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       JSON.parse(JSON.stringify(builder.toJSON())),
     );
     expect(sanitize(lowered)).toEqual(sanitize(built));
+  });
+
+  describe('builder fromJSON round-trip (phase 4)', () => {
+    // lower(Builder.fromJSON(wire(b.toJSON()))) must equal lower(b) for every feature.
+    const builderFor = (op: string) =>
+      op === 'create'
+        ? CreateBuilder
+        : op === 'update'
+          ? UpdateBuilder
+          : DeleteBuilder;
+    const rebuilds = (label: string, makeBuilder: () => any) =>
+      test(label, () => {
+        const b = makeBuilder();
+        const wire = JSON.parse(JSON.stringify(b.toJSON()));
+        const Builder = builderFor(wire.op);
+        const rebuilt: any = (Builder as any).fromJSON(wire);
+        expect(sanitize(lower(rebuilt))).toEqual(sanitize(lower(b)));
+        // and the kind-detecting fromJSON yields the same IR
+        expect(sanitize(lower(fromJSON(wire) as any))).toEqual(sanitize(lower(b)));
+      });
+
+    rebuilds('create simple', queryFactories.createSimple);
+    rebuilds('create nested + fixed id', queryFactories.createWithFixedId);
+    rebuilds('update for (set add/remove)', queryFactories.updateAddRemoveMulti);
+    rebuilds('update for (date)', queryFactories.updateBirthDate);
+    rebuilds('update for (nested with id)', queryFactories.updateNestedWithPredefinedId);
+    rebuilds('update for (computed expression)', () =>
+      Dog.update((p: any) => ({guardDogLevel: p.guardDogLevel.plus(1)})).for(
+        entity('d1'),
+      ),
+    );
+    rebuilds('update forAll', () => Person.update({hobby: 'Gaming'}).forAll());
+    rebuilds('update where', () =>
+      Person.update({hobby: 'Gaming'}).where((p: any) => p.name.equals('Semmy')),
+    );
+    rebuilds('delete ids', queryFactories.deleteMultiple);
+    rebuilds('delete all', () => DeleteBuilder.from(Person).all());
+    rebuilds('delete where', () =>
+      DeleteBuilder.from(Person).where((p: any) => p.name.equals('Obsolete')),
+    );
   });
 
   test('date value survives the wire as a Date', () => {

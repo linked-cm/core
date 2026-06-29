@@ -294,3 +294,48 @@ export function lowerMutationJSON(
     }
   }
 }
+
+// =============================================================================
+// JSON → raw UpdatePartial (for builder rehydration / fromJSON)
+// =============================================================================
+
+/** Decode a tagged value back to a raw DSL value (the form `.set()` accepts). */
+function decodeValueToRaw(json: MutationValueJSON): unknown {
+  switch (json.kind) {
+    case 'unset':
+      return undefined;
+    case 'lit':
+      return json.value;
+    case 'date':
+      return new Date(json.value);
+    case 'ref':
+      return {id: json.id};
+    case 'node':
+      return decodeNodeDataToRaw(json.data);
+    case 'array':
+      return json.items.map(decodeValueToRaw);
+    case 'setMod': {
+      // Raw DSL set-modifications use `add`/`remove` (the normalized form uses $add/$remove).
+      const mod: {add?: unknown[]; remove?: {id: string}[]} = {};
+      if (json.add) mod.add = json.add.map(decodeValueToRaw);
+      if (json.remove) mod.remove = json.remove.map((id) => ({id}));
+      return mod;
+    }
+    case 'expr':
+      return new ExpressionNode(json.ir, recordToRefs(json.refs));
+  }
+}
+
+/**
+ * Decode a node-data JSON into a raw object the mutation builders' `.set()` accepts.
+ * A top-level `id` is preserved (predefined id / fixed id); the factory turns it into
+ * the node's id. Mirrors {@link encodeNodeData}.
+ */
+export function decodeNodeDataToRaw(
+  json: MutationNodeDataJSON,
+): Record<string, unknown> {
+  const obj: Record<string, unknown> = {};
+  if (json.id) obj.id = json.id;
+  for (const f of json.fields) obj[f.prop] = decodeValueToRaw(f.value);
+  return obj;
+}

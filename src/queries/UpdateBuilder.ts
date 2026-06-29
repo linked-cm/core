@@ -5,14 +5,14 @@ import {UpdateQueryFactory, type UpdateQuery, type IRUpdateQuery} from './Update
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
 import type {NodeShape} from '../shapes/SHACL.js';
-import {type WhereClause, processWhereClause} from './SelectQuery.js';
+import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import {buildCanonicalUpdateWhereMutationIR} from './IRMutation.js';
 import {toWhere} from './IRDesugar.js';
 import {canonicalizeWhere} from './IRCanonicalize.js';
 import {lowerWhereToIR} from './IRLower.js';
 import type {ExpressionUpdateProxy, ExpressionUpdateResult} from '../expressions/ExpressionMethods.js';
-import {encodeNodeData, type UpdateMutationJSON} from './MutationSerialization.js';
-import {serializeWherePath} from './QueryBuilderSerialization.js';
+import {encodeNodeData, decodeNodeDataToRaw, type UpdateMutationJSON} from './MutationSerialization.js';
+import {serializeWherePath, deserializeWherePath} from './QueryBuilderSerialization.js';
 
 type UpdateMode = 'for' | 'forAll' | 'where';
 
@@ -25,6 +25,8 @@ interface UpdateBuilderInit<S extends Shape> {
   targetId?: string;
   mode?: UpdateMode;
   whereFn?: WhereClause<S>;
+  /** A pre-resolved where path (used by fromJSON; no live callback). */
+  where?: WherePath;
 }
 
 /**
@@ -48,6 +50,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   private readonly _targetId?: string;
   private readonly _mode?: UpdateMode;
   private readonly _whereFn?: WhereClause<S>;
+  private readonly _where?: WherePath;
 
   private constructor(init: UpdateBuilderInit<S>) {
     this._shape = init.shape;
@@ -55,6 +58,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     this._targetId = init.targetId;
     this._mode = init.mode;
     this._whereFn = init.whereFn;
+    this._where = init.where;
   }
 
   private clone(overrides: Partial<UpdateBuilderInit<S>> = {}): UpdateBuilder<S, any, any> {
@@ -64,6 +68,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       targetId: this._targetId,
       mode: this._mode,
       whereFn: this._whereFn,
+      where: this._where,
       ...overrides,
     });
   }
@@ -75,6 +80,20 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   static from<S extends Shape>(shape: ShapeConstructor<S> | string): UpdateBuilder<S> {
     const resolved = resolveShape<S>(shape);
     return new UpdateBuilder<S>({shape: resolved});
+  }
+
+  /** Reconstruct an UpdateBuilder from its DSL-JSON (inverse of `toJSON`). */
+  static fromJSON(json: UpdateMutationJSON): UpdateBuilder {
+    const resolved = resolveShape(json.shape);
+    const data = decodeNodeDataToRaw(json.data) as any;
+    if (json.mode === 'for') {
+      return new UpdateBuilder({shape: resolved, data, targetId: json.targetId, mode: 'for'});
+    }
+    if (json.mode === 'forAll') {
+      return new UpdateBuilder({shape: resolved, data, mode: 'forAll'});
+    }
+    const where = deserializeWherePath(resolved.shape, json.where!);
+    return new UpdateBuilder({shape: resolved, data, mode: 'where', where});
   }
 
   // ---------------------------------------------------------------------------
@@ -136,7 +155,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     }
 
     if (mode === 'where') {
-      if (!this._whereFn) {
+      if (!this._whereFn && !this._where) {
         throw new Error(
           'UpdateBuilder.where() requires a condition callback.',
         );
@@ -169,8 +188,9 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     let where;
     let wherePatterns;
 
-    if (this._whereFn) {
-      const wherePath = processWhereClause(this._whereFn, this._shape);
+    const wherePathSource = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
+    if (wherePathSource) {
+      const wherePath = wherePathSource;
       const desugared = toWhere(wherePath);
       const canonical = canonicalizeWhere(desugared);
       const lowered = lowerWhereToIR(canonical);
@@ -214,10 +234,11 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     };
     if (mode === 'for') json.targetId = this._targetId;
     if (mode === 'where') {
-      if (!this._whereFn) {
+      const wherePath = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
+      if (!wherePath) {
         throw new Error('UpdateBuilder.where() requires a condition callback.');
       }
-      json.where = serializeWherePath(processWhereClause(this._whereFn, this._shape));
+      json.where = serializeWherePath(wherePath);
     }
     return json;
   }

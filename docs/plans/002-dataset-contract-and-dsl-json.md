@@ -354,3 +354,13 @@ Validation:
     `store-routing`/`core-utils`/`shacl-syncshapes`/`sparql-fuseki`/`ir-select-golden` updated
     to the builder contract / `IRSelectQuery` typing.
   - Validation: typecheck 0; full suite **1169 passing**, 0 failing.
+
+- **Phase 4 — DONE (+ kind-detecting fromJSON from Phase 5).** Added `decodeNodeDataToRaw`
+  (JSON → raw `UpdatePartial`) to `MutationSerialization`. Added a `_where?: WherePath`
+  state field to `UpdateBuilder`/`DeleteBuilder` (+ constructor/clone/where-build/toJSON
+  paths) so `where`-mode can rehydrate a deserialized path (not a callback). Added
+  `static fromJSON` to `CreateBuilder`/`UpdateBuilder`/`DeleteBuilder`. Added kind-detecting
+  free `fromJSON(json)` (`src/queries/fromJSON.ts`) routing by the envelope `op`, exported
+  from index. New round-trip tests: `lower(Builder.fromJSON(wire(b.toJSON()))) ≡ lower(b)`
+  and via the umbrella `fromJSON`, across create/update(for/forAll/where)/delete(ids/all/where)
+  incl. date, computed expression, nested-with-id, set add/remove. Full suite **1180 passing**.
