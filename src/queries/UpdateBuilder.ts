@@ -4,6 +4,7 @@ import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory
 import {UpdateQueryFactory, type UpdateQuery, type IRUpdateQuery} from './UpdateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
+import {WIRE_VERSION} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import {buildCanonicalUpdateWhereMutationIR} from './IRMutation.js';
@@ -227,6 +228,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       this._data,
     );
     const json: UpdateMutationJSON = {
+      v: WIRE_VERSION,
       op: 'update',
       shape: this._shape.shape.id,
       mode,

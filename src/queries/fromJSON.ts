@@ -17,6 +17,7 @@ import {CreateBuilder} from './CreateBuilder.js';
 import {UpdateBuilder} from './UpdateBuilder.js';
 import {DeleteBuilder} from './DeleteBuilder.js';
 import type {MutationJSON} from './MutationSerialization.js';
+import {assertWireVersion} from './wireVersion.js';
 
 /** Any query in its wire (DSL-JSON) form. */
 export type QueryJSON = QueryBuilderJSON | MutationJSON;
@@ -24,6 +25,7 @@ export type QueryJSON = QueryBuilderJSON | MutationJSON;
 export function fromJSON(
   json: QueryJSON,
 ): SelectBuilder | CreateBuilder | UpdateBuilder | DeleteBuilder {
+  assertWireVersion((json as {v?: unknown})?.v);
   if (json && typeof json === 'object' && 'op' in json) {
     switch (json.op) {
       case 'create':

@@ -4,6 +4,7 @@ import type {UpdatePartial} from './QueryFactory.js';
 import {CreateQueryFactory, type CreateQuery, type IRCreateQuery, type CreateResponse} from './CreateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
+import {WIRE_VERSION} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {encodeNodeData, decodeNodeDataToRaw, type CreateMutationJSON} from './MutationSerialization.js';
 
@@ -153,6 +154,7 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       dataWithId as UpdatePartial<S>,
     );
     return {
+      v: WIRE_VERSION,
       op: 'create',
       shape: this._shape.shape.id,
       data: encodeNodeData(factory.description),

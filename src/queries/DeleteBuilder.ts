@@ -4,6 +4,7 @@ import {DeleteQueryFactory, type DeleteQuery, type IRDeleteQuery, type DeleteRes
 import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
+import {WIRE_VERSION} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import {
@@ -175,7 +176,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     const shape = this._shape.shape.id;
     const mode = this._mode || (this._ids ? 'ids' : undefined);
     if (mode === 'all') {
-      return {op: 'delete', shape, mode: 'all'};
+      return {v: WIRE_VERSION, op: 'delete', shape, mode: 'all'};
     }
     if (mode === 'where') {
       const wherePath = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
@@ -183,6 +184,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
         throw new Error('DeleteBuilder.where() requires a condition callback.');
       }
       return {
+        v: WIRE_VERSION,
         op: 'delete',
         shape,
         mode: 'where',
@@ -195,6 +197,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       );
     }
     return {
+      v: WIRE_VERSION,
       op: 'delete',
       shape,
       mode: 'ids',

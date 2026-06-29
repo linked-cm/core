@@ -74,12 +74,14 @@ export type MutationNodeDataJSON = {
 };
 
 export type CreateMutationJSON = {
+  v?: string;
   op: 'create';
   shape: string;
   data: MutationNodeDataJSON;
 };
 
 export type UpdateMutationJSON = {
+  v?: string;
   op: 'update';
   shape: string;
   mode: 'for' | 'forAll' | 'where';
@@ -89,9 +91,9 @@ export type UpdateMutationJSON = {
 };
 
 export type DeleteMutationJSON =
-  | {op: 'delete'; shape: string; mode: 'ids'; ids: string[]}
-  | {op: 'delete'; shape: string; mode: 'all'}
-  | {op: 'delete'; shape: string; mode: 'where'; where: WherePathJSON};
+  | {v?: string; op: 'delete'; shape: string; mode: 'ids'; ids: string[]}
+  | {v?: string; op: 'delete'; shape: string; mode: 'all'}
+  | {v?: string; op: 'delete'; shape: string; mode: 'where'; where: WherePathJSON};
 
 export type MutationJSON =
   | CreateMutationJSON

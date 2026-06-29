@@ -14,6 +14,7 @@ import {
 import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
 import {lower} from './lower.js';
+import {WIRE_VERSION} from './wireVersion.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import type {IRSelectQuery} from './IntermediateRepresentation.js';
 import type {NodeShape} from '../shapes/SHACL.js';
@@ -36,6 +37,8 @@ import {
 
 /** JSON representation of a SelectBuilder. */
 export type QueryBuilderJSON = {
+  /** DSL-JSON wire-format version. */
+  v?: string;
   shape: string;
   fields?: FieldSetFieldJSON[];
   limit?: number;
@@ -431,6 +434,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   toJSON(): QueryBuilderJSON {
     const shapeId = this._shape.shape?.id || '';
     const json: QueryBuilderJSON = {
+      v: WIRE_VERSION,
       shape: shapeId,
     };
 

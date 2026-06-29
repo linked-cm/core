@@ -133,6 +133,15 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
     );
   });
 
+  test('wire version is stamped and an unknown major is rejected', () => {
+    const json: any = queryFactories.createSimple().toJSON();
+    expect(json.v).toBe('1.0');
+    expect(() => fromJSON({...json, v: '2.0'})).toThrow(/wire version/i);
+    // missing v is tolerated
+    const {v, ...noV} = json;
+    expect(() => fromJSON(noV)).not.toThrow();
+  });
+
   test('date value survives the wire as a Date', () => {
     const ir: any = lowerMutationJSON(
       JSON.parse(JSON.stringify(queryFactories.updateBirthDate().toJSON())),

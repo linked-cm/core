@@ -364,3 +364,8 @@ Validation:
   from index. New round-trip tests: `lower(Builder.fromJSON(wire(b.toJSON()))) ≡ lower(b)`
   and via the umbrella `fromJSON`, across create/update(for/forAll/where)/delete(ids/all/where)
   incl. date, computed expression, nested-with-id, set add/remove. Full suite **1180 passing**.
+
+- **Phase 5 — DONE.** (Remote deletion landed in Phase 2.) Added `src/queries/wireVersion.ts`
+  (`WIRE_VERSION='1.0'` + `assertWireVersion`). Every `toJSON` envelope (select + mutations)
+  now carries `v:'1.0'`; the kind-detecting `fromJSON` rejects an unknown major (missing `v`
+  tolerated). Full suite 1181 passing.
