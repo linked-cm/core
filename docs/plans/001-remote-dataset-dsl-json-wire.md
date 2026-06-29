@@ -469,3 +469,8 @@ Test strategy: quick gate `npx jest --testPathPatterns='mutation-serialization|r
   `UpdateBuilder` (evaluates fn-data via factory; serializes where for where-mode),
   and `DeleteBuilder` (ids/all/where). Validation: `npx tsc -p tsconfig-cjs.json --noEmit`
   exits 0; behaviour covered by i3.
+- **Phase i3 — Round-trip parity tests — DONE.** `src/tests/mutation-serialization.test.ts`
+  (23 cases): create (simple/nested/fixedId), update-for (all 12 features incl. date,
+  computed expression, set add/remove, unset single/multi, nested-with-id, refs),
+  update forAll/where, delete ids/all/where; each asserts
+  `lowerMutationJSON(wire(b.toJSON()))` ≡ `b.build()`. All pass (1171 total).
