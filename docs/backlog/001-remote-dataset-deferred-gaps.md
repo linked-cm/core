@@ -5,6 +5,12 @@ packages: [core]
 
 # 001 — RemoteDataset deferred gaps
 
+> **Obsolete — closed by [plan 002](../plans/002-dataset-contract-and-dsl-json.md).** The
+> `RemoteDataset` adapter these gaps relate to was removed; forwarding is now an ordinary
+> `IDataset` that ships `query.toJSON()` ([DSL-JSON](../../documentation/dsl-json.md)). HTTP
+> transport, a transparent remote-exec client, and response type guards are out of core's scope —
+> they belong to whatever transport an `IDataset` implementer chooses. Kept for historical context.
+
 Source: review of `docs/plans/001-remote-dataset-dsl-json-wire.md`. The user chose to
 iterate on **G1 (mutation DSL-JSON)** only; the items below are deferred with the
 context known at review time. Do not expand scope beyond what is captured here.

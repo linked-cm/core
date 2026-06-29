@@ -2,13 +2,26 @@
 
 IR stands for **Intermediate Representation**.
 
-This document defines the canonical Linked query IR structure produced by `@_linked/core` for store/parser implementers.
+> **The IR is not the Linked query contract — [DSL-JSON](./dsl-json.md) is.**
+>
+> DSL-JSON is the standardized, language-neutral structure for a Linked query (what crosses
+> boundaries and what you implement against). The IR is an *internal* algebra that the core lowers
+> a query into on the way to **SPARQL** — the one target language that ships in this package. It is
+> shape-resolved and normalized, which makes it a convenient thing to compile *from*: a backend for
+> another target language (SQL, a graph API, …) can consume the IR as-is, or simply take it as a
+> reference/inspiration and lower DSL-JSON to its own algebra directly. Either way, the IR is an
+> implementation detail of a store, reached only through the free `lower(query)` function — never
+> something a query author or the wire format depends on.
+
+This document describes that IR structure, for anyone implementing or studying the SPARQL lowering
+(or building their own).
 
 ## Design goals
 
-- Backend-agnostic query contract (SPARQL/SQL/etc compilers can consume the same IR).
+- A normalized, shape-resolved algebra that the SPARQL layer (and other target-language compilers, if
+  they choose) can consume.
 - Deterministic structure for golden fixtures.
-- Preserve current DSL behavior while normalizing output shape.
+- Preserve DSL behavior while normalizing output shape.
 
 ## Canonical invariants
 
@@ -34,9 +47,14 @@ RawSelectInput → Desugar → Canonicalize → Lower → SelectQuery
 
 Projection building (`IRProjection.ts`) and alias scoping (`IRAliasScope.ts`) are invoked by the lowering pass.
 
-Mutation IR is produced by the individual mutation factory `build()` methods, which call the builders in `IRMutation.ts` (`buildCanonicalCreateMutationIR`, `buildCanonicalUpdateMutationIR`, `buildCanonicalDeleteMutationIR`).
+Select IR is produced by `buildSelectQuery()`; mutation IR by the `buildCanonical*MutationIR` functions in `IRMutation.ts`. Both are reached only through the free **`lower(query)`** function — there is no public `build()` method, and the builders/serialization carry no dependency on the IR pipeline (so a client that never lowers tree-shakes it away entirely).
 
-Intermediate types (`DesugaredSelectQuery`, `CanonicalDesugaredSelectQuery`, `RawSelectInput`, etc.) are internal to the pipeline and not part of the public API. Only the final types are intended for external consumption: `SelectQuery`, `CreateQuery`, `UpdateQuery`, `DeleteQuery` (exported from their respective query files).
+```ts
+import {lower} from '@_linked/core';
+const ir = lower(query);   // builder (or closed *Query) → IR; the SPARQL store calls this internally
+```
+
+Intermediate types (`DesugaredSelectQuery`, `CanonicalDesugaredSelectQuery`, `RawSelectInput`, etc.) are internal to the pipeline. The lowered IR types are `IRSelectQuery`, `IRCreateMutation`, `IRUpdateMutation`, `IRDeleteMutation` (exported from `@_linked/core/queries/IntermediateRepresentation`). Note: `SelectQuery`/`CreateQuery`/`UpdateQuery`/`DeleteQuery` are the **closed, read-only query interfaces a dataset receives** (the live query) — *not* the IR; `lower()` turns one into the corresponding `IR*` type.
 
 ## Select query IR
 
@@ -361,17 +379,56 @@ DSL: `Person.delete({id: 'node:1'})`
 }
 ```
 
-## Store implementer guide
+## Store (dataset) implementer guide
 
-This section is for developers building a storage backend (SPARQL, SQL, in-memory, etc.) that executes Linked queries.
+This section is for developers building a backend — a **dataset** — that executes Linked queries
+(SPARQL, SQL, in-memory, a forwarder, …).
+
+### The contract: a dataset receives the *live query*, not IR
+
+A dataset implements `IDataset`. Each method receives the **live, closed (read-only) query object**
+(the builder, viewed through its `*Query` interface) — not IR. From there the dataset decides what it
+wants:
+
+- call **`lower(query)`** to get the canonical IR (what the built-in SPARQL store does), or
+- call **`query.toJSON()`** to forward it as [DSL-JSON](./dsl-json.md) over a wire, or
+- read `query.shape` / `query.toRawInput()` and handle it however it likes.
+
+```ts
+import type {IDataset} from '@_linked/core/interfaces/IDataset';
+import type {SelectQuery} from '@_linked/core/queries/SelectQuery';
+import type {CreateQuery} from '@_linked/core/queries/CreateQuery';
+import type {UpdateQuery} from '@_linked/core/queries/UpdateQuery';
+import type {DeleteQuery, DeleteResponse} from '@_linked/core/queries/DeleteQuery';
+import {lower} from '@_linked/core';
+
+interface IDataset {
+  init?(): Promise<any>;
+  selectQuery(query: SelectQuery): Promise<SelectResult>;
+  updateQuery?(query: UpdateQuery): Promise<UpdateResult>;
+  createQuery?(query: CreateQuery): Promise<CreateResult>;
+  deleteQuery?(query: DeleteQuery): Promise<DeleteResponse>;
+}
+
+class MyStore implements IDataset {
+  async selectQuery(query: SelectQuery) {
+    const ir = lower(query);       // opt into the IR only if you want it
+    return this.runMyEngine(ir);
+  }
+}
+```
+
+`SelectQuery`/`CreateQuery`/`UpdateQuery`/`DeleteQuery` are the **closed query interfaces** (the live
+query). The corresponding lowered IR types are `IRSelectQuery`/`IRCreateMutation`/`IRUpdateMutation`/
+`IRDeleteMutation`, which `lower()` returns.
 
 ### Imports
 
-All IR types (both query input types and result types) are exported from `@_linked/core/queries/IntermediateRepresentation`:
+The IR types and the store result types are exported from `@_linked/core/queries/IntermediateRepresentation`:
 
 ```ts
 import type {
-  // Query input types
+  // Lowered IR types (what lower() returns)
   IRSelectQuery,
   IRCreateMutation,
   IRUpdateMutation,
@@ -381,7 +438,7 @@ import type {
   IRProjectionItem,
   IRNodeData,
   IRFieldUpdate,
-  // Result types
+  // Result types your dataset returns
   SelectResult,
   CreateResult,
   UpdateResult,
@@ -391,31 +448,9 @@ import type {
 } from '@_linked/core/queries/IntermediateRepresentation';
 ```
 
-The store interface and top-level query type aliases:
-
-```ts
-import type {IQuadStore} from '@_linked/core/interfaces/IQuadStore';
-import type {SelectQuery} from '@_linked/core/queries/SelectQuery';
-import type {CreateQuery} from '@_linked/core/queries/CreateQuery';
-import type {UpdateQuery} from '@_linked/core/queries/UpdateQuery';
-import type {DeleteQuery, DeleteResponse} from '@_linked/core/queries/DeleteQuery';
-```
-
-`SelectQuery`, `CreateQuery`, `UpdateQuery`, and `DeleteQuery` are aliases for `IRSelectQuery`, `IRCreateMutation`, `IRUpdateMutation`, and `IRDeleteMutation` respectively.
-
-### The `IQuadStore` interface
-
-```ts
-interface IQuadStore {
-  init?(): Promise<any>;
-  selectQuery(query: SelectQuery): Promise<SelectResult>;
-  updateQuery?(query: UpdateQuery): Promise<UpdateResult>;
-  createQuery?(query: CreateQuery): Promise<CreateResult>;
-  deleteQuery?(query: DeleteQuery): Promise<DeleteResponse>;
-}
-```
-
-Your store receives canonical IR query objects and returns structured results. The calling layer (`LinkedStorage` / `QueryParser`) threads the precise DSL-level TypeScript type back to the caller — your store just needs to produce data that matches the result types described below.
+The calling layer (`LinkedStorage` via `queryDispatch`, routing by `query.shape`) threads the precise
+DSL-level TypeScript result type back to the caller — your dataset just produces data that matches the
+result types described below.
 
 ### Return types
 
@@ -555,46 +590,54 @@ Type: `DeleteResponse = {deleted: NodeReferenceValue[]; count: number; failed?: 
 ### Minimal implementation skeleton
 
 ```ts
-import type {IQuadStore} from '@_linked/core/interfaces/IQuadStore';
+import type {IDataset} from '@_linked/core/interfaces/IDataset';
 import type {SelectQuery} from '@_linked/core/queries/SelectQuery';
 import type {CreateQuery} from '@_linked/core/queries/CreateQuery';
 import type {UpdateQuery} from '@_linked/core/queries/UpdateQuery';
 import type {DeleteQuery, DeleteResponse} from '@_linked/core/queries/DeleteQuery';
 import type {SelectResult, CreateResult, UpdateResult} from '@_linked/core/queries/IntermediateRepresentation';
+import {lower} from '@_linked/core';
 
-export class MyStore implements IQuadStore {
+export class MyStore implements IDataset {
   async selectQuery(query: SelectQuery): Promise<SelectResult> {
-    // 1. Read query.root.shape to identify the target shape
-    // 2. Walk query.patterns to build joins/traversals
-    // 3. Compile query.where into a filter
-    // 4. Map query.projection to output columns
-    // 5. Apply query.orderBy, query.limit, query.offset
-    // 6. Use query.resultMap to build the response object
-    // 7. If query.singleResult, return one row; otherwise return an array
+    const ir = lower(query);  // opt into the IR
+    // 1. Read ir.root.shape to identify the target shape
+    // 2. Walk ir.patterns to build joins/traversals
+    // 3. Compile ir.where into a filter
+    // 4. Map ir.projection to output columns
+    // 5. Apply ir.orderBy, ir.limit, ir.offset
+    // 6. Use ir.resultMap to build the response object
+    // 7. If ir.singleResult, return one row; otherwise return an array
   }
 
   async createQuery(query: CreateQuery): Promise<CreateResult> {
-    // 1. Read query.shape for the target shape
-    // 2. Walk query.data.fields to extract property values
+    const ir = lower(query);
+    // 1. Read ir.shape for the target shape
+    // 2. Walk ir.data.fields to extract property values
     // 3. Handle nested IRNodeData in field values (nested creates)
     // 4. Handle {id: string} references in field values
     // 5. Return the created row with its generated id
   }
 
   async updateQuery(query: UpdateQuery): Promise<UpdateResult> {
-    // 1. Read query.id for the target node
-    // 2. Walk query.data.fields to extract updates
+    const ir = lower(query);
+    // 1. Read ir.id for the target node
+    // 2. Walk ir.data.fields to extract updates
     // 3. Handle IRSetModificationValue ({add, remove}) for set properties
     // 4. Handle undefined values (unset the field)
     // 5. Return the updated row (only changed fields)
   }
 
   async deleteQuery(query: DeleteQuery): Promise<DeleteResponse> {
-    // 1. Read query.ids for the nodes to delete
+    const ir = lower(query);
+    // 1. Read ir.ids for the nodes to delete
     // 2. Return {deleted: [...], count: N}
   }
 }
 ```
+
+> A dataset that forwards rather than executes locally skips `lower()` entirely: it calls
+> `query.toJSON()` and ships the [DSL-JSON](./dsl-json.md). Lowering is opt-in.
 
 ### Compiling expressions
 

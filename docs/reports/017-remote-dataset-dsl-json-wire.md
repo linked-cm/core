@@ -5,6 +5,14 @@ packages: [core]
 
 # 017 — Remote Dataset (DSL-JSON over the wire)
 
+> **Superseded by [plan 002](../plans/002-dataset-contract-and-dsl-json.md).** This report
+> introduced DSL-JSON as the wire format via a dedicated `RemoteDataset` adapter. Plan 002 kept
+> DSL-JSON as the standard wire format but **removed `RemoteDataset`** — forwarding is now just an
+> ordinary `IDataset` that calls `query.toJSON()`, and JSON→IR lowering is the free
+> `lowerMutationJSON` / `lower(fromJSON(...))` path. The `RemoteDataset`/`RemoteClient`/`RemoteProtocol`
+> classes described below no longer exist. Retained as the historical record of why the wire format
+> exists. See **[DSL-JSON](../../documentation/dsl-json.md)** for the current spec.
+
 ## Outcome
 
 `IDataset` implementations receive canonical **IR**; the only in-repo transport

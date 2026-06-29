@@ -2,16 +2,17 @@
 
 A type-safe graph query builder and OGM for linked data — like Drizzle or Prisma, but for RDF and SPARQL.
 
-Linked gives you a schema-parameterized query language and SHACL-driven Shape classes for graph data. It compiles queries into a normalized [Intermediate Representation (IR)](./documentation/intermediate-representation.md) that can be executed by any store — SPARQL endpoints, in-memory RDF stores, or custom backends.
+Linked gives you a schema-parameterized query language and SHACL-driven Shape classes for graph data. Every query has one canonical, language-neutral form — **[DSL-JSON](./documentation/dsl-json.md)** — that serializes losslessly, crosses any boundary, and rehydrates anywhere. Datasets execute these queries however they like; the built-in SPARQL dataset lowers them to a normalized [IR](./documentation/intermediate-representation.md) and on to SPARQL.
 
 ## Linked core offers
 
 - **Schema-Parameterized Query DSL**: TypeScript-embedded queries driven by your Shape definitions.
 - **Fully Inferred Result Types**: The TypeScript return type of every query is automatically inferred from the selected paths — no manual type annotations needed. Select `p.name` and get `{id: string; name: string}[]`. Select `p.friends.name` and get nested result types. This works for all operations: select, create, update, and delete.
-- **Dynamic Query Building**: Build queries programmatically with `QueryBuilder`, compose field selections with `FieldSet`, and serialize/deserialize queries as JSON — for CMS dashboards, dynamic forms, and API-driven query construction.
+- **DSL-JSON, the standard wire format**: Every query — select, create, update, delete — serializes to a compact, lossless JSON structure with `query.toJSON()` and rehydrates with `fromJSON(json)`. This is the canonical interchange format for Linked queries: send it over HTTP, cache it, queue it, or implement it in another language. See **[DSL-JSON](./documentation/dsl-json.md)**.
+- **Dynamic Query Building**: Build queries programmatically with `SelectBuilder` (and `Create`/`Update`/`DeleteBuilder`), compose field selections with `FieldSet` — for CMS dashboards, dynamic forms, and API-driven query construction.
 - **Shape Classes (SHACL)**: TypeScript classes that generate SHACL shape metadata.
 - **Full CRUD Operations**: Query, create, update, and delete data using the same Shape-based API — including expression-based updates, conditional mutations, and bulk operations.
-- **Storage Routing**: `LinkedStorage` routes query objects to your configured store(s) that implement `IQuadStore`.
+- **Dataset Routing**: `LinkedStorage` routes query objects (by their target shape) to your configured dataset(s) that implement `IDataset`.
 - **Automatic Data Validation**: SHACL shapes can be synced to your store for schema-level validation, and enforced at runtime by stores that support it.
 
 ## Installation
@@ -33,12 +34,13 @@ npm run setup
 
 ## Related packages
 
-- `@_linked/rdf-mem-store`: in-memory RDF store that implements `IQuadStore`.
+- `@_linked/rdf-mem-store`: in-memory RDF store that implements `IDataset`.
 - `@_linked/react`: React bindings for Linked queries and shapes.
 
 ## Documentation
 
-- [Intermediate Representation (IR)](./documentation/intermediate-representation.md)
+- **[DSL-JSON — the Linked query wire format](./documentation/dsl-json.md)** — the canonical, standardized query structure.
+- [Intermediate Representation (IR)](./documentation/intermediate-representation.md) — the internal algebra the SPARQL dataset lowers to.
 - [SPARQL Algebra Layer](./documentation/sparql-algebra.md)
 
 ## How Linked works — from shapes to query results
@@ -105,7 +107,7 @@ The DSL compiles to a backend-agnostic AST — the [Intermediate Representation]
 }
 ```
 
-The IR uses full SHACL-derived URIs for shapes and properties. Any store that implements `IQuadStore` receives these IR objects and translates them into its native query language.
+The IR uses full SHACL-derived URIs for shapes and properties. A dataset (`IDataset`) that wants the IR obtains it by calling `lower(query)` and translates it into its native query language. (Datasets that forward or execute directly never touch the IR — see [Datasets, target languages, and the IR](#datasets-target-languages-and-the-ir).)
 
 ### 4. IR → SPARQL Algebra
 
@@ -267,7 +269,7 @@ const updated = await Person.update({name: 'Alicia'}).for({id: 'https://my.app/n
 
 ## Storage configuration
 
-`LinkedStorage` is the routing helper (not an interface). It forwards query objects to a store that implements `IQuadStore`.
+`LinkedStorage` is the routing helper (not an interface). It routes query objects — by their target shape — to a dataset that implements `IDataset`.
 
 ```typescript
 import {LinkedStorage} from '@_linked/core';
@@ -349,9 +351,10 @@ The query DSL is schema-parameterized: you define your own SHACL shapes, and Lin
 - Preloading (`preloadFor`) for component-like queries
 - Create / Update / Delete mutations (including bulk and conditional)
 - Expression-based updates (`p => ({age: p.age.plus(1)})`)
-- Dynamic query building with `QueryBuilder`
+- Dynamic query building with `SelectBuilder` (alias `QueryBuilder`)
 - Composable field sets with `FieldSet`
 - Mutation builders (`CreateBuilder`, `UpdateBuilder`, `DeleteBuilder`)
+- DSL-JSON serialization (`toJSON` / `fromJSON`) — the standard wire format
 - Query and FieldSet JSON serialization / deserialization
 
 ### Query examples
@@ -746,12 +749,14 @@ Override behavior:
 
 The DSL (`Person.select(...)`) is ideal when you know shapes at compile time. For apps that need to build queries at runtime — CMS dashboards, configurable reports, API endpoints that accept field selections — use `QueryBuilder` and `FieldSet`.
 
-### QueryBuilder
+### SelectBuilder
 
-`QueryBuilder` provides a fluent, chainable API for constructing queries programmatically. It accepts a Shape class or a shape IRI string.
+`SelectBuilder` provides a fluent, chainable API for constructing select queries programmatically. It
+accepts a Shape class or a shape IRI string. (`QueryBuilder` is a deprecated alias for `SelectBuilder`
+and is used in the examples below; the mutation builders are `CreateBuilder`/`UpdateBuilder`/`DeleteBuilder`.)
 
 ```typescript
-import {QueryBuilder} from '@_linked/core';
+import {QueryBuilder} from '@_linked/core'; // alias of SelectBuilder
 
 // From a Shape class
 const query = QueryBuilder.from(Person)
@@ -764,11 +769,12 @@ const query = QueryBuilder.from('https://schema.org/Person')
   .select(['name', 'knows'])
   .where(p => p.name.equals('Semmy'));
 
-// QueryBuilder is PromiseLike — await it directly
+// SelectBuilder is PromiseLike — await it directly
 const results = await query;
 
-// Or inspect the compiled IR without executing
-const ir = query.build();
+// Serialize to DSL-JSON, or lower to the IR without executing
+const json = query.toJSON();
+const ir = lower(query);   // `lower` is a free import from '@_linked/core'
 ```
 
 **Target specific entities:**
@@ -905,75 +911,112 @@ await DeleteBuilder.from(Person).all();
 // Conditional update — equivalent to Person.update({...}).where(fn)
 await UpdateBuilder.from(Person).set({verified: true}).forAll();
 
-// All builders are PromiseLike — await them or call .build() for the IR
-const ir = CreateBuilder.from(Person).set({name: 'Alice'}).build();
+// All builders are PromiseLike — await them to run, toJSON() for the wire form,
+// or lower() (a free function) for the IR
+import {lower} from '@_linked/core';
+const ir = lower(CreateBuilder.from(Person).set({name: 'Alice'}));
 ```
 
-### JSON Serialization
+### DSL-JSON — the standard query format
 
-Queries and FieldSets can be serialized to JSON and reconstructed — useful for saving query configurations, sending them over the wire, or building query editor UIs.
+Every Linked query — select **and** every mutation — has one canonical, language-neutral form:
+**DSL-JSON**. `query.toJSON()` serializes any query to a compact, lossless JSON object;
+`fromJSON(json)` rehydrates it back into a live query you can run, inspect, or re-serialize. This is
+the format to send over HTTP, cache, queue, persist in a query-editor UI, or implement on a non-JS
+backend. See the full **[DSL-JSON specification](./documentation/dsl-json.md)**.
 
 ```typescript
-// Serialize a QueryBuilder
-const query = QueryBuilder.from(Person)
-  .select(p => [p.name, p.knows])
-  .where(p => p.name.equals('Semmy'));
+import {fromJSON} from '@_linked/core';
 
-const json = query.toJSON();
-// json is a plain object — store it, send it, etc.
+// Any query → JSON (outbound)
+const json = Person.select(p => [p.name, p.knows])
+  .where(p => p.name.equals('Semmy'))
+  .toJSON();
 
-// Reconstruct from JSON
-const restored = QueryBuilder.fromJSON(json);
-const results = await restored;
-
-// FieldSet serialization works the same way
-const fs = FieldSet.for(Person, ['name', 'knows']);
-const fsJson = fs.toJSON();
-const restoredFs = FieldSet.fromJSON(fsJson);
+// JSON → live query → run it (inbound). `fromJSON` detects the kind (select/create/update/delete).
+const results = await fromJSON(json).exec();
 ```
 
-Example JSON output for `QueryBuilder.from(Person).select(p => p.name).toJSON()`:
+Every envelope carries a wire version (`v`) and the target shape. A select:
+
 ```json
 {
+  "v": "1.0",
   "shape": "https://schema.org/Person",
-  "fields": [{"path": "name"}]
+  "fields": [{ "path": "name" }, { "path": "hobby" }],
+  "limit": 10
 }
 ```
+
+A create:
+
+```json
+{
+  "v": "1.0",
+  "op": "create",
+  "shape": "https://schema.org/Person",
+  "data": {
+    "shape": "https://schema.org/Person",
+    "fields": [
+      { "prop": "name",  "value": { "kind": "lit", "value": "Alice" } },
+      { "prop": "hobby", "value": { "kind": "lit", "value": "Chess" } }
+    ]
+  }
+}
+```
+
+An update targeting one node, and a delete by id:
+
+```json
+{ "v": "1.0", "op": "update", "shape": "https://schema.org/Person", "mode": "for",
+  "targetId": "https://my.app/alice",
+  "data": { "shape": "https://schema.org/Person",
+            "fields": [{ "prop": "hobby", "value": { "kind": "lit", "value": "Go" } }] } }
+```
+```json
+{ "v": "1.0", "op": "delete", "shape": "https://schema.org/Person", "mode": "ids",
+  "ids": ["https://my.app/alice"] }
+```
+
+A query can also reference the current **context** (e.g. the signed-in user) without resolving it
+yet — it travels as a `{$ctx}` marker and is resolved wherever the query is finally run:
+
+```json
+{ "v": "1.0", "shape": "https://schema.org/Person",
+  "fields": [{ "path": "name" }], "subject": { "$ctx": "user" }, "singleResult": true }
+```
+
+`FieldSet` serializes the same way (`FieldSet.for(Person, ['name','knows']).toJSON()` /
+`FieldSet.fromJSON(json)`).
 
 ## TODO
 
 - Allow `preloadFor` to accept another query (not just a component).
 - Make and expose functions for auto syncing shapes to the graph.
 
-## Intermediate Representation (IR)
+## Datasets, target languages, and the IR
 
-Every Linked query compiles to a plain, JSON-serializable JavaScript object — the **Intermediate Representation**. This IR is the contract between the DSL and any storage backend. A store receives these objects and translates them into its native query language (SPARQL, SQL, etc.).
+A **dataset** (`IDataset`) receives the live query and decides what to do with it. `LinkedStorage`
+routes each query to a dataset by its target shape. A dataset can:
 
-For example, this DSL call:
+- **execute it directly** against an in-memory graph,
+- **forward it** as [DSL-JSON](./documentation/dsl-json.md) (`query.toJSON()`) to another service, or
+- **lower it to an algebra** for a query engine, via the free `lower(query)` function.
 
-```typescript
-const names = await Person.select((p) => p.name);
-```
+**SPARQL is built in.** This package ships a `SparqlStore` base class (`@_linked/core/sparql`) — extend
+it for any SPARQL endpoint. Internally it calls `lower(query)` to obtain a normalized
+**[Intermediate Representation (IR)](./documentation/intermediate-representation.md)** and compiles that
+to SPARQL.
 
-produces the following IR object, which is passed to your store's `selectQuery()` method:
-
-```json
-{
-  "kind": "select",
-  "root": {"kind": "shape_scan", "shape": "https://schema.org/Person", "alias": "a0"},
-  "patterns": [],
-  "projection": [
-    {
-      "alias": "a1",
-      "expression": {"kind": "property_expr", "sourceAlias": "a0", "property": "https://schema.org/name"}
-    }
-  ],
-  "resultMap": [{"key": "name", "alias": "a1"}],
-  "singleResult": false
-}
-```
-
-All IR types are available from `@_linked/core/queries/IntermediateRepresentation`. See the full [Intermediate Representation docs](./documentation/intermediate-representation.md) for the complete type reference, examples, and a store implementer guide.
+The **IR is an internal lowering target, not the contract** — DSL-JSON is. It is a shape-resolved,
+normalized algebra, which makes it a convenient thing to compile *from*: a backend for another target
+language (SQL, a graph API, …) can consume the IR as-is, or just use it as a reference and lower
+DSL-JSON to its own algebra directly. The IR is reached only through `lower()`, and the query
+builders/serialization carry no dependency on it — so a client that never lowers (e.g. a frontend that
+only builds and forwards queries) tree-shakes the entire IR + SPARQL pipeline out of its bundle. The IR
+types are available from `@_linked/core/queries/IntermediateRepresentation`; see the
+[IR docs](./documentation/intermediate-representation.md) for the type reference and the dataset
+implementer guide.
 
 **Store packages:**
 
