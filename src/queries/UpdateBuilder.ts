@@ -9,6 +9,8 @@ import {toWhere} from './IRDesugar.js';
 import {canonicalizeWhere} from './IRCanonicalize.js';
 import {lowerWhereToIR} from './IRLower.js';
 import type {ExpressionUpdateProxy, ExpressionUpdateResult} from '../expressions/ExpressionMethods.js';
+import {encodeNodeData, type UpdateMutationJSON} from './MutationSerialization.js';
+import {serializeWherePath} from './QueryBuilderSerialization.js';
 
 type UpdateMode = 'for' | 'forAll' | 'where';
 
@@ -167,6 +169,42 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       where,
       wherePatterns,
     });
+  }
+
+  /**
+   * Serialize this update mutation to lightweight DSL-JSON. Evaluates the update
+   * data through the factory (handles the expression-callback form of `.set()`),
+   * and serializes the where clause for `where`-mode updates.
+   */
+  toJSON(): UpdateMutationJSON {
+    if (!this._data) {
+      throw new Error('UpdateBuilder requires .set(data) before .toJSON().');
+    }
+    const mode = this._mode || (this._targetId ? 'for' : undefined);
+    if (!mode) {
+      throw new Error(
+        'UpdateBuilder requires .for(id), .forAll(), or .where() before .toJSON().',
+      );
+    }
+    const factory = new UpdateQueryFactory<S, UpdatePartial<S>>(
+      this._shape,
+      this._targetId ?? '__placeholder__',
+      this._data,
+    );
+    const json: UpdateMutationJSON = {
+      op: 'update',
+      shape: this._shape.shape.id,
+      mode,
+      data: encodeNodeData(factory.fields),
+    };
+    if (mode === 'for') json.targetId = this._targetId;
+    if (mode === 'where') {
+      if (!this._whereFn) {
+        throw new Error('UpdateBuilder.where() requires a condition callback.');
+      }
+      json.where = serializeWherePath(processWhereClause(this._whereFn, this._shape));
+    }
+    return json;
   }
 
   /** Execute the mutation. */

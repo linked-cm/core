@@ -465,3 +465,7 @@ Test strategy: quick gate `npx jest --testPathPatterns='mutation-serialization|r
   JSON types, `encodeValue`/`encodeNodeData`, `decodeNodeData`/`lowerMutationJSON`
   (dispatches to `buildCanonical*MutationIR`, re-lowers where for where/forAll/delete_where).
   Validation: `npx tsc -p tsconfig-cjs.json --noEmit` exits 0; behaviour covered by i3.
+- **Phase i2 — Builder toJSON — DONE.** Added `toJSON()` to `CreateBuilder`,
+  `UpdateBuilder` (evaluates fn-data via factory; serializes where for where-mode),
+  and `DeleteBuilder` (ids/all/where). Validation: `npx tsc -p tsconfig-cjs.json --noEmit`
+  exits 0; behaviour covered by i3.

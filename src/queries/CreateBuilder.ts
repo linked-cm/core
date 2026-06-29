@@ -3,6 +3,7 @@ import {resolveShape} from './resolveShape.js';
 import type {UpdatePartial} from './QueryFactory.js';
 import {CreateQueryFactory, type CreateQuery, type CreateResponse} from './CreateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
+import {encodeNodeData, type CreateMutationJSON} from './MutationSerialization.js';
 
 /**
  * Internal state bag for CreateBuilder.
@@ -113,6 +114,29 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       dataWithId as UpdatePartial<S>,
     );
     return factory.build();
+  }
+
+  /**
+   * Serialize this create mutation to lightweight DSL-JSON. Evaluates the create
+   * data through the factory (same conversion `build()` runs) so the result is
+   * concrete and JSON-safe, then encodes the normalized node description.
+   */
+  toJSON(): CreateMutationJSON {
+    if (!this._data) {
+      throw new Error('CreateBuilder requires .set(data) before .toJSON().');
+    }
+    const dataWithId = this._fixedId
+      ? {...(this._data as any), __id: this._fixedId}
+      : this._data;
+    const factory = new CreateQueryFactory<S, UpdatePartial<S>>(
+      this._shape,
+      dataWithId as UpdatePartial<S>,
+    );
+    return {
+      op: 'create',
+      shape: this._shape.shape.id,
+      data: encodeNodeData(factory.description),
+    };
   }
 
   /** Execute the mutation. */

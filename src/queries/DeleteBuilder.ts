@@ -11,6 +11,8 @@ import {
 import {toWhere} from './IRDesugar.js';
 import {canonicalizeWhere} from './IRCanonicalize.js';
 import {lowerWhereToIR} from './IRLower.js';
+import {type DeleteMutationJSON} from './MutationSerialization.js';
+import {serializeWherePath} from './QueryBuilderSerialization.js';
 
 type DeleteMode = 'ids' | 'all' | 'where';
 
@@ -132,6 +134,37 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       this._ids,
     );
     return factory.build();
+  }
+
+  /** Serialize this delete mutation to lightweight DSL-JSON. */
+  toJSON(): DeleteMutationJSON {
+    const shape = this._shape.shape.id;
+    const mode = this._mode || (this._ids ? 'ids' : undefined);
+    if (mode === 'all') {
+      return {op: 'delete', shape, mode: 'all'};
+    }
+    if (mode === 'where') {
+      if (!this._whereFn) {
+        throw new Error('DeleteBuilder.where() requires a condition callback.');
+      }
+      return {
+        op: 'delete',
+        shape,
+        mode: 'where',
+        where: serializeWherePath(processWhereClause(this._whereFn, this._shape)),
+      };
+    }
+    if (!this._ids || this._ids.length === 0) {
+      throw new Error(
+        'DeleteBuilder requires at least one ID, .all(), or .where() before .toJSON().',
+      );
+    }
+    return {
+      op: 'delete',
+      shape,
+      mode: 'ids',
+      ids: this._ids.map((id) => (typeof id === 'string' ? id : id.id)),
+    };
   }
 
   /** Execute the mutation. */
