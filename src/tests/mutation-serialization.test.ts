@@ -137,8 +137,20 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
     const {
       getQueryContext,
       setQueryContext,
+      subscribeQueryContext,
       UnresolvedContextError,
     } = require('../queries/QueryContext');
+
+    test('subscribeQueryContext notifies on set/clear (reactivity primitive)', () => {
+      const seen: string[] = [];
+      const unsub = subscribeQueryContext((name: string) => seen.push(name));
+      setQueryContext('ctx-sub', {id: entity('p1').id}, Person);
+      setQueryContext('ctx-sub', undefined);
+      unsub();
+      setQueryContext('ctx-sub', {id: entity('p2').id}, Person);
+      setQueryContext('ctx-sub', undefined);
+      expect(seen).toEqual(['ctx-sub', 'ctx-sub']); // only while subscribed
+    });
 
     test('update .for(context) round-trips and resolves at lower (or throws)', () => {
       setQueryContext('ctx-x', undefined); // ensure unset

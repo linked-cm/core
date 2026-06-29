@@ -32,6 +32,29 @@ export class UnresolvedContextError extends Error {
   }
 }
 
+/** Listener notified (with the changed context name) whenever a context is set or cleared. */
+export type QueryContextListener = (name: string) => void;
+const contextListeners = new Set<QueryContextListener>();
+
+/**
+ * Subscribe to query-context changes. Returns an unsubscribe function.
+ *
+ * This is the primitive that makes context resolution reactive: a consuming layer
+ * (e.g. React components) subscribes and re-runs affected queries when the context
+ * lands — so a query that resolved to `null` while the context was unset simply
+ * re-runs and resolves once it's available ("waiting"), and re-runs again on any
+ * later change ("auto re-resolve"). Core only emits the change; re-execution is the
+ * consumer's responsibility.
+ */
+export function subscribeQueryContext(listener: QueryContextListener): () => void {
+  contextListeners.add(listener);
+  return () => contextListeners.delete(listener);
+}
+
+function notifyContextChange(name: string): void {
+  for (const listener of contextListeners) listener(name);
+}
+
 export function getQueryContext<T extends Shape>(name: string): QShape<T> {
   if (queryContext.has(name)) {
     return queryContext.get(name);
@@ -46,6 +69,7 @@ export function setQueryContext(name: string, value: any, shapeType?) {
   // Clearing a context entry
   if (!value) {
     queryContext.delete(name);
+    notifyContextChange(name);
     return;
   }
 
@@ -73,4 +97,5 @@ export function setQueryContext(name: string, value: any, shapeType?) {
   }
 
   queryContext.set(name, value);
+  notifyContextChange(name);
 }

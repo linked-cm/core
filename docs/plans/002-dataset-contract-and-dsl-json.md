@@ -383,3 +383,11 @@ Validation:
   audit (ontologies/expressions have module-level statements), and the actual tree-shaking win
   is **blocked until `build()` is removed** (the IR pipeline stays reachable from every builder
   via the deprecated `build()`). Best done together with the `build()` removal at wrapup.
+
+- **Reactivity primitive (enabler for context "wait"/"re-resolve").** Added
+  `subscribeQueryContext(listener)` to `QueryContext`; `setQueryContext` now notifies
+  subscribers on set/clear. This is the core hook the React/component layer uses to re-run
+  affected queries when a context lands (so unresolved → `null` locally, then re-runs and
+  resolves on the change) — re-execution itself stays in the consumer layer. Exported
+  `getQueryContext`/`setQueryContext`/`subscribeQueryContext`/`PendingQueryContext`/
+  `UnresolvedContextError` from the barrel. Full suite 1183 passing.

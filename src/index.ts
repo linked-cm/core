@@ -55,6 +55,13 @@ export {lower} from './queries/lower.js';
 export type {LowerableQuery} from './queries/lower.js';
 export {fromJSON} from './queries/fromJSON.js';
 export type {QueryJSON} from './queries/fromJSON.js';
+export {
+  getQueryContext,
+  setQueryContext,
+  subscribeQueryContext,
+  PendingQueryContext,
+  UnresolvedContextError,
+} from './queries/QueryContext.js';
 export {PropertyPath, walkPropertyPath} from './queries/PropertyPath.js';
 export type {WhereCondition, WhereOperator} from './queries/WhereCondition.js';
 
