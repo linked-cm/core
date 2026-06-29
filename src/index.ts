@@ -83,6 +83,7 @@ export type {QueryBuilderJSON} from './queries/QueryBuilder.js';
 export {CreateBuilder} from './queries/CreateBuilder.js';
 export {UpdateBuilder} from './queries/UpdateBuilder.js';
 export {DeleteBuilder} from './queries/DeleteBuilder.js';
+export type {DeleteId} from './queries/DeleteBuilder.js';
 
 // Expressions — computed fields and functions
 export {ExpressionNode} from './expressions/ExpressionNode.js';

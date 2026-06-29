@@ -264,6 +264,18 @@ describe('QueryContext edge cases', () => {
     warn.mockRestore();
   });
 
+  test('setQueryContext accepts a Shape instance without a shapeType', () => {
+    // A Shape is already a shape, so no shapeType is needed (previously this
+    // silently no-op'd because the `{id}` guard intercepted it).
+    const s = new ContextPerson();
+    s.id = 'https://ex.org/ctx-shape';
+    setQueryContext('shape-ctx', s);
+    const ctx = getQueryContext('shape-ctx');
+    expect(ctx).not.toBeInstanceOf(PendingQueryContext);
+    expect(ctx.id).toBe('https://ex.org/ctx-shape');
+    setQueryContext('shape-ctx', null as any);
+  });
+
   test('setQueryContext warns when QResult provided without shapeType', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     setQueryContext('missing-shape', {id: 'ctx-1'} as any);

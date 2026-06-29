@@ -100,9 +100,31 @@ export function setQueryContext(name: string, value: any, shapeType?) {
     return;
   }
 
-  //if a QResult was provided
+  // Already a QShape — stamp the underlying shape and store as-is. (Checked before
+  // the plain-`{id}` branch below: a QueryShape's `.id` getter is also a string, so
+  // testing for `{id}` first would wrongly require a shapeType and no-op.)
+  if (value instanceof QueryShape) {
+    const orig = (value as any).originalValue;
+    if (orig) {
+      orig.__queryContextName = name;
+      if (typeof orig.id === 'string') orig.__queryContextId = orig.id;
+    }
+    queryContext.set(name, value as any);
+    notifyContextChange(name);
+    return;
+  }
+
+  // A Shape instance — stamp it and wrap as a QShape. Needs no shapeType (it is one).
+  if (value instanceof Shape) {
+    value.__queryContextName = name;
+    if (typeof value.id === 'string') value.__queryContextId = value.id;
+    queryContext.set(name, new QueryShape(value) as any);
+    notifyContextChange(name);
+    return;
+  }
+
+  // A plain QResult `{id}` — materialize a shape (requires shapeType).
   if (typeof value.id === 'string') {
-    //convert to QShape
     if (!shapeType) {
       console.warn(
         'setQueryContext: value is a QResult but no shapeType provided',
@@ -114,17 +136,10 @@ export function setQueryContext(name: string, value: any, shapeType?) {
     shape.id = value.id;
     shape.__queryContextId = value.id;
     shape.__queryContextName = name;
-    value = QueryShape.create(shape);
-  }
-  if (value instanceof Shape) {
-    value.__queryContextName = name;
-    //convert to QShape
-    value = new QueryShape(value);
-  } else if (!(value instanceof QueryShape)) {
-    console.warn('setQueryContext: value is not a QueryShape or Shape', value);
+    queryContext.set(name, QueryShape.create(shape) as any);
+    notifyContextChange(name);
     return;
   }
 
-  queryContext.set(name, value);
-  notifyContextChange(name);
+  console.warn('setQueryContext: value is not a QueryShape, Shape, or {id} result', value);
 }

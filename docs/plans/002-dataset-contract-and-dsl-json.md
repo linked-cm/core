@@ -516,24 +516,25 @@ unresolved ref). **7 gaps found; 1–3 fixed, 4–7 deferred.**
   a clear `UnresolvedContextError` instead of an opaque `undefined.substring` crash.
 - **Gap 3 — FIXED.** `Shape.delete()`'s signature was widened to `DeleteId` so the documented
   `Person.delete(getQueryContext('user'))` typechecks without `as any` (matching `DeleteBuilder.from`).
-- **Gap 4 [Med] — DEFERRED.** Unset context-*property* in a where (`getQueryContext('unset').name.gt(...)`)
-  throws at build — a `PendingQueryContext` has no property proxy, so there's no `{$ctx}` parity with the
-  unset root-ref case. Genuinely supporting pre-auth context-property refs needs a property-proxy on
-  `PendingQueryContext`.
+- **Gap 4 [Med] — DEFERRED (needs design).** Unset context-*property* in a where
+  (`getQueryContext('unset').name.gt(...)`) throws at build — a `PendingQueryContext` has no shape, so a
+  property access can't resolve the property IRI. Supporting it needs a *typed* pending context (carrying an
+  expected shape) so property access pre-auth can emit `context_property_expr{contextName}`. Real design
+  extension, not a quick fix.
 - **Gap 5 [Low] — FIXED.** A context property used as the *self* of an expression
   (`getQueryContext('user').name.equals(x)`) was traced as a root-entity property (wrong query).
   `wrapWithExpressionProxy` now routes the self through `toExpressionNode`, so it becomes a
   `context_property_expr` and resolves at lower.
-- **Gap 6 [Low] — DEFERRED.** `DeleteId` is in the public `DeleteBuilder.from`/`Shape.delete` signatures but
-  not re-exported from `index.ts`.
+- **Gap 6 [Low] — FIXED.** `DeleteId` is now re-exported from `index.ts`.
 - **Gap 7b [serious] — FIXED.** delete-by-context and field-value-context only worked when the context was
   *unset* at build; when already set (logged-in case) the value is a resolved `QueryShape` and `lower()`/`toJSON`
   **threw**. A new `asContextRef()` normalizes both the unset `PendingQueryContext` and a resolved context
   shape to a `{$ctx}` reference at the mutation field-value / `$remove` / delete-id entry points, so set and
   unset behave identically (always `{$ctx}`, resolved at lowering). The name is read via `originalValue` to
   avoid the QueryShape proxy's undecorated-property warning.
-- **Gap 7a [Med, pre-existing] — DEFERRED.** `setQueryContext` silently no-ops when handed a `Shape`/`QueryShape`
-  with an `id` and no `shapeType` (the `typeof value.id === 'string'` guard returns early). Predates this work
-  and the blessed `setQueryContext(name, {id}, Shape)` path is unaffected.
+- **Gap 7a [Med, pre-existing] — FIXED.** `setQueryContext` no longer no-ops on a `Shape`/`QueryShape` with an
+  `id` and no `shapeType`: those forms are now handled before the plain-`{id}` (QResult) branch that requires
+  a `shapeType`, and the underlying shape is stamped with both `__queryContextId` and `__queryContextName`.
 
-Full suite **1197 passing**; CJS+ESM typecheck clean; tree-shaking re-verified.
+Only **Gap 4** remains deferred (needs a typed pending context — a real design extension). Full suite
+**1198 passing**; CJS+ESM typecheck clean; tree-shaking re-verified.
