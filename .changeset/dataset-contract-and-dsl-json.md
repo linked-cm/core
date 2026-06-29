@@ -1,10 +1,10 @@
 ---
-'@_linked/core': major
+'@_linked/core': minor
 ---
 
 Flip the query contract: datasets receive the live query, DSL-JSON is the wire format, and the IR becomes an opt-in store detail behind a free `lower()`.
 
-**Breaking changes**
+**Breaking changes** (the package is pre-adoption, so this ships as a minor rather than a major — there are no published consumers to protect yet)
 
 - **`build()` is removed** from all builders. Use the free `lower(query)` function to produce IR:
   ```ts
