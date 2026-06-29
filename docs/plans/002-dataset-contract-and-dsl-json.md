@@ -494,3 +494,38 @@ behavior).
   resolved-at-lower mechanism), encoded in the expression IR's own vocabulary. Full suite **1193**.
 - Tree-shaking re-verified: `IRLower` (IR tier) now imports `ContextRef`, and `ExpressionNode`/`SelectQuery`
   (wire tier) import `QueryContext` — all IR-free; the wire tier still reaches zero IR modules.
+
+## Review (second pass — integration/blast-radius)
+
+Re-reviewed all post-first-review work (gaps 1–6, where-context, delete-by-context, docs) with three
+subagents focused on cross-codebase interactions. Most of the surface verified **safe** (subject-context
+resolution unperturbed by the new `__queryContextName`; `exec()`'s `UnresolvedContextError` catch cannot
+mask unrelated errors and mutations propagate it; the wire-version assertion tolerates missing `v` and
+doesn't gate `FieldSet.fromJSON`; `ExpressionInput`/`PendingQueryContext` ordering is correct;
+`PendingQueryContext` in mutation data is always resolved before IRMutation; orderBy/minus can't carry an
+unresolved ref). **7 gaps found; 1–3 fixed, 4–7 deferred.**
+
+- **Gap 1 [HIGH, regression] — FIXED.** A context ref inside a **projected** expression
+  (`select(p => ({flag: p.x.equals(getQueryContext('user'))}))`) was resolved only in `lowerWhere`, so it
+  reached `irToAlgebra` unresolved and **crashed** SPARQL serialization — even when the context was set.
+  Fix: the resolver (`resolveWhereContextRefs` → renamed `resolveContextRefs`) is now also applied to the
+  expression-select projection seed in `IRLower` (covers nested sub-selects). Verified e2e: the repro now
+  compiles to SPARQL with the resolved IRI.
+- **Gap 2 — FIXED.** `tsconfig` has `strictNullChecks` off, so the `value?`/`contextIri?` optionality gave
+  no compile protection. Added a `resolvedContextIri()` guard in `irToAlgebra` so an unresolved IRI throws
+  a clear `UnresolvedContextError` instead of an opaque `undefined.substring` crash.
+- **Gap 3 — FIXED.** `Shape.delete()`'s signature was widened to `DeleteId` so the documented
+  `Person.delete(getQueryContext('user'))` typechecks without `as any` (matching `DeleteBuilder.from`).
+- **Gap 4 [Med] — DEFERRED.** Unset context-*property* in a where (`getQueryContext('unset').name.gt(...)`)
+  throws at build — a `PendingQueryContext` has no property proxy, so there's no `{$ctx}` parity with the
+  unset root-ref case. Genuinely supporting pre-auth context-property refs needs a property-proxy on
+  `PendingQueryContext`.
+- **Gap 5 [Low] — DEFERRED.** `getQueryContext('user').name.equals(...)` in a projection drops the context
+  (emits a root-alias `property_expr` → wrong query, not a crash). Separate expression-proxy issue.
+- **Gap 6 [Low] — DEFERRED.** `DeleteId` is in the public `DeleteBuilder.from`/`Shape.delete` signatures but
+  not re-exported from `index.ts`.
+- **Gap 7 [Med, pre-existing] — DEFERRED.** `setQueryContext` silently no-ops when handed a `Shape`/`QueryShape`
+  with an `id` and no `shapeType`; and passing a *resolved* `getQueryContext()` (a QueryShape) as a delete
+  id / field value throws opaquely + is live↔wire-asymmetric. Both predate this work.
+
+Full suite **1195 passing**; CJS+ESM typecheck clean; tree-shaking re-verified.
