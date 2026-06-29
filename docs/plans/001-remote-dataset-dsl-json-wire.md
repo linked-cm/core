@@ -458,3 +458,10 @@ Test strategy: quick gate `npx jest --testPathPatterns='mutation-serialization|r
 
 ## Iteration 1 — Dependency graph
 `i1 → i2 → i3`; `i1 → i4` (i4 also needs i2's `toJSON`). Executed sequentially.
+
+## Iteration 1 — Progress
+
+- **Phase i1 — Codec + lowerMutationJSON — DONE.** `src/queries/MutationSerialization.ts`:
+  JSON types, `encodeValue`/`encodeNodeData`, `decodeNodeData`/`lowerMutationJSON`
+  (dispatches to `buildCanonical*MutationIR`, re-lowers where for where/forAll/delete_where).
+  Validation: `npx tsc -p tsconfig-cjs.json --noEmit` exits 0; behaviour covered by i3.
