@@ -9,15 +9,20 @@ import {type WhereClause, type WherePath, processWhereClause} from './SelectQuer
 import {type DeleteMutationJSON} from './MutationSerialization.js';
 import {serializeWherePath, deserializeWherePath} from './QueryBuilderSerialization.js';
 import type {DeleteLowerSpec} from './mutationLowerSpec.js';
+import {PendingQueryContext} from './QueryContext.js';
+import {encodeContextRef, isContextRefJSON} from './ContextRef.js';
 
 type DeleteMode = 'ids' | 'all' | 'where';
+
+/** A node to delete: a concrete id, a `{id}` ref, or a live query-context reference. */
+export type DeleteId = NodeId | PendingQueryContext;
 
 /**
  * Internal state bag for DeleteBuilder.
  */
 interface DeleteBuilderInit<S extends Shape> {
   shape: ShapeConstructor<S>;
-  ids?: NodeId[];
+  ids?: DeleteId[];
   mode?: DeleteMode;
   whereFn?: WhereClause<S>;
   /** A pre-resolved where path (used by fromJSON; no live callback). */
@@ -39,7 +44,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   implements PromiseLike<R>, Promise<R>
 {
   private readonly _shape: ShapeConstructor<S>;
-  private readonly _ids?: NodeId[];
+  private readonly _ids?: DeleteId[];
   private readonly _mode?: DeleteMode;
   private readonly _whereFn?: WhereClause<S>;
   private readonly _where?: WherePath;
@@ -69,7 +74,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
 
   static from<S extends Shape>(
     shape: ShapeConstructor<S> | string,
-    ids?: NodeId | NodeId[],
+    ids?: DeleteId | DeleteId[],
   ): DeleteBuilder<S, DeleteResponse> {
     const resolved = resolveShape<S>(shape);
     if (ids !== undefined) {
@@ -84,7 +89,11 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     assertWireVersion(json.v);
     const resolved = resolveShape(json.shape);
     if (json.mode === 'ids') {
-      return new DeleteBuilder({shape: resolved, ids: json.ids.map((id) => ({id})), mode: 'ids'});
+      // A `{$ctx}` id rehydrates as a live context ref (resolved at lower).
+      const ids: DeleteId[] = json.ids.map((id) =>
+        isContextRefJSON(id) ? new PendingQueryContext(id.$ctx) : {id},
+      );
+      return new DeleteBuilder({shape: resolved, ids, mode: 'ids'});
     }
     if (json.mode === 'all') {
       return new DeleteBuilder({shape: resolved, mode: 'all'});
@@ -176,7 +185,15 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       op: 'delete',
       shape,
       mode: 'ids',
-      ids: this._ids.map((id) => (typeof id === 'string' ? id : id.id)),
+      ids: this._ids.map((id) =>
+        // An unresolved context ref travels as a `{$ctx}` marker; a concrete id
+        // (string or `{id}`, incl. a resolved context shape) as a plain string.
+        id instanceof PendingQueryContext
+          ? encodeContextRef(id.contextName)
+          : typeof id === 'string'
+            ? id
+            : id.id,
+      ),
     };
   }
 

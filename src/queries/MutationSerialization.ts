@@ -75,7 +75,7 @@ export type UpdateMutationJSON = {
 };
 
 export type DeleteMutationJSON =
-  | {v?: string; op: 'delete'; shape: string; mode: 'ids'; ids: string[]}
+  | {v?: string; op: 'delete'; shape: string; mode: 'ids'; ids: (string | ContextRefJSON)[]}
   | {v?: string; op: 'delete'; shape: string; mode: 'all'}
   | {v?: string; op: 'delete'; shape: string; mode: 'where'; where: WherePathJSON};
 

@@ -14,6 +14,7 @@ import type {Shape, ShapeConstructor} from '../shapes/Shape.js';
 import type {UpdatePartial} from './QueryFactory.js';
 import type {WherePath} from './SelectQuery.js';
 import type {NodeId} from './MutationQuery.js';
+import type {PendingQueryContext} from './QueryContext.js';
 
 export interface CreateLowerSpec<S extends Shape = Shape> {
   shapeClass: ShapeConstructor<S>;
@@ -33,7 +34,8 @@ export interface UpdateLowerSpec<S extends Shape = Shape> {
 
 export interface DeleteLowerSpec<S extends Shape = Shape> {
   shapeClass: ShapeConstructor<S>;
-  ids?: NodeId[];
+  /** Ids to delete: concrete ids/`{id}` refs, or unresolved context refs (resolved at lower). */
+  ids?: (NodeId | PendingQueryContext)[];
   mode: 'ids' | 'all' | 'where';
   wherePath?: WherePath;
 }

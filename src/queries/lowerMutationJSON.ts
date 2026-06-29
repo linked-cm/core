@@ -167,7 +167,11 @@ export function lowerMutationJSON(
       if (json.mode === 'ids') {
         return buildCanonicalDeleteMutationIR({
           shape,
-          ids: json.ids.map((id) => ({id})),
+          // A `{$ctx}` id resolves against the live map; a delete must hit a
+          // concrete node, so an unresolved context throws.
+          ids: json.ids.map((id) =>
+            isContextRefJSON(id) ? {id: resolveContextId(id.$ctx, true)!} : {id},
+          ),
         });
       }
       if (json.mode === 'all') {

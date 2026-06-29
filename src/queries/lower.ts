@@ -130,7 +130,14 @@ function lowerDelete(spec: DeleteLowerSpec): IRDeleteQuery {
     const {where, wherePatterns} = lowerWherePath(spec.wherePath!);
     return buildCanonicalDeleteWhereMutationIR({shape, where, wherePatterns});
   }
-  const ids = new MutationQueryFactory().normalizeNodeRefs(spec.ids!);
+  // Resolve any context-ref ids ({$ctx}) against the live map — a delete must hit
+  // a concrete node, so an unresolved one throws (never a silent `{id: undefined}`).
+  const resolvedIds = spec.ids!.map((id) =>
+    id instanceof PendingQueryContext
+      ? {id: resolveContextId(id.contextName, true)!}
+      : id,
+  );
+  const ids = new MutationQueryFactory().normalizeNodeRefs(resolvedIds);
   return buildCanonicalDeleteMutationIR({shape, ids});
 }
 

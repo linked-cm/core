@@ -415,7 +415,11 @@ Validation:
     position now carries the context *name* through the expression IR (`reference_expr.contextName` /
     `context_property_expr.contextName`) instead of a baked id, and `lower()` resolves it (throws for
     mutations; SELECT `exec()` returns null). `.equals(unsetContext)` no longer throws at build.
-  - Delete-by-context still deferred (no `.for()` on delete; use `.where()` which now supports it).
+  - **Delete-by-context — FIXED.** `Person.delete(getQueryContext('user'))` carries the node-to-delete
+    as a `{$ctx}` ref through the ids path and resolves at `lower()` (throws if unset) — no `.for()`
+    needed. This also closed a silent-corruption bug where `delete(unsetContext)` produced
+    `ids: [{id: undefined}]` with no error. (`.where(p => p.id.equals(ctx))` is *not* the mechanism —
+    `p.id` is not a where-able property.)
 
 - **Phase 7 — DONE (full IR decoupling) + verified.** The builders and the wire codec are now
   fully **IR-free**. All canonical-IR construction lives behind `lower()`:

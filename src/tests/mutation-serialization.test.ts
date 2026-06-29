@@ -218,6 +218,26 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       );
       setQueryContext('ctx-fv', undefined);
     });
+
+    test('delete-by-context: Person.delete(ctx) carries {$ctx}; resolves/throws with parity', () => {
+      setQueryContext('ctx-del', undefined); // ensure unset
+      const d = DeleteBuilder.from(Person, getQueryContext('ctx-del') as any);
+      const json: any = JSON.parse(JSON.stringify(d.toJSON()));
+      // The node to delete is carried as a {$ctx} ref, not a baked/undefined id.
+      expect(json.ids).toEqual([{$ctx: 'ctx-del'}]);
+
+      // Unresolved → both the live and the wire path throw (no silent {id:undefined}).
+      expect(() => lower(d as any)).toThrow(UnresolvedContextError);
+      expect(() => lowerMutationJSON(json)).toThrow(UnresolvedContextError);
+
+      // Round-trips, and resolves with live↔wire parity once set.
+      expect((DeleteBuilder.fromJSON(json).toJSON() as any).ids).toEqual([{$ctx: 'ctx-del'}]);
+      setQueryContext('ctx-del', {id: entity('p2').id}, Person);
+      expect(sanitize(lower(d as any))).toEqual(
+        sanitize(lowerMutationJSON(JSON.parse(JSON.stringify(d.toJSON())))),
+      );
+      setQueryContext('ctx-del', undefined);
+    });
   });
 
   describe('inbound boundary guards', () => {
