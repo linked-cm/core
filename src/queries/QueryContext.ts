@@ -52,7 +52,9 @@ export function subscribeQueryContext(listener: QueryContextListener): () => voi
 }
 
 function notifyContextChange(name: string): void {
-  for (const listener of contextListeners) listener(name);
+  // Snapshot so a listener that (un)subscribes or re-sets a context during
+  // notification can't mutate the set mid-iteration.
+  for (const listener of [...contextListeners]) listener(name);
 }
 
 export function getQueryContext<T extends Shape>(name: string): QShape<T> {

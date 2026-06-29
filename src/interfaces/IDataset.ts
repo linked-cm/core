@@ -13,9 +13,11 @@ import type {
  * Linked Queries as input. The implementing class decides how to handle them —
  * compiling to SPARQL for Fuseki, forwarding as-is to a Host Agent API, etc.
  *
- * Each method receives a canonical IR query object and returns the result.
- * The calling layer (LinkedStorage via queryDispatch) threads the precise
- * DSL-level TypeScript result type back to the caller.
+ * Each method receives the live, closed (read-only) query object — the builder
+ * viewed through its `*Query` interface — and returns the result. A store reads
+ * `query.toJSON()` to forward it, or `lower(query)` to get canonical IR. The
+ * calling layer (LinkedStorage via queryDispatch) threads the precise DSL-level
+ * TypeScript result type back to the caller.
  */
 export interface IDataset {
   /**

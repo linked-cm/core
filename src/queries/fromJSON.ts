@@ -34,6 +34,13 @@ export function fromJSON(
         return UpdateBuilder.fromJSON(json);
       case 'delete':
         return DeleteBuilder.fromJSON(json);
+      default:
+        // An `op` is present but not one we know — a malformed/corrupted or
+        // future-versioned mutation envelope. Fail loud rather than silently
+        // reinterpreting it as a select query.
+        throw new Error(
+          `Unknown query op "${String((json as {op: unknown}).op)}" in DSL-JSON envelope.`,
+        );
     }
   }
   return SelectBuilder.fromJSON(json as QueryBuilderJSON);

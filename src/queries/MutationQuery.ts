@@ -15,6 +15,7 @@ import {Shape} from '../shapes/Shape.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
+import {PendingQueryContext} from './QueryContext.js';
 
 export type NodeId = {id: string} | string;
 
@@ -119,6 +120,9 @@ export class MutationQueryFactory extends QueryFactory {
     value,
     shape: PropertyShape,
   ): NodeReferenceValue {
+    if (value instanceof PendingQueryContext) {
+      return value as unknown as NodeReferenceValue;
+    }
     if (this.isNodeReference(value)) {
       return this.convertNodeReference(value);
     } else {
@@ -187,6 +191,13 @@ export class MutationQueryFactory extends QueryFactory {
   ): PropUpdateValue {
     // ExpressionNode → pass through as-is (will be converted to IRExpression by IRMutation)
     if (isExpressionNode(value)) {
+      return value as unknown as PropUpdateValue;
+    }
+
+    // Query-context reference → preserve the live ref (do NOT collapse to {id},
+    // which would read an unresolved `.id` as undefined). It serializes as a
+    // {$ctx} marker and is resolved — or throws — at lowering time.
+    if (value instanceof PendingQueryContext) {
       return value as unknown as PropUpdateValue;
     }
 

@@ -4,7 +4,7 @@ import type {UpdatePartial} from './QueryFactory.js';
 import type {CreateQuery, CreateResponse} from './CreateQuery.js';
 import {MutationQueryFactory} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {WIRE_VERSION} from './wireVersion.js';
+import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {encodeNodeData, decodeNodeDataToRaw, type CreateMutationJSON} from './MutationSerialization.js';
 import type {CreateLowerSpec} from './mutationLowerSpec.js';
@@ -67,6 +67,7 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
 
   /** Reconstruct a CreateBuilder from its DSL-JSON (inverse of `toJSON`). */
   static fromJSON(json: CreateMutationJSON): CreateBuilder {
+    assertWireVersion(json.v);
     return CreateBuilder.from(json.shape).set(decodeNodeDataToRaw(json.data) as any);
   }
 

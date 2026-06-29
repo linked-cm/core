@@ -171,6 +171,18 @@ describe('LinkedStorage extra behaviors', () => {
       LinkedStorage.selectQuery({shape: {id: BaseShape.shape.id}} as any),
     ).rejects.toThrow('No query dataset configured');
   });
+
+  test('mutation queries reject a missing shape (parity with selectQuery)', async () => {
+    await expect(
+      LinkedStorage.updateQuery({shape: null} as any),
+    ).rejects.toThrow('Invalid update query passed to LinkedStorage.updateQuery(): missing shape');
+    await expect(
+      LinkedStorage.createQuery({shape: undefined} as any),
+    ).rejects.toThrow('Invalid create query passed to LinkedStorage.createQuery(): missing shape');
+    await expect(
+      LinkedStorage.deleteQuery({shape: null} as any),
+    ).rejects.toThrow('Invalid delete query passed to LinkedStorage.deleteQuery(): missing shape');
+  });
 });
 
 describe('LinkedFileStorage asset helper', () => {

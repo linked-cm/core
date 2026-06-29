@@ -407,13 +407,15 @@ Validation:
   {$ctx}`) to the unified marker; `.for(id)`/`.forAll()` now clear any stale pending context.
   Inbound mutation JSON carrying a `{$ctx}` **field value** resolves at lower (tested). New tests
   for subject round-trip + live resolution, target throw/resolve, inbound field-value.
-  - **DEFERRED — where-clause args & builder-side field-values:** these positions resolve a
-    context's `.id` **eagerly upstream** (the expression compiler bakes `.equals(ctx)` into a
-    `reference_expr`; the mutation factory normalizes `{ref: ctx}` to `{id}`) *before*
-    serialization, so a live `PendingQueryContext` never reaches those encoders. The wire codec is
-    ready (inbound `{$ctx}` decodes), but emitting `{$ctx}` from the builder there needs the
-    expression/factory layer to **preserve** the context object — a separate, deeper change.
-    Delete-by-context likewise deferred (no `.for()` on delete; use `.where()`).
+  - **Builder-side mutation field-values — FIXED in review (see Review §Gap 1).** The factory now
+    *preserves* a live `PendingQueryContext` through normalization (instead of collapsing it to
+    `{id: undefined}`); it serializes as `{$ctx}` and is resolved-or-thrown by a context-resolution
+    pre-pass in `lower()`.
+  - **STILL DEFERRED — where-clause args:** `.equals(ctx)` is baked into a `reference_expr` by the
+    expression compiler before serialization, so a context in a *where* position still resolves its
+    `.id` eagerly. The wire codec is ready (inbound `{$ctx}` decodes); emitting it from a where-arg
+    needs the expression compiler to preserve the context object. Delete-by-context likewise
+    deferred (no `.for()` on delete; use `.where()`).
 
 - **Phase 7 — DONE (full IR decoupling) + verified.** The builders and the wire codec are now
   fully **IR-free**. All canonical-IR construction lives behind `lower()`:
@@ -429,3 +431,39 @@ Validation:
     `fromJSON`, `MutationSerialization`, and `index` reach **zero** IR modules (index reaches only
     the opt-in SPARQL dataset). The whole IR pipeline is reachable solely via `lower()` /
     `lowerMutationJSON()`. CJS+ESM typecheck clean; full suite **1185 passing**.
+
+## Review
+
+Phases 1–7 reviewed (4 parallel review subagents + import-graph analysis). Full suite **1189 passing**
+(3 Fuseki suites skipped — Docker, environmental); CJS+ESM typecheck clean; tree-shaking re-verified.
+The contract flip, DSL-JSON wire format, `lower()`/build-removal, mutation `fromJSON`, RemoteDataset
+removal, wire versioning, and IR-decoupling all came back **correct** (live↔wire IR parity holds;
+no behavior lost from the removed factories). Seven gaps were triaged; **Gaps 1–6 fixed**, Gap 7
+(doc rewrite) deferred to Phase 8.
+
+- **Gap 1 [Med-High] — FIXED.** A live-builder mutation with an *unset*-context **field value**
+  (`update({ref: getQueryContext('x')})`) silently produced `{id: undefined}` instead of throwing —
+  reachable and asymmetric with both the target position and the inbound-JSON path. Fix: the factory
+  now **preserves** the `PendingQueryContext` (`MutationQuery.convertUpdateValue`/`convertSingleRemoveValue`),
+  it serializes as `{$ctx}`, and `lower()` runs a context-resolution pre-pass (`resolveDescriptionContexts`)
+  that resolves-or-throws. This also delivers builder-side `{$ctx}` field-values (previously deferred).
+  Regression test asserts toJSON `{$ctx}` + throw-on-unset + live↔wire parity on resolve.
+- **Gap 2 [High] — FIXED.** `assertWireVersion` was only in the umbrella `fromJSON`. Added it to all
+  four per-builder `static fromJSON` and to `lowerMutationJSON` (every inbound boundary).
+- **Gap 3 [High] — FIXED.** Unknown `op` fell through to `SelectBuilder.fromJSON` (silent misroute).
+  `fromJSON` now throws on an unrecognized `op`.
+- **Gap 4 [Med] — FIXED.** The three mutation routing methods now reject a missing `shape` (parity
+  with `selectQuery`); `resolveDatasetForQueryShape`/`getDatasetForShapeClass` typed `IDataset | undefined`.
+- **Gap 5 [Med, pre-existing] — FIXED (surfaced).** A nested `exists()` carrying its own chained
+  `and()`/`or()` was silently truncated by the serializer; it now throws instead of dropping data
+  (full recursion left as future work if a real case needs it).
+- **Gap 6 [Low] — FIXED.** `UpdateBuilder.for(concrete)` now clears a stale `targetContextName`;
+  dead `UpdateLowerSpec.targetContextName` dropped; `notifyContextChange` snapshots its listener set;
+  stale `build()` test titles renamed. (The `encodeSingleValue` ctxRef branch is now live via Gap 1.)
+- **Gap 7 [Docs] — partially done; rewrite deferred to Phase 8.** Fixed the in-code `IDataset` JSDoc
+  (it claimed methods "receive a canonical IR query object"). The store-implementer guide
+  `documentation/intermediate-representation.md` still describes the old IR-receiving contract and a
+  renamed-away `IQuadStore` — its rewrite is Phase 8.
+
+Out of scope: a pre-existing `tsc` error in `src/utils/loadStores.ts` (untouched on this branch, not
+in the CJS build).

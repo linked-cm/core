@@ -18,6 +18,9 @@
  */
 import {buildSelectQuery} from './IRPipeline.js';
 import {MutationQueryFactory} from './MutationQuery.js';
+import {isSetModificationValue, type NodeDescriptionValue} from './QueryFactory.js';
+import {PendingQueryContext} from './QueryContext.js';
+import {resolveContextId} from './ContextRef.js';
 import {
   buildCanonicalCreateMutationIR,
   buildCanonicalUpdateMutationIR,
@@ -57,18 +60,54 @@ function lowerWherePath(where: WherePath) {
   return lowerWhereToIR(canonicalizeWhere(toWhere(where)));
 }
 
+/**
+ * Resolve any query-context reference carried as a mutation field value. The
+ * builder preserves a live `PendingQueryContext` through normalization (so it can
+ * serialize as `{$ctx}`); at lowering a mutation must hit a concrete node, so the
+ * context is resolved here and an unset one throws `UnresolvedContextError`.
+ */
+function resolveValueContexts(val: unknown): unknown {
+  if (val instanceof PendingQueryContext) {
+    return {id: resolveContextId(val.contextName, true)!};
+  }
+  if (Array.isArray(val)) {
+    return val.map(resolveValueContexts);
+  }
+  if (val && typeof val === 'object') {
+    if (isSetModificationValue(val)) {
+      const mod = val as {$add?: unknown[]; $remove?: unknown[]};
+      const out: {$add?: unknown[]; $remove?: unknown[]} = {};
+      if (mod.$add) out.$add = mod.$add.map(resolveValueContexts);
+      if (mod.$remove) out.$remove = mod.$remove.map(resolveValueContexts);
+      return out;
+    }
+    if ('fields' in val) {
+      return resolveDescriptionContexts(val as NodeDescriptionValue);
+    }
+  }
+  return val;
+}
+
+/** Deep-resolve context references in a normalized node description (returns a new copy). */
+function resolveDescriptionContexts(desc: NodeDescriptionValue): NodeDescriptionValue {
+  return {
+    ...desc,
+    fields: desc.fields.map((f) => ({...f, val: resolveValueContexts(f.val) as typeof f.val})),
+  };
+}
+
 function lowerCreate(spec: CreateLowerSpec): IRCreateQuery {
-  const description = new MutationQueryFactory().describe(
-    spec.shapeClass.shape,
-    spec.data,
-    true,
+  const description = resolveDescriptionContexts(
+    new MutationQueryFactory().describe(spec.shapeClass.shape, spec.data, true),
   );
   return buildCanonicalCreateMutationIR({shape: spec.shapeClass.shape, description});
 }
 
 function lowerUpdate(spec: UpdateLowerSpec): IRUpdateQuery {
   const shape = spec.shapeClass.shape;
-  const updates = new MutationQueryFactory().describe(shape, spec.data);
+  const updates = resolveDescriptionContexts(
+    new MutationQueryFactory().describe(shape, spec.data),
+  );
   if (spec.mode === 'for') {
     return buildCanonicalUpdateMutationIR({id: spec.targetId!, shape, updates});
   }

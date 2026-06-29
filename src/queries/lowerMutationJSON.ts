@@ -43,6 +43,7 @@ import type {IRCreateQuery} from './CreateQuery.js';
 import type {IRUpdateQuery} from './UpdateQuery.js';
 import type {IRDeleteQuery} from './DeleteQuery.js';
 import {isContextRefJSON, resolveContextId} from './ContextRef.js';
+import {assertWireVersion} from './wireVersion.js';
 import {
   recordToRefs,
   type MutationJSON,
@@ -132,6 +133,7 @@ function lowerWhere(
 export function lowerMutationJSON(
   json: MutationJSON,
 ): IRCreateQuery | IRUpdateQuery | IRDeleteQuery {
+  assertWireVersion(json.v);
   switch (json.op) {
     case 'create':
       return buildCanonicalCreateMutationIR({

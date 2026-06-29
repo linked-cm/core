@@ -194,6 +194,47 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       expect(() => lowerMutationJSON(json)).not.toThrow();
       setQueryContext('ctx-v', undefined);
     });
+
+    test('LIVE builder field-value context: toJSON emits {$ctx}; lower resolves/throws with parity', () => {
+      setQueryContext('ctx-fv', undefined); // ensure unset
+      const b = Person.update({bestFriend: getQueryContext('ctx-fv')} as any).for(
+        entity('p1'),
+      );
+      // The live builder now carries the context as a {$ctx} marker on the wire
+      // (it is no longer silently collapsed to a malformed {id: undefined} ref).
+      const json: any = JSON.parse(JSON.stringify(b.toJSON()));
+      const field = json.data.fields.find((f: any) => f.prop === 'bestFriend');
+      expect(field.value).toEqual({kind: 'ctxRef', name: 'ctx-fv'});
+
+      // Unresolved → BOTH the live-builder path and the wire path throw (a
+      // mutation must hit a concrete node — no silent undefined ref).
+      expect(() => lower(b as any)).toThrow(UnresolvedContextError);
+      expect(() => lowerMutationJSON(json)).toThrow(UnresolvedContextError);
+
+      // Resolved → live and wire lowering agree exactly.
+      setQueryContext('ctx-fv', {id: entity('p2').id}, Person);
+      expect(sanitize(lower(b as any))).toEqual(
+        sanitize(lowerMutationJSON(JSON.parse(JSON.stringify(b.toJSON())))),
+      );
+      setQueryContext('ctx-fv', undefined);
+    });
+  });
+
+  describe('inbound boundary guards', () => {
+    test('unknown op throws rather than silently routing to select', () => {
+      expect(() =>
+        fromJSON({v: '1.0', op: 'frobnicate', shape: 'x'} as any),
+      ).toThrow(/Unknown query op/);
+    });
+
+    test('per-builder fromJSON rejects an unknown wire major', () => {
+      const upd: any = queryFactories.updateSimple().toJSON();
+      expect(() => UpdateBuilder.fromJSON({...upd, v: '2.0'})).toThrow(/wire version/i);
+      const cre: any = queryFactories.createSimple().toJSON();
+      expect(() => CreateBuilder.fromJSON({...cre, v: '2.0'})).toThrow(/wire version/i);
+      const del: any = queryFactories.deleteMultiple().toJSON();
+      expect(() => DeleteBuilder.fromJSON({...del, v: '2.0'})).toThrow(/wire version/i);
+    });
   });
 
   test('wire version is stamped and an unknown major is rejected', () => {

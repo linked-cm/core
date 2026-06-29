@@ -25,10 +25,8 @@ export interface UpdateLowerSpec<S extends Shape = Shape> {
   shapeClass: ShapeConstructor<S>;
   data: UpdatePartial<S>;
   mode: 'for' | 'forAll' | 'where';
-  /** Resolved target id (id-based update); already resolved from any context. */
+  /** Resolved target id (id-based update); the builder already resolved any context. */
   targetId?: string;
-  /** A context name to resolve at lowering when no concrete id is present. */
-  targetContextName?: string;
   /** A pre-evaluated where path (where-mode). */
   wherePath?: WherePath;
 }

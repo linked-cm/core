@@ -13,7 +13,7 @@ import {
 } from './SelectQuery.js';
 import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
-import {WIRE_VERSION} from './wireVersion.js';
+import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
@@ -497,6 +497,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * Resolves shape IRI via getShapeClass() and field paths as label selections.
    */
   static fromJSON<S extends Shape = Shape>(json: QueryBuilderJSON): SelectBuilder<S> {
+    assertWireVersion(json.v);
     let builder = SelectBuilder.from<S>(json.shape as any);
 
     if (json.fields && json.fields.length > 0) {

@@ -3,7 +3,7 @@ import {resolveShape} from './resolveShape.js';
 import type {DeleteQuery, DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {WIRE_VERSION} from './wireVersion.js';
+import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import {type DeleteMutationJSON} from './MutationSerialization.js';
@@ -81,6 +81,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
 
   /** Reconstruct a DeleteBuilder from its DSL-JSON (inverse of `toJSON`). */
   static fromJSON(json: DeleteMutationJSON): DeleteBuilder {
+    assertWireVersion(json.v);
     const resolved = resolveShape(json.shape);
     if (json.mode === 'ids') {
       return new DeleteBuilder({shape: resolved, ids: json.ids.map((id) => ({id})), mode: 'ids'});

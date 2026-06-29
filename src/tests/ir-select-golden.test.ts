@@ -733,7 +733,7 @@ describe("IR pipeline behavior", () => {
     expect(ir.limit).toBeUndefined();
   });
 
-  test("build() returns canonical IR", async () => {
+  test("lower() returns canonical IR", async () => {
     const query = Person.select((p) => p.name).where((p) =>
       p.name.equals("Semmy")
     );
@@ -752,7 +752,7 @@ describe("IR pipeline behavior", () => {
     expect(buildSelectQuery(ir)).toBe(ir);
   });
 
-  test("build preserves nested sub-select projections inside array selections", async () => {
+  test("lower() preserves nested sub-select projections inside array selections", async () => {
     const query = await captureRawQuery(() =>
       queryFactories.pluralFilteredNestedSubSelect()
     );

@@ -4,7 +4,7 @@ import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory
 import type {UpdateQuery} from './UpdateQuery.js';
 import {MutationQueryFactory} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {WIRE_VERSION} from './wireVersion.js';
+import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {PendingQueryContext, getQueryContext, UnresolvedContextError} from './QueryContext.js';
 import {encodeContextRef, isContextRefJSON} from './ContextRef.js';
 import type {NodeShape} from '../shapes/SHACL.js';
@@ -89,6 +89,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
 
   /** Reconstruct an UpdateBuilder from its DSL-JSON (inverse of `toJSON`). */
   static fromJSON(json: UpdateMutationJSON): UpdateBuilder {
+    assertWireVersion(json.v);
     const resolved = resolveShape(json.shape);
     const data = decodeNodeDataToRaw(json.data) as any;
     if (json.mode === 'for') {
@@ -114,7 +115,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       return this.clone({targetContextName: id.contextName, targetId: undefined, mode: 'for'}) as unknown as UpdateBuilder<S, U, AddId<U>>;
     }
     const resolvedId = typeof id === 'string' ? id : id.id;
-    return this.clone({targetId: resolvedId, mode: 'for'}) as unknown as UpdateBuilder<S, U, AddId<U>>;
+    return this.clone({targetId: resolvedId, targetContextName: undefined, mode: 'for'}) as unknown as UpdateBuilder<S, U, AddId<U>>;
   }
 
   /** Update all instances of this shape type. Returns void. */
