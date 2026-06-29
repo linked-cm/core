@@ -1,6 +1,6 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
-import type {DeleteQuery, DeleteResponse} from './DeleteQuery.js';
+import type {DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
@@ -131,7 +131,6 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   get shape(): NodeShape {
     return this._shape.shape;
   }
-
 
   /** @internal The IR-free lowering spec consumed by `lower()`. Validates inputs. */
   _lowerSpec(): DeleteLowerSpec<S> {

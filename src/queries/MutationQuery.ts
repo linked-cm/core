@@ -15,7 +15,7 @@ import {Shape} from '../shapes/Shape.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
-import {PendingQueryContext, asContextRef} from './QueryContext.js';
+import {asContextRef} from './QueryContext.js';
 
 export type NodeId = {id: string} | string;
 

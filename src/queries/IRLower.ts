@@ -161,8 +161,8 @@ const lowerPath = (
  * A context reference (`.equals(getQueryContext('user'))`) is carried through build +
  * the wire as a *name* (`reference_expr.contextName` / `context_property_expr.contextName`),
  * never a baked id. Here — at lowering — it is resolved against the live context map into
- * the concrete IRI; an unresolved one throws `UnresolvedContextError` (for SELECT, `exec()`
- * short-circuits to null before lowering, so a query is never lowered with an unresolved
+ * the concrete IRI; an unresolved one throws `UnresolvedContextError` (SELECT callers
+ * short-circuit to null before lowering, so a query is never lowered with an unresolved
  * context in practice). This must be applied to every expression that can reach the SPARQL
  * algebra, not just where-filters.
  */

@@ -913,18 +913,6 @@ function toExpressionNode(qbo: QueryBuilderObject): ExpressionNode {
   return tracedPropertyExpression(segmentIds);
 }
 
-/** Walk up the QueryBuilderObject chain to find a query context ID. */
-function findContextId(qbo: QueryBuilderObject): string | undefined {
-  let current: QueryBuilderObject | undefined = qbo;
-  while (current) {
-    if (current instanceof QueryShape && (current.originalValue as any)?.__queryContextId) {
-      return (current.originalValue as any).__queryContextId;
-    }
-    current = current.subject as QueryBuilderObject | undefined;
-  }
-  return undefined;
-}
-
 /** Walk up the QueryBuilderObject chain to find a query context *name* (for `{$ctx}`). */
 function findContextName(qbo: QueryBuilderObject): string | undefined {
   let current: QueryBuilderObject | undefined = qbo;

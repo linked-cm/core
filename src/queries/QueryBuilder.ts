@@ -1,7 +1,6 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import {
-  type SelectQuery,
   type QueryBuildFn,
   type WhereClause,
   type QResult,
@@ -18,7 +17,7 @@ import {getQueryDispatch} from './queryDispatch.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
-import {FieldSet, type FieldSetJSON, type FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
+import {FieldSet, type FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
 import {PendingQueryContext, UnresolvedContextError} from './QueryContext.js';
 import {encodeContextRef, isContextRefJSON, type ContextRefJSON} from './ContextRef.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
@@ -100,7 +99,8 @@ interface QueryBuilderInit<S extends Shape, R> {
  * const results = await SelectBuilder.from(Person).select(p => p.name);
  * ```
  *
- * Generates IR directly via FieldSet, guaranteeing identical output to the existing DSL.
+ * Produces a raw select input (`toRawInput()`) that the free `lower()` function
+ * turns into IR; the builder itself carries no dependency on the IR pipeline.
  */
 export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   implements PromiseLike<Result>, Promise<Result>
@@ -280,7 +280,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   for(id: string | NodeReferenceValue | PendingQueryContext | null | undefined): SelectBuilder<S, R, Result extends (infer E)[] ? E : Result> {
     if (id instanceof PendingQueryContext) {
       // Store the pending context as subject — its .id getter resolves lazily
-      // from the global context map when the query is built/serialized.
+      // from the global context map when the query is lowered/serialized.
       return this.clone({subject: id as any, subjects: undefined, singleResult: true, _nullSubject: false, _pendingContextName: id.contextName}) as any;
     }
     if (id == null) {
@@ -329,8 +329,9 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * ```
    *
    * NOTE: Preloads hold live component references and are not serializable.
-   * They are injected into the selectFn at build time (see buildFactory()),
-   * so changes to preload handling must account for the selectFn wrapping logic.
+   * They are merged into the selection when the field set is evaluated
+   * (`_fieldsWithPreloads()`), so changes to preload handling must account for
+   * the selectFn wrapping logic.
    */
   preload<CS extends Shape, CR>(
     path: string,
@@ -639,7 +640,6 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   get shape(): NodeShape {
     return this._shape.shape;
   }
-
 
   /** Execute the query and return results. */
   exec(): Promise<Result> {

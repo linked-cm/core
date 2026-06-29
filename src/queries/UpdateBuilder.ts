@@ -1,7 +1,6 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
-import type {UpdateQuery} from './UpdateQuery.js';
 import {MutationQueryFactory} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
@@ -146,7 +145,6 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   get shape(): NodeShape {
     return this._shape.shape;
   }
-
 
   /** @internal The IR-free lowering spec consumed by `lower()`. Validates inputs. */
   _lowerSpec(): UpdateLowerSpec<S> {
