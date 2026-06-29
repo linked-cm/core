@@ -15,7 +15,7 @@ import {Shape} from '../shapes/Shape.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
-import {PendingQueryContext} from './QueryContext.js';
+import {PendingQueryContext, asContextRef} from './QueryContext.js';
 
 export type NodeId = {id: string} | string;
 
@@ -120,8 +120,9 @@ export class MutationQueryFactory extends QueryFactory {
     value,
     shape: PropertyShape,
   ): NodeReferenceValue {
-    if (value instanceof PendingQueryContext) {
-      return value as unknown as NodeReferenceValue;
+    const ctx = asContextRef(value);
+    if (ctx) {
+      return ctx as unknown as NodeReferenceValue;
     }
     if (this.isNodeReference(value)) {
       return this.convertNodeReference(value);
@@ -195,10 +196,12 @@ export class MutationQueryFactory extends QueryFactory {
     }
 
     // Query-context reference → preserve the live ref (do NOT collapse to {id},
-    // which would read an unresolved `.id` as undefined). It serializes as a
-    // {$ctx} marker and is resolved — or throws — at lowering time.
-    if (value instanceof PendingQueryContext) {
-      return value as unknown as PropUpdateValue;
+    // which would read an unresolved `.id` as undefined). Handles both an unset
+    // PendingQueryContext and a resolved context shape; both serialize as a {$ctx}
+    // marker and are resolved — or throw — at lowering time.
+    {
+      const ctx = asContextRef(value);
+      if (ctx) return ctx as unknown as PropUpdateValue;
     }
 
     //single value which will

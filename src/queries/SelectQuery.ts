@@ -967,8 +967,10 @@ function wrapWithExpressionProxy<T>(qp: QueryPrimitive<T>): QueryPrimitive<T> {
         const segments = FieldSet.collectPropertySegments(target);
         // Only intercept if we have valid property segments to trace
         if (segments.length > 0) {
-          const segmentIds = segments.map((s) => s.id);
-          const baseNode = tracedPropertyExpression(segmentIds);
+          // Use toExpressionNode so a context property as the *self* of an
+          // expression (e.g. getQueryContext('user').name.equals(x)) becomes a
+          // context_property_expr, not a root-entity property_expr.
+          const baseNode = toExpressionNode(target as unknown as QueryBuilderObject);
           return (...args: any[]) => {
             // Convert QueryBuilderObject arguments to ExpressionNode
             const convertedArgs = args.map((arg) =>

@@ -9,7 +9,7 @@ import {type WhereClause, type WherePath, processWhereClause} from './SelectQuer
 import {type DeleteMutationJSON} from './MutationSerialization.js';
 import {serializeWherePath, deserializeWherePath} from './QueryBuilderSerialization.js';
 import type {DeleteLowerSpec} from './mutationLowerSpec.js';
-import {PendingQueryContext} from './QueryContext.js';
+import {PendingQueryContext, asContextRef} from './QueryContext.js';
 import {encodeContextRef, isContextRefJSON} from './ContextRef.js';
 
 type DeleteMode = 'ids' | 'all' | 'where';
@@ -78,7 +78,11 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   ): DeleteBuilder<S, DeleteResponse> {
     const resolved = resolveShape<S>(shape);
     if (ids !== undefined) {
-      const idsArray = Array.isArray(ids) ? ids : [ids];
+      // Normalize any context reference (unset PendingQueryContext or a resolved
+      // context shape) to a {$ctx} marker so set/unset behave identically.
+      const idsArray = (Array.isArray(ids) ? ids : [ids]).map(
+        (id) => asContextRef(id) ?? id,
+      );
       return new DeleteBuilder<S>({shape: resolved, ids: idsArray, mode: 'ids'});
     }
     return new DeleteBuilder<S>({shape: resolved});

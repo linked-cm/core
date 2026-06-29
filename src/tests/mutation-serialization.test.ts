@@ -219,6 +219,24 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       setQueryContext('ctx-fv', undefined);
     });
 
+    test('context SET at build time behaves identically (delete + field value)', () => {
+      // A context resolved (a QueryShape, not a PendingQueryContext) at build time
+      // must still carry {$ctx} and lower cleanly — not throw — so context-bound
+      // mutations work whether the user is logged in or not when the query is built.
+      setQueryContext('ctx-set', {id: entity('p2').id}, Person);
+
+      const del: any = Person.delete(getQueryContext('ctx-set'));
+      expect(del.toJSON().ids).toEqual([{$ctx: 'ctx-set'}]);
+      expect(() => lower(del)).not.toThrow();
+
+      const upd: any = Person.update({bestFriend: getQueryContext('ctx-set')} as any).for(entity('p1'));
+      const field = upd.toJSON().data.fields.find((f: any) => f.prop === 'bestFriend');
+      expect(field.value).toEqual({kind: 'ctxRef', name: 'ctx-set'});
+      expect(() => lower(upd)).not.toThrow();
+
+      setQueryContext('ctx-set', undefined);
+    });
+
     test('delete-by-context: Person.delete(ctx) carries {$ctx}; resolves/throws with parity', () => {
       setQueryContext('ctx-del', undefined); // ensure unset
       // The ergonomic spelling typechecks without a cast (Shape.delete accepts a context).

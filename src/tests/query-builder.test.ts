@@ -817,6 +817,19 @@ describe('where-clause context references', () => {
     expect(() => lower(upd as any)).toThrow(/context "wctx" is not set/i);
   });
 
+  test('context property as the SELF of an expression resolves (not dropped to root)', () => {
+    // getQueryContext('user').hobby.equals(x) must become a context_property_expr,
+    // not a property_expr on the root entity.
+    setQueryContext('wctx', {id: `${tmpEntityBase}u9`}, Person);
+    const q = QueryBuilder.from(Person).select((p: any) => p.name).where((p: any) =>
+      (getQueryContext('wctx') as any).hobby.equals('Chess'),
+    );
+    const s = JSON.stringify(lower(q as any));
+    expect(s).toContain('context_property_expr');
+    expect(s).toContain(`${tmpEntityBase}u9`); // resolved to the context entity
+    setQueryContext('wctx', null as any);
+  });
+
   test('context in a PROJECTED expression resolves at lower (not only in where)', () => {
     // Regression: a projected expression carrying a context ref must be resolved
     // by lower() too — otherwise it reaches SPARQL unresolved and crashes.
