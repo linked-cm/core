@@ -311,3 +311,7 @@ fidelity.
   `lowering_failed` guard; create/update/delete passthrough with `handler_missing`
   guards; `unsupported_op` default). Validation: `npx tsc -p tsconfig-cjs.json --noEmit`
   exits 0; behaviour covered by Phase 4 tests.
+- **Phase 3 — Client helper — DONE.** Created `src/remote/RemoteClient.ts`
+  (`toRemoteRequest(qb)` → DSL-JSON select envelope; `createRequest`/`updateRequest`/
+  `deleteRequest` → IR envelopes). Validation: `npx tsc -p tsconfig-cjs.json --noEmit`
+  exits 0.
