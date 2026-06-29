@@ -234,14 +234,22 @@ abstract class ForwardingDataset {
 ```
 Phase 6 (context) is large and orthogonal — candidate for its own ideation/tasks sub-cycle.
 
-## Resolved decisions (defaults taken at tasks time)
-1. **Name = `lower(query)`** (mirrors `lowerMutationJSON`; concise).
-2. **Ship `ForwardingDataset` + `receiveQuery` in core** as reference transport bases
-   (parallel to `SparqlDataset` as the reference store).
-3. **Context** split into **6a** subject/`.for()` parity (select + mutations) and **6b**
-   where/value context refs. Both in scope, sequenced 6a → 6b.
-4. **DSL-JSON `version` field = yes, now** — a top-level `v` on the wire envelope.
-5. **Marker-interface hedge = yes** (`LinkedSelectQuery`/`Linked*Query`), builders implement it.
+## Resolved decisions
+1. **Name = `lower(query)`** (confirmed).
+2. **Ship `ForwardingDataset` + `receiveQuery` in core** as reference transport bases —
+   *pending user confirmation after context (below).*
+3. **Context = all positions at once** (confirmed): subject `.for()`, where-args, and
+   mutation values in one Phase 6 (no 6a/6b split).
+4. **DSL-JSON format version = `"1.0"`, shipped now** as top-level `v` on the wire envelope
+   (confirmed). NOTE: this is the *wire-format* version; the npm package bump for this
+   breaking change is a separate question — see "Versioning note".
+5. **Contract type (builder vs marker interface)** — *pending user confirmation after
+   context (below); current lean: concrete builder.*
+
+### Versioning note
+`@_linked/core` is at **2.9.0**. The breaking contract change is a **major** bump → **3.0.0**.
+"Version 1.0" was about the DSL-JSON wire format (`v:"1.0"`), not the package — confirm we
+keep the package on the 2.x→3.0.0 line (a literal package `1.0.0` would be a downgrade).
 
 # Tasks
 
@@ -345,29 +353,26 @@ Validation:
   the original builder's `lower()`, for select + each mutation. Assert unknown `v` major →
   throws/structured error.
 
-## Phase 6 — Query context as a first-class JSON value
-### Phase 6a — subject/`.for()` context parity (select + mutations)  (after P2,P4)
+## Phase 6 — Query context as a first-class JSON value (all positions)  (after P2,P4)
 Tasks:
-- Define a context-ref encoding for the **subject** position: `{$ctx: name}` in
-  `SelectQueryJSON.subject` and mutation `targetId`. Stop eager-resolving in `toJSON`; emit
-  the ref when the subject is a `PendingQueryContext`.
-- `UpdateBuilder.for(ctx)`/`DeleteBuilder` accept `PendingQueryContext`; store + serialize.
-- Resolution moves to `lower()`: resolve `$ctx` against the live context map; **throw**
-  `UnresolvedContextError` if absent (replaces select's "pending → exec null").
-- Update `exec()` pending-guard accordingly.
+- Define one context-ref JSON kind `{$ctx: name}` usable in **every** reference position:
+  - **subject**: `SelectQueryJSON.subject` and mutation `targetId`/ids;
+  - **where-args**: extend `serializeQueryArg`/`deserializeQueryArg`;
+  - **mutation values**: extend `encodeValue`/`decodeValue` (`MutationValueJSON`).
+- Stop eager-resolving in `toJSON`; always emit the `$ctx` ref for a `PendingQueryContext`.
+- `UpdateBuilder.for(ctx)` / `DeleteBuilder` accept `PendingQueryContext` (mutation parity);
+  store + serialize identically to select.
+- Resolution moves into `lower()`: resolve every `$ctx` against the live context map; **throw**
+  `UnresolvedContextError` if any is absent (replaces select's current "pending → exec null").
+  Update `exec()` pending-guards accordingly.
 
 Validation:
-- `src/tests/query-context-json.test.ts`: ctx-ref survives `toJSON↔fromJSON`; `lower()`
-  yields concrete-subject IR when context set; throws `UnresolvedContextError` when unset;
-  identical behavior for `Person.update(...).for(ctx)` and delete.
-
-### Phase 6b — context refs in where-args & mutation values  (after 6a)
-Tasks:
-- Extend `serializeQueryArg`/`deserializeQueryArg` (where-args) and `encodeValue`/`decodeValue`
-  (mutation values) with the `{$ctx}` kind. Lower resolves them in-place; throw if unresolved.
-Validation:
-- Extend `query-context-json.test.ts`: `.where(p => p.owner.equals(getQueryContext('me')))`
-  and `Person.update({owner: getQueryContext('me')}).for(id)` round-trip and resolve/throw.
+- `src/tests/query-context-json.test.ts` — for subject, where-arg, and mutation-value
+  positions, across select + update + delete: (a) `$ctx` survives `toJSON↔fromJSON`;
+  (b) `lower()` produces concrete-id IR when the context is set; (c) `lower()` throws
+  `UnresolvedContextError` when unset. Cases incl.
+  `.where(p => p.owner.equals(getQueryContext('me')))` and
+  `Person.update({owner: getQueryContext('me')}).for(ctx)`.
 
 ## Phase 7 — Tree-shaking  (after P1,P2)
 Tasks:
