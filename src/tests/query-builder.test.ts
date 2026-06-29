@@ -7,6 +7,7 @@ import {UpdateBuilder} from '../queries/UpdateBuilder';
 import {walkPropertyPath} from '../queries/PropertyPath';
 import {FieldSet} from '../queries/FieldSet';
 import {setQueryContext, getQueryContext, PendingQueryContext} from '../queries/QueryContext';
+import {lower} from '../queries/lower';
 
 const personShape = Person.shape;
 
@@ -43,8 +44,8 @@ describe('QueryBuilder — immutability', () => {
     const b3 = b1.limit(10);
     expect(b2).not.toBe(b3);
     // b2 and b3 should produce different IRs since they have different limits
-    const ir2 = b2.build();
-    const ir3 = b3.build();
+    const ir2 = lower(b2);
+    const ir3 = lower(b3);
     expect(ir2.limit).toBe(5);
     expect(ir3.limit).toBe(10);
   });
@@ -75,7 +76,7 @@ describe('QueryBuilder — immutability', () => {
 describe('QueryBuilder — IR equivalence with DSL', () => {
   test('selectName', async () => {
     const dslIR = await captureDslIR(() => Person.select((p) => p.name));
-    const builderIR = QueryBuilder.from(Person).select((p) => p.name).build();
+    const builderIR = lower(QueryBuilder.from(Person).select((p) => p.name));
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -83,9 +84,9 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => [p.name, p.friends, p.bestFriend.name]),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => [p.name, p.friends, p.bestFriend.name])
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -93,9 +94,9 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => p.friends.name),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.friends.name)
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -103,9 +104,9 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => p.friends.bestFriend.bestFriend.name),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.friends.bestFriend.bestFriend.name)
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -113,9 +114,9 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => p.friends.where((f) => f.name.equals('Moa'))),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.friends.where((f) => f.name.equals('Moa')))
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -127,13 +128,13 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
         ),
       ),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) =>
         p.friends.where((f) =>
           f.name.equals('Moa').and(f.hobby.equals('Jogging')),
         ),
       )
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -141,10 +142,10 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => p.name).for(entity('p1')),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.name)
       .for(entity('p1'))
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -154,11 +155,11 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
         .where((p) => p.name.equals('Semmy').or(p.name.equals('Moa')))
         .limit(1),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.name)
       .where((p) => p.name.equals('Semmy').or(p.name.equals('Moa')))
       .limit(1)
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -166,10 +167,10 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => p.name).orderBy((p) => p.name),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.name)
       .orderBy((p) => p.name)
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -177,9 +178,9 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => p.friends.size()),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.friends.size())
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -189,17 +190,17 @@ describe('QueryBuilder — IR equivalence with DSL', () => {
         p.friends.select((f) => ({name: f.name, hobby: f.hobby})),
       ),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) =>
         p.friends.select((f) => ({name: f.name, hobby: f.hobby})),
       )
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
   test('selectAllProperties', async () => {
     const dslIR = await captureDslIR(() => Person.selectAll());
-    const builderIR = QueryBuilder.from(Person).selectAll().build();
+    const builderIR = lower(QueryBuilder.from(Person).selectAll());
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 });
@@ -249,14 +250,14 @@ describe('walkPropertyPath', () => {
 
 describe('QueryBuilder — shape resolution', () => {
   test('from() with shape class', () => {
-    const ir = QueryBuilder.from(Person).select((p) => p.name).build();
+    const ir = lower(QueryBuilder.from(Person).select((p) => p.name));
     expect(ir.kind).toBe('select');
     expect(ir.root.kind).toBe('shape_scan');
   });
 
   test('from() with string IRI', () => {
     const shapeId = personShape.id;
-    const ir = QueryBuilder.from(shapeId).select((p: any) => p.name).build();
+    const ir = lower(QueryBuilder.from(shapeId).select((p: any) => p.name));
     expect(ir.kind).toBe('select');
   });
 });
@@ -298,10 +299,10 @@ describe('QueryBuilder — preload', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => [p.name, p.bestFriend.preloadFor(componentLike)]),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .preload('bestFriend', componentLike)
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -309,10 +310,10 @@ describe('QueryBuilder — preload', () => {
     const componentFieldSet = FieldSet.for(personShape, ['name']);
     const componentLikeFieldSet = {query: componentFieldSet, fields: componentFieldSet};
 
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .preload('bestFriend', componentLikeFieldSet)
-      .build();
+      );
     expect(builderIR.kind).toBe('select');
     // Should have the base 'name' projection + at least one preload projection
     expect(builderIR.projection.length).toBeGreaterThanOrEqual(2);
@@ -354,40 +355,40 @@ describe('QueryBuilder — preload', () => {
 
 describe('QueryBuilder — forAll', () => {
   test('forAll([id1, id2]) produces IR with subjectIds', () => {
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .forAll([`${tmpEntityBase}p1`, `${tmpEntityBase}p2`])
-      .build();
+      );
     expect(ir.subjectIds).toHaveLength(2);
     expect(ir.subjectIds).toContain(`${tmpEntityBase}p1`);
     expect(ir.subjectIds).toContain(`${tmpEntityBase}p2`);
   });
 
   test('forAll() without IDs produces no subject filter', () => {
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .forAll()
-      .build();
+      );
     expect(ir.subjectId).toBeUndefined();
     expect(ir.subjectIds).toBeUndefined();
   });
 
   test('for(id) after forAll(ids) clears multi-subject', () => {
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .forAll([`${tmpEntityBase}p1`, `${tmpEntityBase}p2`])
       .for(`${tmpEntityBase}p3`)
-      .build();
+      );
     expect(ir.subjectId).toBe(`${tmpEntityBase}p3`);
     expect(ir.subjectIds).toBeUndefined();
   });
 
   test('forAll(ids) after for(id) clears single subject', () => {
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .for(`${tmpEntityBase}p1`)
       .forAll([`${tmpEntityBase}p2`, `${tmpEntityBase}p3`])
-      .build();
+      );
     expect(ir.subjectId).toBeUndefined();
     expect(ir.subjectIds).toHaveLength(2);
   });
@@ -397,14 +398,14 @@ describe('QueryBuilder — forAll', () => {
     const withForAll = base.forAll([`${tmpEntityBase}p1`]);
     expect(base).not.toBe(withForAll);
     // Original has no subjects
-    expect(base.build().subjectIds).toBeUndefined();
+    expect(lower(base).subjectIds).toBeUndefined();
   });
 
   test('forAll accepts {id} references', () => {
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .forAll([{id: `${tmpEntityBase}p1`}, `${tmpEntityBase}p2`])
-      .build();
+      );
     expect(ir.subjectIds).toHaveLength(2);
     expect(ir.subjectIds).toContain(`${tmpEntityBase}p1`);
     expect(ir.subjectIds).toContain(`${tmpEntityBase}p2`);
@@ -419,57 +420,57 @@ describe('QueryBuilder — forAll', () => {
 describe('QueryBuilder — direct IR generation', () => {
   test('FieldSet select produces same IR as callback select', () => {
     const fs = FieldSet.for(Person, ['name', 'hobby']);
-    const fieldSetIR = QueryBuilder.from(Person).select(fs).build();
-    const callbackIR = QueryBuilder.from(Person).select((p) => [p.name, p.hobby]).build();
+    const fieldSetIR = lower(QueryBuilder.from(Person).select(fs));
+    const callbackIR = lower(QueryBuilder.from(Person).select((p) => [p.name, p.hobby]));
     expect(sanitize(fieldSetIR)).toEqual(sanitize(callbackIR));
   });
 
   test('FieldSet select with where produces same IR as callback', () => {
     const fs = FieldSet.for(Person, ['name']);
-    const fieldSetIR = QueryBuilder.from(Person)
+    const fieldSetIR = lower(QueryBuilder.from(Person)
       .select(fs)
       .where((p) => p.name.equals('Semmy'))
-      .build();
-    const callbackIR = QueryBuilder.from(Person)
+      );
+    const callbackIR = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.name.equals('Semmy'))
-      .build();
+      );
     expect(sanitize(fieldSetIR)).toEqual(sanitize(callbackIR));
   });
 
   test('FieldSet select with orderBy produces same IR as callback', () => {
     const fs = FieldSet.for(Person, ['name']);
-    const fieldSetIR = QueryBuilder.from(Person)
+    const fieldSetIR = lower(QueryBuilder.from(Person)
       .select(fs)
       .orderBy((p) => p.name, 'DESC')
-      .build();
-    const callbackIR = QueryBuilder.from(Person)
+      );
+    const callbackIR = lower(QueryBuilder.from(Person)
       .select((p) => [p.name])
       .orderBy((p) => p.name, 'DESC')
-      .build();
+      );
     expect(sanitize(fieldSetIR)).toEqual(sanitize(callbackIR));
   });
 
   test('selectAll uses direct path (no buildFactory)', () => {
-    const ir = QueryBuilder.from(Person).selectAll().limit(5).build();
+    const ir = lower(QueryBuilder.from(Person).selectAll().limit(5));
     expect(ir.projection.length).toBeGreaterThan(0);
     expect(ir.limit).toBe(5);
   });
 
   test('label-based select uses direct path', () => {
-    const ir = QueryBuilder.from(Person).select(['name', 'hobby']).limit(10).build();
+    const ir = lower(QueryBuilder.from(Person).select(['name', 'hobby']).limit(10));
     expect(ir.projection.length).toBe(2);
     expect(ir.limit).toBe(10);
   });
 
   test('direct path handles where + limit + offset', () => {
     const fs = FieldSet.for(Person, ['name']);
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select(fs)
       .where((p) => p.name.equals('Semmy'))
       .limit(5)
       .offset(10)
-      .build();
+      );
     expect(ir.where).toBeDefined();
     expect(ir.limit).toBe(5);
     expect(ir.offset).toBe(10);
@@ -477,19 +478,19 @@ describe('QueryBuilder — direct IR generation', () => {
 
   test('direct path handles forAll + subjects', () => {
     const fs = FieldSet.for(Person, ['name']);
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select(fs)
       .forAll([`${tmpEntityBase}p1`, `${tmpEntityBase}p2`])
-      .build();
+      );
     expect(ir.subjectIds).toHaveLength(2);
   });
 
   test('direct path handles for (single subject)', () => {
     const fs = FieldSet.for(Person, ['name']);
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select(fs)
       .for({id: `${tmpEntityBase}p1`})
-      .build();
+      );
     expect(ir.subjectId).toBe(`${tmpEntityBase}p1`);
     expect(ir.singleResult).toBe(true);
   });
@@ -498,9 +499,9 @@ describe('QueryBuilder — direct IR generation', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => ({isBestFriend: p.bestFriend.equals({id: `${tmpEntityBase}p3`})})),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => ({isBestFriend: p.bestFriend.equals({id: `${tmpEntityBase}p3`})}))
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -508,9 +509,9 @@ describe('QueryBuilder — direct IR generation', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => p.friends.select((f) => [f.name, f.hobby])),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.friends.select((f: any) => [f.name, f.hobby]))
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 });
@@ -521,44 +522,44 @@ describe('QueryBuilder — direct IR generation', () => {
 
 describe('Shape.select().for() / .forAll() chaining', () => {
   test('Person.select(callback).for(id) produces single-result IR', () => {
-    const ir = Person.select((p) => p.name).for(entity('p1')).build();
+    const ir = lower(Person.select((p) => p.name).for(entity('p1')));
     expect(ir.subjectId).toBe(entity('p1').id);
     expect(ir.singleResult).toBe(true);
   });
 
   test('Person.select(callback).for(string) accepts string id', () => {
-    const ir = Person.select((p) => p.name).for(`${tmpEntityBase}p1`).build();
+    const ir = lower(Person.select((p) => p.name).for(`${tmpEntityBase}p1`));
     expect(ir.subjectId).toBe(`${tmpEntityBase}p1`);
     expect(ir.singleResult).toBe(true);
   });
 
   test('Person.select().for(id) with no callback selects nothing', () => {
-    const ir = Person.select().for(entity('p1')).build();
+    const ir = lower(Person.select().for(entity('p1')));
     expect(ir.subjectId).toBe(entity('p1').id);
     expect(ir.singleResult).toBe(true);
   });
 
   test('Person.selectAll().for(id) selects all fields for a single entity', () => {
-    const ir = Person.selectAll().for(entity('p1')).build();
+    const ir = lower(Person.selectAll().for(entity('p1')));
     expect(ir.subjectId).toBe(entity('p1').id);
     expect(ir.singleResult).toBe(true);
     expect(ir.projection.length).toBeGreaterThan(0);
   });
 
   test('.for(id) produces same IR as old select(id, callback)', async () => {
-    const newIR = Person.select((p) => p.name).for(entity('p1')).build();
-    const builderIR = QueryBuilder.from(Person)
+    const newIR = lower(Person.select((p) => p.name).for(entity('p1')));
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => p.name)
       .for(entity('p1'))
-      .build();
+      );
     expect(sanitize(newIR)).toEqual(sanitize(builderIR));
   });
 
   test('.forAll(ids) targets multiple entities', () => {
-    const ir = QueryBuilder.from(Person)
+    const ir = lower(QueryBuilder.from(Person)
       .select((p) => p.name)
       .forAll([entity('p1'), entity('p2')])
-      .build();
+      );
     expect(ir.subjectIds).toEqual([entity('p1').id, entity('p2').id]);
     expect(ir.singleResult).toBeFalsy();
   });
@@ -573,9 +574,9 @@ describe('QueryBuilder — expression equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => ({nameLen: (p.name as any).strlen()})),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => ({nameLen: (p.name as any).strlen()}))
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -583,10 +584,10 @@ describe('QueryBuilder — expression equivalence with DSL', () => {
     const dslIR = await captureDslIR(() =>
       Person.select((p) => ({name: p.name})).where(((p: any) => p.name.strlen().gt(5)) as any),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => ({name: p.name}))
       .where(((p: any) => p.name.strlen().gt(5)) as any)
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -596,10 +597,10 @@ describe('QueryBuilder — expression equivalence with DSL', () => {
         p.name.equals('Bob').and((p.name as any).strlen().gt(3)),
       ),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => ({name: p.name}))
       .where((p) => p.name.equals('Bob').and((p.name as any).strlen().gt(3)))
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -610,13 +611,13 @@ describe('QueryBuilder — expression equivalence with DSL', () => {
         nameLen: (p.name as any).strlen(),
       })).where(((p: any) => p.name.strlen().gt(2)) as any),
     );
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select((p) => ({
         name: p.name,
         nameLen: (p.name as any).strlen(),
       }))
       .where(((p: any) => p.name.strlen().gt(2)) as any)
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 });
@@ -627,27 +628,27 @@ describe('QueryBuilder — expression equivalence with DSL', () => {
 
 describe('Person.update(data).for(id) chaining', () => {
   test('Person.update(data).for(id) produces correct IR', () => {
-    const ir = Person.update({hobby: 'Chess'}).for(entity('p1')).build();
+    const ir = lower(Person.update({hobby: 'Chess'}).for(entity('p1')));
     expect(ir).toBeDefined();
   });
 
   test('UpdateBuilder.from().for(id).set(data) produces same IR as update(data).for(id)', () => {
-    const ir1 = Person.update({hobby: 'Chess'}).for(entity('p1')).build();
-    const ir2 = UpdateBuilder.from(Person).for(entity('p1')).set({hobby: 'Chess'}).build();
+    const ir1 = lower(Person.update({hobby: 'Chess'}).for(entity('p1')));
+    const ir2 = lower(UpdateBuilder.from(Person).for(entity('p1')).set({hobby: 'Chess'}));
     expect(sanitize(ir1)).toEqual(sanitize(ir2));
   });
 
   test('Person.update(data).for(string) accepts string id', () => {
-    const ir = Person.update({hobby: 'Chess'}).for(`${tmpEntityBase}p1`).build();
+    const ir = lower(Person.update({hobby: 'Chess'}).for(`${tmpEntityBase}p1`));
     expect(ir).toBeDefined();
   });
 
   test('UpdateBuilder.from(Person).for(id).set(data) matches Person.update(data).for(id)', () => {
-    const dslIR = Person.update({hobby: 'Chess'}).for(entity('p1')).build();
-    const builderIR = UpdateBuilder.from(Person)
+    const dslIR = lower(Person.update({hobby: 'Chess'}).for(entity('p1')));
+    const builderIR = lower(UpdateBuilder.from(Person)
       .for(entity('p1'))
       .set({hobby: 'Chess'})
-      .build();
+      );
     expect(sanitize(dslIR)).toEqual(sanitize(builderIR));
   });
 });

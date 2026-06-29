@@ -14,6 +14,7 @@ import {
 import { buildSelectQuery } from "../queries/IRPipeline";
 import type { IRSelectQuery } from "../queries/IntermediateRepresentation";
 import { setQueryContext } from "../queries/QueryContext";
+import {lower} from '../queries/lower';
 
 setQueryContext("user", { id: "user-1" }, Person);
 
@@ -737,7 +738,7 @@ describe("IR pipeline behavior", () => {
       p.name.equals("Semmy")
     );
 
-    const ir = query.build();
+    const ir = lower(query);
 
     expect(ir.kind).toBe("select");
     expect(ir.projection.length).toBe(1);
@@ -746,7 +747,7 @@ describe("IR pipeline behavior", () => {
 
   test("builder accepts already-lowered IR as pass-through", async () => {
     const query = Person.select((p) => p.name);
-    const ir = query.build();
+    const ir = lower(query);
 
     expect(buildSelectQuery(ir)).toBe(ir);
   });

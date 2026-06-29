@@ -3,7 +3,6 @@ import {resolveShape} from './resolveShape.js';
 import {DeleteQueryFactory, type DeleteQuery, type IRDeleteQuery, type DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {lower} from './lower.js';
 import {WIRE_VERSION} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
@@ -125,10 +124,6 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     return this._shape.shape;
   }
 
-  /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
-  build(): IRDeleteQuery {
-    return lower(this);
-  }
 
   /** @internal Build the canonical IR. Consumed by `lower()`. */
   _toIR(): IRDeleteQuery {

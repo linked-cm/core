@@ -3,7 +3,6 @@ import {resolveShape} from './resolveShape.js';
 import type {UpdatePartial} from './QueryFactory.js';
 import {CreateQueryFactory, type CreateQuery, type IRCreateQuery, type CreateResponse} from './CreateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {lower} from './lower.js';
 import {WIRE_VERSION} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {encodeNodeData, decodeNodeDataToRaw, type CreateMutationJSON} from './MutationSerialization.js';
@@ -94,16 +93,12 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     return this._shape.shape;
   }
 
-  /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
-  build(): IRCreateQuery {
-    return lower(this);
-  }
 
   /** @internal Build the canonical IR. Consumed by `lower()`. Throws if no data was set. */
   _toIR(): IRCreateQuery {
     if (!this._data) {
       throw new Error(
-        'CreateBuilder requires .set(data) before .build(). Specify what to create.',
+        'CreateBuilder requires .set(data) before it can be lowered. Specify what to create.',
       );
     }
     const data = this._data;
@@ -139,7 +134,7 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
 
   /**
    * Serialize this create mutation to lightweight DSL-JSON. Evaluates the create
-   * data through the factory (same conversion `build()` runs) so the result is
+   * data through the factory (the same conversion `lower()` runs) so the result is
    * concrete and JSON-safe, then encodes the normalized node description.
    */
   toJSON(): CreateMutationJSON {

@@ -3,7 +3,6 @@ import {resolveShape} from './resolveShape.js';
 import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
 import {UpdateQueryFactory, type UpdateQuery, type IRUpdateQuery} from './UpdateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {lower} from './lower.js';
 import {WIRE_VERSION} from './wireVersion.js';
 import {PendingQueryContext, getQueryContext, UnresolvedContextError} from './QueryContext.js';
 import type {NodeShape} from '../shapes/SHACL.js';
@@ -148,16 +147,12 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     return this._shape.shape;
   }
 
-  /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
-  build(): IRUpdateQuery {
-    return lower(this);
-  }
 
   /** @internal Build the canonical IR. Consumed by `lower()`. */
   _toIR(): IRUpdateQuery {
     if (!this._data) {
       throw new Error(
-        'UpdateBuilder requires .set(data) before .build(). Specify what to update.',
+        'UpdateBuilder requires .set(data) before it can be lowered. Specify what to update.',
       );
     }
 
@@ -183,7 +178,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
         throw new UnresolvedContextError(this._targetContextName);
       }
       throw new Error(
-        'UpdateBuilder requires .for(id), .forAll(), or .where() before .build().',
+        'UpdateBuilder requires .for(id), .forAll(), or .where() before it can be lowered.',
       );
     }
     const factory = new UpdateQueryFactory<S, UpdatePartial<S>>(

@@ -11,11 +11,11 @@ import {fromJSON} from '../queries/fromJSON';
 /**
  * Round-trip proof: for every mutation feature, serializing the builder to
  * DSL-JSON, passing it "over the wire" (stringify+parse), and lowering it back
- * must reproduce the exact IR the builder's own `build()` produces.
+ * must reproduce the exact IR that `lower()` produces from the builder.
  */
 const roundTripsToSameIR = (builder: any) => {
   const wire = JSON.parse(JSON.stringify(builder.toJSON()));
-  expect(sanitize(lowerMutationJSON(wire))).toEqual(sanitize(builder.build()));
+  expect(sanitize(lowerMutationJSON(wire))).toEqual(sanitize(lower(builder)));
 };
 
 const check = (label: string, makeBuilder: () => any) =>
@@ -84,7 +84,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
     const builder = Person.update((p: any) => ({
       hobby: p.bestFriend.name.concat('!'),
     })).for(entity('p1'));
-    const built: any = builder.build();
+    const built: any = lower(builder);
     // Sanity: this scenario actually exercises the traversalPatterns path.
     expect(Array.isArray(built.traversalPatterns)).toBe(true);
     const lowered: any = lowerMutationJSON(

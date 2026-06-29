@@ -4,6 +4,7 @@ import {sanitize} from '../test-helpers/test-utils';
 import {FieldSet} from '../queries/FieldSet';
 import {QueryBuilder} from '../queries/QueryBuilder';
 import type {QueryBuilderJSON} from '../queries/QueryBuilder';
+import {lower} from '../queries/lower';
 
 const personShape = Person.shape;
 
@@ -119,8 +120,8 @@ describe('QueryBuilder — serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    const originalIR = original.build();
-    const restoredIR = restored.build();
+    const originalIR = lower(original);
+    const restoredIR = lower(restored);
     expect(sanitize(restoredIR)).toEqual(sanitize(originalIR));
   });
 
@@ -132,8 +133,8 @@ describe('QueryBuilder — serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    const originalIR = original.build();
-    const restoredIR = restored.build();
+    const originalIR = lower(original);
+    const restoredIR = lower(restored);
     expect(sanitize(restoredIR)).toEqual(sanitize(originalIR));
   });
 
@@ -152,7 +153,7 @@ describe('QueryBuilder — serialization', () => {
       offset: 10,
     };
     const builder = QueryBuilder.fromJSON(json);
-    const ir = builder.build();
+    const ir = lower(builder);
     expect(ir.limit).toBe(5);
     expect(ir.offset).toBe(10);
   });
@@ -176,8 +177,8 @@ describe('QueryBuilder — serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    const originalIR = original.build();
-    const restoredIR = restored.build();
+    const originalIR = lower(original);
+    const restoredIR = lower(restored);
     expect(sanitize(restoredIR)).toEqual(sanitize(originalIR));
   });
 
@@ -219,7 +220,7 @@ describe('QueryBuilder — serialization', () => {
     expect(json.fields).toHaveLength(2);
     expect(json.fields![0].path).toBe('name');
     expect(json.fields![1].path).toBe('hobby');
-    expect(restored.build().limit).toBe(10);
+    expect(lower(restored).limit).toBe(10);
   });
 
   test('fromJSON — orderDirection preserved', () => {
@@ -296,7 +297,7 @@ describe('QueryBuilder — where clause serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 
   test('round-trip — where with nodeRef produces same IR', () => {
@@ -307,7 +308,7 @@ describe('QueryBuilder — where clause serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 
   test('round-trip — where AND produces same IR', () => {
@@ -318,7 +319,7 @@ describe('QueryBuilder — where clause serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 
   test('round-trip — nested where path produces same IR', () => {
@@ -329,7 +330,7 @@ describe('QueryBuilder — where clause serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 
   test('round-trip — where + limit + one produces same IR', () => {
@@ -341,7 +342,7 @@ describe('QueryBuilder — where clause serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 });
 
@@ -369,7 +370,7 @@ describe('QueryBuilder — sort key serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 });
 
@@ -408,7 +409,7 @@ describe('QueryBuilder — minus entry serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 
   test('round-trip — minus with where produces same IR', () => {
@@ -419,7 +420,7 @@ describe('QueryBuilder — minus entry serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 });
 
@@ -464,7 +465,7 @@ describe('QueryBuilder — complex round-trip', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 
   test('round-trip — JSON string serialization', () => {
@@ -477,7 +478,7 @@ describe('QueryBuilder — complex round-trip', () => {
     const parsed = JSON.parse(jsonString);
     const restored = QueryBuilder.fromJSON(parsed);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 });
 
@@ -510,7 +511,7 @@ describe('QueryBuilder — preload serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 
   test('round-trip — preload with FieldSet component', () => {
@@ -524,6 +525,6 @@ describe('QueryBuilder — preload serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
-    expect(sanitize(restored.build())).toEqual(sanitize(original.build()));
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 });

@@ -13,10 +13,8 @@ import {
 } from './SelectQuery.js';
 import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
-import {lower} from './lower.js';
 import {WIRE_VERSION} from './wireVersion.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import type {IRSelectQuery} from './IntermediateRepresentation.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
@@ -639,10 +637,6 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     return this._shape.shape;
   }
 
-  /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
-  build(): IRSelectQuery {
-    return lower(this);
-  }
 
   /** Execute the query and return results. */
   exec(): Promise<Result> {
