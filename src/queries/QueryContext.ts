@@ -16,6 +16,22 @@ export class PendingQueryContext {
   }
 }
 
+/**
+ * Thrown when a query carrying a context reference is lowered but the context
+ * isn't set in the current process. A context ref is carried in DSL-JSON and
+ * resolves at lowering time against whatever context map is available (e.g.
+ * server-side auth); if it can't resolve, lowering throws this rather than
+ * silently producing a subject-less query.
+ */
+export class UnresolvedContextError extends Error {
+  constructor(public readonly contextName: string) {
+    super(
+      `Query context "${contextName}" is not set and could not be resolved at lowering time.`,
+    );
+    this.name = 'UnresolvedContextError';
+  }
+}
+
 export function getQueryContext<T extends Shape>(name: string): QShape<T> {
   if (queryContext.has(name)) {
     return queryContext.get(name);

@@ -369,3 +369,17 @@ Validation:
   (`WIRE_VERSION='1.0'` + `assertWireVersion`). Every `toJSON` envelope (select + mutations)
   now carries `v:'1.0'`; the kind-detecting `fromJSON` rejects an unknown major (missing `v`
   tolerated). Full suite 1181 passing.
+
+- **Phase 6 — PARTIAL (mutation subject-context parity).** Added `UnresolvedContextError`
+  (`QueryContext.ts`). `UpdateBuilder.for()` now accepts a `PendingQueryContext`; the context
+  ref is carried in DSL-JSON as `targetContext` (round-trips via toJSON/fromJSON) and is
+  **resolved at lowering time** against the live context map — throwing `UnresolvedContextError`
+  if unset (the "resolve-at-lower / throw" semantics, for mutations). Full suite 1182 passing.
+  - **DEFERRED (remaining Phase 6 scope):** context refs in **where-args** and **mutation
+    field-values**; **delete-by-context**; and unifying **select** subject-context to the same
+    resolve-at-lower-throw semantics (select currently keeps its existing `pendingContextName`
+    + silent-null behavior). These are a larger, cohesive pass best done together.
+- **Phase 7 — DEFERRED (gated).** A safe `sideEffects` flag needs an exhaustive import-side-effect
+  audit (ontologies/expressions have module-level statements), and the actual tree-shaking win
+  is **blocked until `build()` is removed** (the IR pipeline stays reachable from every builder
+  via the deprecated `build()`). Best done together with the `build()` removal at wrapup.

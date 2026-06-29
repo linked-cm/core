@@ -5,6 +5,7 @@ import {UpdateQueryFactory, type UpdateQuery, type IRUpdateQuery} from './Update
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
 import {WIRE_VERSION} from './wireVersion.js';
+import {PendingQueryContext, getQueryContext, UnresolvedContextError} from './QueryContext.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import {buildCanonicalUpdateWhereMutationIR} from './IRMutation.js';
@@ -28,6 +29,8 @@ interface UpdateBuilderInit<S extends Shape> {
   whereFn?: WhereClause<S>;
   /** A pre-resolved where path (used by fromJSON; no live callback). */
   where?: WherePath;
+  /** A query-context name used as the target subject (resolved at lowering). */
+  targetContextName?: string;
 }
 
 /**
@@ -52,6 +55,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   private readonly _mode?: UpdateMode;
   private readonly _whereFn?: WhereClause<S>;
   private readonly _where?: WherePath;
+  private readonly _targetContextName?: string;
 
   private constructor(init: UpdateBuilderInit<S>) {
     this._shape = init.shape;
@@ -60,6 +64,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     this._mode = init.mode;
     this._whereFn = init.whereFn;
     this._where = init.where;
+    this._targetContextName = init.targetContextName;
   }
 
   private clone(overrides: Partial<UpdateBuilderInit<S>> = {}): UpdateBuilder<S, any, any> {
@@ -70,6 +75,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       mode: this._mode,
       whereFn: this._whereFn,
       where: this._where,
+      targetContextName: this._targetContextName,
       ...overrides,
     });
   }
@@ -88,6 +94,9 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     const resolved = resolveShape(json.shape);
     const data = decodeNodeDataToRaw(json.data) as any;
     if (json.mode === 'for') {
+      if (json.targetContext) {
+        return new UpdateBuilder({shape: resolved, data, targetContextName: json.targetContext, mode: 'for'});
+      }
       return new UpdateBuilder({shape: resolved, data, targetId: json.targetId, mode: 'for'});
     }
     if (json.mode === 'forAll') {
@@ -102,7 +111,10 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   // ---------------------------------------------------------------------------
 
   /** Target a specific entity by ID. */
-  for(id: string | NodeReferenceValue): UpdateBuilder<S, U, AddId<U>> {
+  for(id: string | NodeReferenceValue | PendingQueryContext): UpdateBuilder<S, U, AddId<U>> {
+    if (id instanceof PendingQueryContext) {
+      return this.clone({targetContextName: id.contextName, targetId: undefined, mode: 'for'}) as unknown as UpdateBuilder<S, U, AddId<U>>;
+    }
     const resolvedId = typeof id === 'string' ? id : id.id;
     return this.clone({targetId: resolvedId, mode: 'for'}) as unknown as UpdateBuilder<S, U, AddId<U>>;
   }
@@ -164,18 +176,29 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       return this.buildUpdateWhere();
     }
 
-    // Default: ID-based update
-    if (!this._targetId) {
+    // Default: ID-based update (target id may come from a query context)
+    const targetId = this._resolveTargetId();
+    if (!targetId) {
+      if (this._targetContextName) {
+        throw new UnresolvedContextError(this._targetContextName);
+      }
       throw new Error(
         'UpdateBuilder requires .for(id), .forAll(), or .where() before .build().',
       );
     }
     const factory = new UpdateQueryFactory<S, UpdatePartial<S>>(
       this._shape,
-      this._targetId,
+      targetId,
       this._data,
     );
     return factory.build();
+  }
+
+  /** Resolve the target id from an explicit id or a query-context reference. */
+  private _resolveTargetId(): string | undefined {
+    if (this._targetId) return this._targetId;
+    if (this._targetContextName) return getQueryContext(this._targetContextName)?.id;
+    return undefined;
   }
 
   private buildUpdateWhere(): IRUpdateQuery {
@@ -234,7 +257,10 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       mode,
       data: encodeNodeData(factory.fields),
     };
-    if (mode === 'for') json.targetId = this._targetId;
+    if (mode === 'for') {
+      if (this._targetContextName) json.targetContext = this._targetContextName;
+      else json.targetId = this._targetId;
+    }
     if (mode === 'where') {
       const wherePath = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
       if (!wherePath) {

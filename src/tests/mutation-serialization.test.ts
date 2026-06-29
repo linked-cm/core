@@ -133,6 +133,36 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
     );
   });
 
+  describe('query context as target subject (phase 6 — mutation parity)', () => {
+    const {
+      getQueryContext,
+      setQueryContext,
+      UnresolvedContextError,
+    } = require('../queries/QueryContext');
+
+    test('update .for(context) round-trips and resolves at lower (or throws)', () => {
+      setQueryContext('ctx-x', undefined); // ensure unset
+      const b = UpdateBuilder.from(Person)
+        .set({hobby: 'Gaming'})
+        .for(getQueryContext('ctx-x'));
+
+      const json: any = JSON.parse(JSON.stringify(b.toJSON()));
+      expect(json.targetContext).toBe('ctx-x');
+      expect(json.targetId).toBeUndefined();
+
+      // unresolved → lowering throws
+      expect(() => lower(b as any)).toThrow(UnresolvedContextError);
+      const rebuilt: any = UpdateBuilder.fromJSON(json);
+      expect(() => lower(rebuilt)).toThrow(UnresolvedContextError);
+
+      // set the context → resolves to the concrete id
+      setQueryContext('ctx-x', {id: entity('p1').id}, Person);
+      expect((lower(b as any) as any).id).toBe(entity('p1').id);
+      expect((lower(UpdateBuilder.fromJSON(json)) as any).id).toBe(entity('p1').id);
+      setQueryContext('ctx-x', undefined);
+    });
+  });
+
   test('wire version is stamped and an unknown major is rejected', () => {
     const json: any = queryFactories.createSimple().toJSON();
     expect(json.v).toBe('1.0');

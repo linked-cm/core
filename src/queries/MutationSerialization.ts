@@ -86,6 +86,8 @@ export type UpdateMutationJSON = {
   shape: string;
   mode: 'for' | 'forAll' | 'where';
   targetId?: string;
+  /** A query-context name used as the target subject (resolved at lowering). */
+  targetContext?: string;
   where?: WherePathJSON;
   data: MutationNodeDataJSON;
 };
