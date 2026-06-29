@@ -16,6 +16,7 @@ import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesug
 import {lower} from './lower.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import type {IRSelectQuery} from './IntermediateRepresentation.js';
+import type {NodeShape} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
 import {FieldSet, type FieldSetJSON, type FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
@@ -629,6 +630,11 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   /** Discriminator for the free `lower()` function and dataset routing. */
   readonly __queryKind = 'select' as const;
 
+  /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
+  get shape(): NodeShape {
+    return this._shape.shape;
+  }
+
   /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
   build(): IRSelectQuery {
     return lower(this);
@@ -644,15 +650,8 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       // Pending context hasn't resolved yet — return null rather than querying without a subject.
       return Promise.resolve(null as Result);
     }
-    let query: IRSelectQuery;
-    try {
-      query = this.build();
-    } catch (err) {
-      return Promise.reject(
-        Error(`Error while building query: ${err.stack}.\n\nQuery related to this error: ${JSON.stringify(this.toJSON())}`)
-      );
-    }
-    return getQueryDispatch().selectQuery(query).catch(err => {
+    // Dispatch the live (closed) query; the dataset decides whether to lower it.
+    return getQueryDispatch().selectQuery(this).catch(err => {
       throw Error(`Error while executing query: ${err.stack}.\n\nQuery related to this error: ${JSON.stringify(this.toJSON())}`)
     }) as Promise<Result>;
   }

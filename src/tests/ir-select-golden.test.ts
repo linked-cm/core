@@ -12,7 +12,7 @@ import {
   captureRawQuery,
 } from "../test-helpers/query-capture-store";
 import { buildSelectQuery } from "../queries/IRPipeline";
-import type { SelectQuery } from "../queries/SelectQuery";
+import type { IRSelectQuery } from "../queries/IntermediateRepresentation";
 import { setQueryContext } from "../queries/QueryContext";
 
 setQueryContext("user", { id: "user-1" }, Person);
@@ -33,9 +33,9 @@ const sanitize = (value: unknown): unknown => {
 
 const captureIR = async (
   runner: () => Promise<unknown>
-): Promise<SelectQuery> => {
+): Promise<IRSelectQuery> => {
   const query = await captureQuery(runner);
-  return sanitize(query) as SelectQuery;
+  return sanitize(query) as IRSelectQuery;
 };
 
 type SelectCase = {
@@ -55,7 +55,7 @@ type SelectCase = {
   requiredResultKeys?: string[];
 };
 
-const assertSelectCase = (ir: SelectQuery, testCase: SelectCase) => {
+const assertSelectCase = (ir: IRSelectQuery, testCase: SelectCase) => {
   expect(ir.kind).toBe("select");
   expect(ir.root.kind).toBe("shape_scan");
   expect(ir.root.alias).toBeDefined();

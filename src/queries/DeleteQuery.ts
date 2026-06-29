@@ -7,12 +7,19 @@ import type {
   IRDeleteWhereMutation,
 } from './IntermediateRepresentation.js';
 import {buildCanonicalDeleteMutationIR} from './IRMutation.js';
+import type {NodeShape} from '../shapes/SHACL.js';
+import type {DeleteMutationJSON} from './MutationSerialization.js';
 
 /**
- * The canonical DeleteQuery type — an IR AST node representing a delete mutation.
- * This is the type received by IDataset.deleteQuery().
+ * The closed, read-only delete query a dataset receives (implemented by
+ * `DeleteBuilder`). The IR is `IRDeleteQuery`, produced by `lower(query)`.
  */
-export type DeleteQuery = IRDeleteMutation | IRDeleteAllMutation | IRDeleteWhereMutation;
+export interface DeleteQuery {
+  readonly __queryKind: 'delete';
+  readonly shape: NodeShape;
+  toJSON(): DeleteMutationJSON;
+  _toIR(): IRDeleteQuery;
+}
 
 /** The lowered IR for a delete mutation (what `lower()` produces). */
 export type IRDeleteQuery = IRDeleteMutation | IRDeleteAllMutation | IRDeleteWhereMutation;
@@ -51,7 +58,7 @@ export class DeleteQueryFactory<
     this.ids = this.convertNodeReferences(ids);
   }
 
-  build(): DeleteQuery {
+  build(): IRDeleteQuery {
     return buildCanonicalDeleteMutationIR({
       shape: this.shapeClass.shape,
       ids: this.ids,

@@ -41,7 +41,6 @@ import * as coreOntology from './ontologies/linked-core.js';
 import * as owl from './ontologies/owl.js';
 import * as npm from './ontologies/npm.js';
 import * as Sparql from './sparql/index.js';
-import * as RemoteModule from './remote/index.js';
 import * as MutationSerializationModule from './queries/MutationSerialization.js';
 import * as QueryBuilderModule from './queries/QueryBuilder.js';
 import * as PropertyPathModule from './queries/PropertyPath.js';
@@ -86,15 +85,6 @@ export type {
 // Phase 5 — Component query integration
 export type {LinkedComponentInterface, QueryComponentLike} from './queries/SelectQuery.js';
 
-// Remote datasets — lightweight DSL-JSON over the wire, lowered to IR server-side
-export {RemoteDataset} from './remote/RemoteDataset.js';
-export {toRemoteRequest, type RemoteRequestable} from './remote/RemoteClient.js';
-export type {
-  RemoteRequest,
-  RemoteResponse,
-  RemoteError,
-  RemoteErrorCode,
-} from './remote/RemoteProtocol.js';
 
 // Mutation DSL-JSON serialization (create/update/delete to/from JSON)
 export {
@@ -150,7 +140,6 @@ export function initModularApp() {
     owl,
     npm,
     Sparql,
-    RemoteModule,
     MutationSerializationModule,
     QueryBuilderModule,
     PropertyPathModule,

@@ -9,6 +9,7 @@ import {Shape} from '../shapes/Shape';
 import {literalProperty, objectProperty, NodeShape} from '../shapes/SHACL';
 import {setQueryDispatch} from '../queries/queryDispatch';
 import {syncShapes, syncShape} from '../shapes/syncShapes';
+import {lower} from '../queries/lower';
 import '../shapes/List';
 import '../shapes/PathNode';
 
@@ -51,12 +52,12 @@ function installMock(existingIds: string[]) {
   setQueryDispatch({
     selectQuery: async () => existingIds.map((id) => ({id})) as any,
     createQuery: async (q: any) => {
-      calls.push({kind: 'create', id: q?.data?.id});
+      calls.push({kind: 'create', id: (lower(q) as any)?.data?.id});
       return {} as any;
     },
     updateQuery: async () => ({} as any),
     deleteQuery: async (q: any) => {
-      calls.push({kind: 'delete', id: q?.ids?.[0]?.id});
+      calls.push({kind: 'delete', id: (lower(q) as any)?.ids?.[0]?.id});
       return {deleted: [], count: 0};
     },
   });

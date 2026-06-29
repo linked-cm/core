@@ -336,3 +336,21 @@ Validation:
     reachable from the builders via the deprecated `build()`, so the *full* tree-shaking win
     (Phase 7) is reduced to shedding the SPARQL layer unless `build()` is later removed. The
     free `lower()` is the canonical API going forward.
+
+- **Phase 2 — DONE (3 sub-steps; Phase 3 + the remote deletion folded in).**
+  - 2a: migrated IR-return usages to explicit `IR*Query` names (added `IRCreateQuery`/
+    `IRUpdateQuery`/`IRDeleteQuery`).
+  - 2b: renamed class `QueryBuilder` → `SelectBuilder` (deprecated `QueryBuilder` alias;
+    `SelectBuilder` exported).
+  - 2c: `SelectQuery`/`CreateQuery`/`UpdateQuery`/`DeleteQuery` are now **closed read-only
+    interfaces** the builders implement (`__queryKind`, `shape` getter, `toJSON`,
+    `toRawInput`/`_toIR`); `IDataset` signature unchanged. `exec()` dispatches the builder;
+    `LinkedStorage` routes by `query.shape` (NodeShape) via an extended
+    `resolveDatasetForQueryShape`. **`SparqlDataset` now calls `lower(query)` internally
+    (Phase 3 folded in).** `MutationSerialization.lowerMutationJSON` + the factories return
+    `IR*Query`. **Deleted `src/remote/*` + `remote-dataset.test.ts` (Phase 5 deletion pulled
+    forward to avoid type conflicts); stripped remote exports.**
+  - Test-contract fallout fixed: `query-capture-store` now `lower()`s captured queries;
+    `store-routing`/`core-utils`/`shacl-syncshapes`/`sparql-fuseki`/`ir-select-golden` updated
+    to the builder contract / `IRSelectQuery` typing.
+  - Validation: typecheck 0; full suite **1169 passing**, 0 failing.

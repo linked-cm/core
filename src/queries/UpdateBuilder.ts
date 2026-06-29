@@ -4,6 +4,7 @@ import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory
 import {UpdateQueryFactory, type UpdateQuery, type IRUpdateQuery} from './UpdateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
+import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, processWhereClause} from './SelectQuery.js';
 import {buildCanonicalUpdateWhereMutationIR} from './IRMutation.js';
 import {toWhere} from './IRDesugar.js';
@@ -110,6 +111,11 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   /** Discriminator for the free `lower()` function and dataset routing. */
   readonly __queryKind = 'update' as const;
 
+  /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
+  get shape(): NodeShape {
+    return this._shape.shape;
+  }
+
   /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
   build(): IRUpdateQuery {
     return lower(this);
@@ -152,7 +158,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     return factory.build();
   }
 
-  private buildUpdateWhere(): UpdateQuery {
+  private buildUpdateWhere(): IRUpdateQuery {
     const factory = new UpdateQueryFactory<S, UpdatePartial<S>>(
       this._shape,
       '__placeholder__', // not used for where/forAll
@@ -220,9 +226,9 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   exec(): Promise<R> {
     const mode = this._mode || (this._targetId ? 'for' : undefined);
     if (mode === 'forAll' || mode === 'where') {
-      return getQueryDispatch().updateQuery(this.build()).then(() => undefined) as Promise<R>;
+      return getQueryDispatch().updateQuery(this).then(() => undefined) as Promise<R>;
     }
-    return getQueryDispatch().updateQuery(this.build()) as Promise<R>;
+    return getQueryDispatch().updateQuery(this) as Promise<R>;
   }
 
   // ---------------------------------------------------------------------------

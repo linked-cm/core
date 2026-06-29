@@ -163,18 +163,12 @@ describe('LinkedStorage extra behaviors', () => {
   test('selectQuery rejects invalid query payloads before store resolution', async () => {
     await expect(
       LinkedStorage.selectQuery({shape: null} as any),
-    ).rejects.toThrow('Invalid select query passed to LinkedStorage.selectQuery(): missing root');
+    ).rejects.toThrow('Invalid select query passed to LinkedStorage.selectQuery(): missing shape');
   });
 
   test('selectQuery still reports missing store for valid query shapes', async () => {
     await expect(
-      LinkedStorage.selectQuery({
-        kind: 'select',
-        root: {kind: 'shape_scan', shape: BaseShape.shape.id, alias: 'a0'},
-        patterns: [],
-        projection: [],
-        resultMap: [],
-      } as any),
+      LinkedStorage.selectQuery({shape: {id: BaseShape.shape.id}} as any),
     ).rejects.toThrow('No query dataset configured');
   });
 });
@@ -220,11 +214,10 @@ describe('Query dispatch delegation', () => {
 
     const dispatch = getQueryDispatch();
     const query = ContextPerson.select((p) => p.name);
-    const result = await dispatch.selectQuery(query.build());
+    const result = await dispatch.selectQuery(query as any);
 
     expect(store.selectQuery).toHaveBeenCalledTimes(1);
-    expect(store.selectQuery.mock.calls[0][0]?.kind).toBe('select');
-    expect(store.selectQuery.mock.calls[0][0]?.root?.kind).toBe('shape_scan');
+    expect(store.selectQuery.mock.calls[0][0]?.__queryKind).toBe('select');
     expect(result).toEqual([{id: 'r1'}]);
   });
 
@@ -239,7 +232,7 @@ describe('Query dispatch delegation', () => {
 
     await ContextPerson.select((p) => p.name);
     expect(store.selectQuery).toHaveBeenCalledTimes(1);
-    expect(store.selectQuery.mock.calls[0][0]?.kind).toBe('select');
+    expect(store.selectQuery.mock.calls[0][0]?.__queryKind).toBe('select');
   });
 });
 

@@ -4,6 +4,7 @@ import {DeleteQueryFactory, type DeleteQuery, type IRDeleteQuery, type DeleteRes
 import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
+import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, processWhereClause} from './SelectQuery.js';
 import {
   buildCanonicalDeleteAllMutationIR,
@@ -100,6 +101,11 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   /** Discriminator for the free `lower()` function and dataset routing. */
   readonly __queryKind = 'delete' as const;
 
+  /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
+  get shape(): NodeShape {
+    return this._shape.shape;
+  }
+
   /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
   build(): IRDeleteQuery {
     return lower(this);
@@ -180,9 +186,9 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   exec(): Promise<R> {
     const mode = this._mode || (this._ids ? 'ids' : undefined);
     if (mode === 'all' || mode === 'where') {
-      return getQueryDispatch().deleteQuery(this.build()).then(() => undefined) as Promise<R>;
+      return getQueryDispatch().deleteQuery(this).then(() => undefined) as Promise<R>;
     }
-    return getQueryDispatch().deleteQuery(this.build()) as Promise<R>;
+    return getQueryDispatch().deleteQuery(this) as Promise<R>;
   }
 
   // ---------------------------------------------------------------------------

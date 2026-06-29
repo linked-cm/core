@@ -47,9 +47,9 @@ import {
   buildCanonicalDeleteAllMutationIR,
   buildCanonicalDeleteWhereMutationIR,
 } from './IRMutation.js';
-import type {CreateQuery} from './CreateQuery.js';
-import type {UpdateQuery} from './UpdateQuery.js';
-import type {DeleteQuery} from './DeleteQuery.js';
+import type {IRCreateQuery} from './CreateQuery.js';
+import type {IRUpdateQuery} from './UpdateQuery.js';
+import type {IRDeleteQuery} from './DeleteQuery.js';
 
 // =============================================================================
 // JSON types
@@ -254,7 +254,7 @@ function lowerWhere(
  */
 export function lowerMutationJSON(
   json: MutationJSON,
-): CreateQuery | UpdateQuery | DeleteQuery {
+): IRCreateQuery | IRUpdateQuery | IRDeleteQuery {
   switch (json.op) {
     case 'create':
       return buildCanonicalCreateMutationIR({

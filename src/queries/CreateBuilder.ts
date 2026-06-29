@@ -4,6 +4,7 @@ import type {UpdatePartial} from './QueryFactory.js';
 import {CreateQueryFactory, type CreateQuery, type IRCreateQuery, type CreateResponse} from './CreateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
+import type {NodeShape} from '../shapes/SHACL.js';
 import {encodeNodeData, type CreateMutationJSON} from './MutationSerialization.js';
 
 /**
@@ -82,6 +83,11 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   /** Discriminator for the free `lower()` function and dataset routing. */
   readonly __queryKind = 'create' as const;
 
+  /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
+  get shape(): NodeShape {
+    return this._shape.shape;
+  }
+
   /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
   build(): IRCreateQuery {
     return lower(this);
@@ -150,7 +156,7 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
 
   /** Execute the mutation. */
   exec(): Promise<CreateResponse<U>> {
-    return getQueryDispatch().createQuery(this.build()) as Promise<CreateResponse<U>>;
+    return getQueryDispatch().createQuery(this) as Promise<CreateResponse<U>>;
   }
 
   // ---------------------------------------------------------------------------

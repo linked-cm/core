@@ -7,6 +7,7 @@ import type {UpdateQuery} from '../queries/UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
 import {setQueryDispatch} from '../queries/queryDispatch.js';
 import {getShapeClass} from './ShapeClass.js';
+import type {NodeShape} from '../shapes/SHACL.js';
 
 // plan-011 — count physical evaluations of THIS module on the one shared
 // global object. With the single-loader fix there should be exactly one copy;
@@ -99,7 +100,7 @@ export abstract class LinkedStorage {
   }
 
   private static resolveDatasetForQueryShape(
-    shape?: string | Function | null,
+    shape?: string | Function | NodeShape | null,
   ): IDataset {
     if (!shape) {
       return this.defaultDataset;
@@ -111,20 +112,23 @@ export abstract class LinkedStorage {
       const shapeClass = getShapeClass(shape);
       return this.getDatasetForShapeClass(shapeClass);
     }
+    // NodeShape (the closed query's `shape` accessor) — resolve via its IRI.
+    if (typeof shape === 'object' && 'id' in shape) {
+      const shapeClass = getShapeClass((shape as {id: string}).id);
+      return this.getDatasetForShapeClass(shapeClass);
+    }
     return this.defaultDataset;
   }
 
   static selectQuery<ResultType>(query: SelectQuery): Promise<ResultType> {
-    if (!query?.root) {
+    if (!query?.shape) {
       return Promise.reject(
         new Error(
-          `Invalid select query passed to LinkedStorage.selectQuery(): missing root. Payload: ${
-            query ? JSON.stringify(query) : 'undefined'
-          }`,
+          'Invalid select query passed to LinkedStorage.selectQuery(): missing shape.',
         ),
       );
     }
-    const dataset = this.resolveDatasetForQueryShape(query?.root?.shape);
+    const dataset = this.resolveDatasetForQueryShape(query.shape);
     if (!dataset?.selectQuery) {
       return Promise.reject(
         new Error('No query dataset configured. Call LinkedStorage.setDefaultDataset().'),

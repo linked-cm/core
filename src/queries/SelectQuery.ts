@@ -1,5 +1,6 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
-import type {PropertyShape} from '../shapes/SHACL.js';
+import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
+import type {RawSelectInput} from './IRDesugar.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
 import {shacl} from '../ontologies/shacl.js';
 import {CoreSet} from '../collections/CoreSet.js';
@@ -11,14 +12,22 @@ import type {IRSelectQuery} from './IntermediateRepresentation.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {FieldSet} from './FieldSet.js';
 import {PropertyPath} from './PropertyPath.js';
-import type {QueryBuilder} from './QueryBuilder.js';
+import type {QueryBuilder, QueryBuilderJSON} from './QueryBuilder.js';
 import {ExpressionNode, ExistsCondition, isExpressionNode, isExistsCondition, tracedPropertyExpression, tracedAliasExpression} from '../expressions/ExpressionNode.js';
 
 /**
- * The canonical SelectQuery type — an IR AST node representing a select query.
- * This is the type received by IDataset.selectQuery().
+ * The closed, read-only select query a dataset receives (implemented by
+ * `SelectBuilder`). It exposes the wire form (`toJSON`), the routing key
+ * (`shape`), and the read-only lowering hook (`toRawInput`) — but none of the
+ * fluent mutators, so a store cannot keep building on it. The IR algebra is
+ * `IRSelectQuery`, produced on demand by `lower(query)`.
  */
-export type SelectQuery = IRSelectQuery;
+export interface SelectQuery {
+  readonly __queryKind: 'select';
+  readonly shape: NodeShape;
+  toJSON(): QueryBuilderJSON;
+  toRawInput(): RawSelectInput;
+}
 
 /**
  * ###################################
