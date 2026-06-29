@@ -520,12 +520,20 @@ unresolved ref). **7 gaps found; 1–3 fixed, 4–7 deferred.**
   throws at build — a `PendingQueryContext` has no property proxy, so there's no `{$ctx}` parity with the
   unset root-ref case. Genuinely supporting pre-auth context-property refs needs a property-proxy on
   `PendingQueryContext`.
-- **Gap 5 [Low] — DEFERRED.** `getQueryContext('user').name.equals(...)` in a projection drops the context
-  (emits a root-alias `property_expr` → wrong query, not a crash). Separate expression-proxy issue.
+- **Gap 5 [Low] — FIXED.** A context property used as the *self* of an expression
+  (`getQueryContext('user').name.equals(x)`) was traced as a root-entity property (wrong query).
+  `wrapWithExpressionProxy` now routes the self through `toExpressionNode`, so it becomes a
+  `context_property_expr` and resolves at lower.
 - **Gap 6 [Low] — DEFERRED.** `DeleteId` is in the public `DeleteBuilder.from`/`Shape.delete` signatures but
   not re-exported from `index.ts`.
-- **Gap 7 [Med, pre-existing] — DEFERRED.** `setQueryContext` silently no-ops when handed a `Shape`/`QueryShape`
-  with an `id` and no `shapeType`; and passing a *resolved* `getQueryContext()` (a QueryShape) as a delete
-  id / field value throws opaquely + is live↔wire-asymmetric. Both predate this work.
+- **Gap 7b [serious] — FIXED.** delete-by-context and field-value-context only worked when the context was
+  *unset* at build; when already set (logged-in case) the value is a resolved `QueryShape` and `lower()`/`toJSON`
+  **threw**. A new `asContextRef()` normalizes both the unset `PendingQueryContext` and a resolved context
+  shape to a `{$ctx}` reference at the mutation field-value / `$remove` / delete-id entry points, so set and
+  unset behave identically (always `{$ctx}`, resolved at lowering). The name is read via `originalValue` to
+  avoid the QueryShape proxy's undecorated-property warning.
+- **Gap 7a [Med, pre-existing] — DEFERRED.** `setQueryContext` silently no-ops when handed a `Shape`/`QueryShape`
+  with an `id` and no `shapeType` (the `typeof value.id === 'string'` guard returns early). Predates this work
+  and the blessed `setQueryContext(name, {id}, Shape)` path is unaffected.
 
-Full suite **1195 passing**; CJS+ESM typecheck clean; tree-shaking re-verified.
+Full suite **1197 passing**; CJS+ESM typecheck clean; tree-shaking re-verified.
