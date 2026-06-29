@@ -1,7 +1,7 @@
 ---
 summary: Flip the dataset contract so datasets receive the live linked query object (the builder); make DSL-JSON the wire/interop format produced on demand at boundaries; make the IR an opt-in store detail behind a free lower() function (no public .build()); add mutation fromJSON; remove the RemoteDataset adapter; make query context a first-class JSON value with mutation parity; document the JSON spec; enable tree-shaking. Major version.
 packages: [core]
-status: Implementation
+status: Review
 ---
 
 # 002 — Linked query contract: builders in, JSON on the wire, IR as a store detail
