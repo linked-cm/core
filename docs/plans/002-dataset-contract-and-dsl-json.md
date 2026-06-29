@@ -391,3 +391,41 @@ Validation:
   resolves on the change) — re-execution itself stays in the consumer layer. Exported
   `getQueryContext`/`setQueryContext`/`subscribeQueryContext`/`PendingQueryContext`/
   `UnresolvedContextError` from the barrel. Full suite 1183 passing.
+
+### Wrap-up pass (build removal → ctx unification → Phase 7), pre-Phase-8
+
+- **`build()` removed — DONE.** Deleted the deprecated per-builder `build()` from all four
+  builders. The free `lower()` is now the *only* lowering entry point. Migrated ~130 internal
+  `.build()` call sites to `lower(...)`; builder error messages no longer mention `.build()`.
+  Full suite green.
+
+- **Context unified on `{$ctx}` — DONE (real positions) + inbound-decode (interop).** Introduced
+  `src/queries/ContextRef.ts`: the single marker `{$ctx: "<name>"}` + `encodeContextRef` /
+  `isContextRefJSON` / `resolveContextId(name, required)` (mutations `required:true` → throw
+  `UnresolvedContextError`; select `false` → `undefined`/null). Migrated **select subject**
+  (`pendingContextName` → `subject: {$ctx}`) and **update target** (`targetContext` → `targetId:
+  {$ctx}`) to the unified marker; `.for(id)`/`.forAll()` now clear any stale pending context.
+  Inbound mutation JSON carrying a `{$ctx}` **field value** resolves at lower (tested). New tests
+  for subject round-trip + live resolution, target throw/resolve, inbound field-value.
+  - **DEFERRED — where-clause args & builder-side field-values:** these positions resolve a
+    context's `.id` **eagerly upstream** (the expression compiler bakes `.equals(ctx)` into a
+    `reference_expr`; the mutation factory normalizes `{ref: ctx}` to `{id}`) *before*
+    serialization, so a live `PendingQueryContext` never reaches those encoders. The wire codec is
+    ready (inbound `{$ctx}` decodes), but emitting `{$ctx}` from the builder there needs the
+    expression/factory layer to **preserve** the context object — a separate, deeper change.
+    Delete-by-context likewise deferred (no `.for()` on delete; use `.where()`).
+
+- **Phase 7 — DONE (full IR decoupling) + verified.** The builders and the wire codec are now
+  fully **IR-free**. All canonical-IR construction lives behind `lower()`:
+  - builders hand `lower()` a plain `mutationLowerSpec` (`CreateLowerSpec`/`UpdateLowerSpec`/
+    `DeleteLowerSpec`) instead of importing `IRMutation`/`IRDesugar`/`IRCanonicalize`/`IRLower`;
+    `lower()` builds via the IR-free `MutationQueryFactory.describe()` + `buildCanonical*`.
+  - `MutationSerialization.ts` split: IR-free wire codec stays; `decodeNodeData` +
+    `lowerMutationJSON` moved to new `src/queries/lowerMutationJSON.ts` (the IR side).
+  - removed the now-dead IR factory subclasses (`CreateQueryFactory`/`UpdateQueryFactory`/
+    `DeleteQueryFactory`); their `*Query.ts` modules are now pure interface/type modules.
+  - `package.json` `sideEffects` lists only `**/ontologies/*` + `**/utils/Package.*`.
+  - **Verified by import-graph analysis:** `Shape`, `QueryBuilder`, all mutation builders,
+    `fromJSON`, `MutationSerialization`, and `index` reach **zero** IR modules (index reaches only
+    the opt-in SPARQL dataset). The whole IR pipeline is reachable solely via `lower()` /
+    `lowerMutationJSON()`. CJS+ESM typecheck clean; full suite **1185 passing**.
