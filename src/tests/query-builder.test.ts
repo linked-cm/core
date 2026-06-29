@@ -816,4 +816,24 @@ describe('where-clause context references', () => {
       .where((p: any) => p.bestFriend.equals(getQueryContext('wctx')));
     expect(() => lower(upd as any)).toThrow(/context "wctx" is not set/i);
   });
+
+  test('context in a PROJECTED expression resolves at lower (not only in where)', () => {
+    // Regression: a projected expression carrying a context ref must be resolved
+    // by lower() too — otherwise it reaches SPARQL unresolved and crashes.
+    setQueryContext('wctx', {id: `${tmpEntityBase}u9`}, Person);
+    const q = QueryBuilder.from(Person).select((p: any) => ({
+      isFriend: p.bestFriend.equals(getQueryContext('wctx')),
+    }));
+    const ir: any = lower(q as any);
+    const s = JSON.stringify(ir);
+    expect(s).toContain(`${tmpEntityBase}u9`); // resolved into the projection
+    expect(s).not.toContain('contextName'); // no unresolved ref reaches SPARQL
+    // unset → throws at lower rather than producing a broken projection
+    setQueryContext('wctx', null as any);
+    expect(() =>
+      lower(QueryBuilder.from(Person).select((p: any) => ({
+        isFriend: p.bestFriend.equals(getQueryContext('wctx')),
+      })) as any),
+    ).toThrow(/context "wctx" is not set/i);
+  });
 });

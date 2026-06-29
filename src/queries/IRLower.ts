@@ -154,16 +154,19 @@ const lowerPath = (
 ): IRExpression => lowerSelectionPathExpression(path, options);
 
 /**
- * Resolve any `{$ctx}` context references carried in a lowered filter expression.
+ * Resolve any `{$ctx}` context references carried in a lowered expression tree —
+ * whether it came from a where-clause filter OR a projected (expression-select)
+ * value.
  *
- * A where-clause context reference (`.equals(getQueryContext('user'))`) is carried
- * through build + the wire as a *name* (`reference_expr.contextName` /
- * `context_property_expr.contextName`), never a baked id. Here — at lowering — it is
- * resolved against the live context map into the concrete IRI; an unresolved one
- * throws `UnresolvedContextError` (for SELECT, `exec()` short-circuits to null before
- * lowering, so a query is never lowered with an unresolved where-context in practice).
+ * A context reference (`.equals(getQueryContext('user'))`) is carried through build +
+ * the wire as a *name* (`reference_expr.contextName` / `context_property_expr.contextName`),
+ * never a baked id. Here — at lowering — it is resolved against the live context map into
+ * the concrete IRI; an unresolved one throws `UnresolvedContextError` (for SELECT, `exec()`
+ * short-circuits to null before lowering, so a query is never lowered with an unresolved
+ * context in practice). This must be applied to every expression that can reach the SPARQL
+ * algebra, not just where-filters.
  */
-const resolveWhereContextRefs = (expr: IRExpression): IRExpression => {
+const resolveContextRefs = (expr: IRExpression): IRExpression => {
   switch (expr.kind) {
     case 'reference_expr':
       if (expr.contextName) {
@@ -176,16 +179,16 @@ const resolveWhereContextRefs = (expr: IRExpression): IRExpression => {
       }
       return expr;
     case 'binary_expr':
-      return {...expr, left: resolveWhereContextRefs(expr.left), right: resolveWhereContextRefs(expr.right)};
+      return {...expr, left: resolveContextRefs(expr.left), right: resolveContextRefs(expr.right)};
     case 'logical_expr':
-      return {...expr, expressions: expr.expressions.map(resolveWhereContextRefs)};
+      return {...expr, expressions: expr.expressions.map(resolveContextRefs)};
     case 'not_expr':
-      return {...expr, expression: resolveWhereContextRefs(expr.expression)};
+      return {...expr, expression: resolveContextRefs(expr.expression)};
     case 'function_expr':
     case 'aggregate_expr':
-      return {...expr, args: expr.args.map(resolveWhereContextRefs)};
+      return {...expr, args: expr.args.map(resolveContextRefs)};
     case 'exists_expr':
-      return expr.filter ? {...expr, filter: resolveWhereContextRefs(expr.filter)} : expr;
+      return expr.filter ? {...expr, filter: resolveContextRefs(expr.filter)} : expr;
     default:
       return expr;
   }
@@ -200,7 +203,7 @@ const lowerWhere = (
     case 'where_expression': {
       // ExpressionNode-based WHERE — resolve refs and return IRExpression directly
       const exprWhere = where as DesugaredExpressionWhere;
-      return resolveWhereContextRefs(resolveExpressionRefs(
+      return resolveContextRefs(resolveExpressionRefs(
         exprWhere.expressionNode.ir,
         exprWhere.expressionNode._refs,
         options.rootAlias,
@@ -210,7 +213,7 @@ const lowerWhere = (
     case 'where_exists_condition': {
       // ExistsCondition-based WHERE (from .some()/.every()/.none())
       const existsWhere = where as DesugaredExistsWhere;
-      return resolveWhereContextRefs(lowerExistsCondition(existsWhere.existsCondition, ctx, options));
+      return resolveContextRefs(lowerExistsCondition(existsWhere.existsCondition, ctx, options));
     }
     default:
       const _exhaustive: never = where;
@@ -394,12 +397,16 @@ export const lowerSelectQuery = (
 
     if (selection.kind === 'expression_select') {
       const exprSelect = selection as DesugaredExpressionSelect;
-      const resolved = resolveExpressionRefs(
+      // Resolve property refs AND any {$ctx} context references — a projected
+      // expression (e.g. `select(p => ({flag: p.x.equals(getQueryContext('user'))}))`)
+      // reaches the SPARQL algebra just like a where-filter, so its context refs
+      // must be resolved here too, not only in lowerWhere.
+      const resolved = resolveContextRefs(resolveExpressionRefs(
         exprSelect.expressionNode.ir,
         exprSelect.expressionNode._refs,
         aliasAfterPath(parentPath),
         pathOptions.resolveTraversal,
-      );
+      ));
       return [{
         kind: 'expression',
         key: key || 'expr',

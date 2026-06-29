@@ -221,7 +221,8 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
 
     test('delete-by-context: Person.delete(ctx) carries {$ctx}; resolves/throws with parity', () => {
       setQueryContext('ctx-del', undefined); // ensure unset
-      const d = DeleteBuilder.from(Person, getQueryContext('ctx-del') as any);
+      // The ergonomic spelling typechecks without a cast (Shape.delete accepts a context).
+      const d = Person.delete(getQueryContext('ctx-del'));
       const json: any = JSON.parse(JSON.stringify(d.toJSON()));
       // The node to delete is carried as a {$ctx} ref, not a baked/undefined id.
       expect(json.ids).toEqual([{$ctx: 'ctx-del'}]);

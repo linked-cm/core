@@ -16,7 +16,7 @@ import type {NodeId} from '../queries/MutationQuery.js';
 import {QueryBuilder} from '../queries/QueryBuilder.js';
 import {CreateBuilder} from '../queries/CreateBuilder.js';
 import {UpdateBuilder} from '../queries/UpdateBuilder.js';
-import {DeleteBuilder} from '../queries/DeleteBuilder.js';
+import {DeleteBuilder, type DeleteId} from '../queries/DeleteBuilder.js';
 import type {ExpressionUpdateProxy, ExpressionUpdateResult} from '../expressions/ExpressionMethods.js';
 import {getPropertyShapeByLabel} from '../utils/ShapeClass.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
@@ -184,7 +184,7 @@ export abstract class Shape {
 
   static delete<S extends Shape>(
     this: ShapeConstructor<S>,
-    id: NodeId | NodeId[] | NodeReferenceValue[],
+    id: DeleteId | DeleteId[] | NodeReferenceValue[],
   ): DeleteBuilder<S> {
     return DeleteBuilder.from(this, id) as DeleteBuilder<S>;
   }
