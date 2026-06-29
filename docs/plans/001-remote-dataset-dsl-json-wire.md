@@ -306,3 +306,8 @@ fidelity.
   (`RemoteRequest`, `RemoteResponse<T>`, `RemoteError`, `RemoteErrorCode` with the
   four codes, plus `fail`/`run` helpers). Validation: `npx tsc -p tsconfig-cjs.json --noEmit`
   exits 0.
+- **Phase 2 — Server adapter — DONE.** Created `src/remote/RemoteDataset.ts`
+  (`RemoteDataset.handle()`: select lowers via `fromJSON().build()` with a
+  `lowering_failed` guard; create/update/delete passthrough with `handler_missing`
+  guards; `unsupported_op` default). Validation: `npx tsc -p tsconfig-cjs.json --noEmit`
+  exits 0; behaviour covered by Phase 4 tests.
