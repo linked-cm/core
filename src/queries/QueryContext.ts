@@ -88,9 +88,11 @@ export function setQueryContext(name: string, value: any, shapeType?) {
     const shape = new (shapeType as any)();
     shape.id = value.id;
     shape.__queryContextId = value.id;
+    shape.__queryContextName = name;
     value = QueryShape.create(shape);
   }
   if (value instanceof Shape) {
+    value.__queryContextName = name;
     //convert to QShape
     value = new QueryShape(value);
   } else if (!(value instanceof QueryShape)) {

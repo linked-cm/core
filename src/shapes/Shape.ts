@@ -49,6 +49,8 @@ export abstract class Shape {
   static typesToShapes: Map<string, Set<typeof Shape>> = new Map();
 
   __queryContextId?: string;
+  /** The query-context name this shape was registered under (for `{$ctx}` refs). */
+  __queryContextName?: string;
   id?: string;
 
   constructor(node?: string | NodeReferenceValue) {

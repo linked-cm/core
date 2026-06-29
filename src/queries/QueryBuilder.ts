@@ -19,7 +19,7 @@ import type {NodeShape} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
 import {FieldSet, type FieldSetJSON, type FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
-import {PendingQueryContext} from './QueryContext.js';
+import {PendingQueryContext, UnresolvedContextError} from './QueryContext.js';
 import {encodeContextRef, isContextRefJSON, type ContextRefJSON} from './ContextRef.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {
@@ -653,6 +653,13 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     }
     // Dispatch the live (closed) query; the dataset decides whether to lower it.
     return getQueryDispatch().selectQuery(this).catch(err => {
+      // A where-clause context reference that hasn't resolved yet surfaces as
+      // UnresolvedContextError when the dataset lowers the query. For SELECT this
+      // means "not ready" — return null (a reactive layer re-runs once it lands),
+      // mirroring the pending-subject behavior. Mutations still throw.
+      if (err instanceof UnresolvedContextError) {
+        return null as Result;
+      }
       throw Error(`Error while executing query: ${err.stack}.\n\nQuery related to this error: ${JSON.stringify(this.toJSON())}`)
     }) as Promise<Result>;
   }

@@ -14,6 +14,7 @@ import {FieldSet} from './FieldSet.js';
 import {PropertyPath} from './PropertyPath.js';
 import type {QueryBuilder, QueryBuilderJSON} from './QueryBuilder.js';
 import {ExpressionNode, ExistsCondition, isExpressionNode, isExistsCondition, tracedPropertyExpression, tracedAliasExpression} from '../expressions/ExpressionNode.js';
+import {PendingQueryContext} from './QueryContext.js';
 
 /**
  * The closed, read-only select query a dataset receives (implemented by
@@ -887,18 +888,19 @@ const EXPRESSION_METHODS = new Set([
  * This is the bridge between the query proxy world and the expression IR world.
  */
 function toExpressionNode(qbo: QueryBuilderObject): ExpressionNode {
-  // Check if this is a query context reference
-  const contextId = findContextId(qbo);
-  if (contextId) {
+  // Check if this is a query context reference. We carry the context *name*
+  // (not the resolved id): it serializes as `{$ctx}` and is resolved by `lower()`.
+  const contextName = findContextName(qbo);
+  if (contextName) {
     const segments = FieldSet.collectPropertySegments(qbo);
     if (segments.length > 0) {
       // Context property access (e.g. getQueryContext('user').name) → context_property_expr
       const lastSegment = segments[segments.length - 1].id;
-      const ir = {kind: 'context_property_expr' as const, contextIri: contextId, property: lastSegment};
+      const ir = {kind: 'context_property_expr' as const, contextName, property: lastSegment};
       return new ExpressionNode(ir);
     }
-    // Context root reference (e.g. getQueryContext('user')) → reference_expr with the context IRI
-    const ir = {kind: 'reference_expr' as const, value: contextId};
+    // Context root reference (e.g. getQueryContext('user')) → reference_expr
+    const ir = {kind: 'reference_expr' as const, contextName};
     return new ExpressionNode(ir);
   }
 
@@ -917,6 +919,18 @@ function findContextId(qbo: QueryBuilderObject): string | undefined {
   while (current) {
     if (current instanceof QueryShape && (current.originalValue as any)?.__queryContextId) {
       return (current.originalValue as any).__queryContextId;
+    }
+    current = current.subject as QueryBuilderObject | undefined;
+  }
+  return undefined;
+}
+
+/** Walk up the QueryBuilderObject chain to find a query context *name* (for `{$ctx}`). */
+function findContextName(qbo: QueryBuilderObject): string | undefined {
+  let current: QueryBuilderObject | undefined = qbo;
+  while (current) {
+    if (current instanceof QueryShape && (current.originalValue as any)?.__queryContextName) {
+      return (current.originalValue as any).__queryContextName;
     }
     current = current.subject as QueryBuilderObject | undefined;
   }
@@ -1373,13 +1387,17 @@ export class QueryShape<
     return this as any as QShape<InstanceType<ShapeClass>, Source, Property>;
   }
 
-  equals(otherValue: NodeReferenceValue | QShape<any>): ExpressionNode {
+  equals(otherValue: NodeReferenceValue | QShape<any> | PendingQueryContext): ExpressionNode {
+    const self = toExpressionNode(this);
+    // An unresolved query-context reference (`getQueryContext('user')` before it
+    // is set) carries no `.id` yet — keep it as a `{$ctx}` ref, resolved at lower.
+    if (otherValue instanceof PendingQueryContext) {
+      return self.eq(otherValue as any);
+    }
     //validate the value is formed correctly
     if(!otherValue.id) {
-      throw Error(`Invalid value for .equals(). ${JSON.stringify(otherValue)}`);  
+      throw Error(`Invalid value for .equals(). ${JSON.stringify(otherValue)}`);
     }
-    
-    const self = toExpressionNode(this);
     const arg = otherValue instanceof QueryBuilderObject
       ? toExpressionNode(otherValue)
       : otherValue;

@@ -130,7 +130,14 @@ export type IRLiteralExpression = {
 
 export type IRReferenceExpression = {
   kind: 'reference_expr';
-  value: string;
+  /** The referenced node IRI. Optional only while a `contextName` is unresolved. */
+  value?: string;
+  /**
+   * A query-context reference (`{$ctx}` on the wire). When set, `value` is filled
+   * by `lower()` from the live context map — resolved or thrown there, never baked
+   * at build time. Absent for a plain node reference.
+   */
+  contextName?: string;
 };
 
 export type IRAliasExpression = {
@@ -148,7 +155,10 @@ export type IRPropertyExpression = {
 
 export type IRContextPropertyExpression = {
   kind: 'context_property_expr';
-  contextIri: string;
+  /** The context entity IRI. Optional only while a `contextName` is unresolved. */
+  contextIri?: string;
+  /** A query-context reference resolved into `contextIri` by `lower()`. */
+  contextName?: string;
   property: string;
 };
 

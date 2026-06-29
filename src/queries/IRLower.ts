@@ -12,6 +12,7 @@ import type {
   DesugaredWhere,
 } from './IRDesugar.js';
 import {resolveExpressionRefs, ExistsCondition} from '../expressions/ExpressionNode.js';
+import {resolveContextId} from './ContextRef.js';
 import type {
   IRExpression,
   IRGraphPattern,
@@ -152,6 +153,44 @@ const lowerPath = (
   options: PathLoweringOptions,
 ): IRExpression => lowerSelectionPathExpression(path, options);
 
+/**
+ * Resolve any `{$ctx}` context references carried in a lowered filter expression.
+ *
+ * A where-clause context reference (`.equals(getQueryContext('user'))`) is carried
+ * through build + the wire as a *name* (`reference_expr.contextName` /
+ * `context_property_expr.contextName`), never a baked id. Here — at lowering — it is
+ * resolved against the live context map into the concrete IRI; an unresolved one
+ * throws `UnresolvedContextError` (for SELECT, `exec()` short-circuits to null before
+ * lowering, so a query is never lowered with an unresolved where-context in practice).
+ */
+const resolveWhereContextRefs = (expr: IRExpression): IRExpression => {
+  switch (expr.kind) {
+    case 'reference_expr':
+      if (expr.contextName) {
+        return {kind: 'reference_expr', value: resolveContextId(expr.contextName, true)!};
+      }
+      return expr;
+    case 'context_property_expr':
+      if (expr.contextName) {
+        return {kind: 'context_property_expr', contextIri: resolveContextId(expr.contextName, true)!, property: expr.property};
+      }
+      return expr;
+    case 'binary_expr':
+      return {...expr, left: resolveWhereContextRefs(expr.left), right: resolveWhereContextRefs(expr.right)};
+    case 'logical_expr':
+      return {...expr, expressions: expr.expressions.map(resolveWhereContextRefs)};
+    case 'not_expr':
+      return {...expr, expression: resolveWhereContextRefs(expr.expression)};
+    case 'function_expr':
+    case 'aggregate_expr':
+      return {...expr, args: expr.args.map(resolveWhereContextRefs)};
+    case 'exists_expr':
+      return expr.filter ? {...expr, filter: resolveWhereContextRefs(expr.filter)} : expr;
+    default:
+      return expr;
+  }
+};
+
 const lowerWhere = (
   where: CanonicalWhereExpression,
   ctx: AliasGenerator,
@@ -161,17 +200,17 @@ const lowerWhere = (
     case 'where_expression': {
       // ExpressionNode-based WHERE — resolve refs and return IRExpression directly
       const exprWhere = where as DesugaredExpressionWhere;
-      return resolveExpressionRefs(
+      return resolveWhereContextRefs(resolveExpressionRefs(
         exprWhere.expressionNode.ir,
         exprWhere.expressionNode._refs,
         options.rootAlias,
         options.resolveTraversal,
-      );
+      ));
     }
     case 'where_exists_condition': {
       // ExistsCondition-based WHERE (from .some()/.every()/.none())
       const existsWhere = where as DesugaredExistsWhere;
-      return lowerExistsCondition(existsWhere.existsCondition, ctx, options);
+      return resolveWhereContextRefs(lowerExistsCondition(existsWhere.existsCondition, ctx, options));
     }
     default:
       const _exhaustive: never = where;

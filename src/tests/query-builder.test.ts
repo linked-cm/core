@@ -766,3 +766,54 @@ describe('QueryBuilder — .for() with PendingQueryContext', () => {
     expect(qb.toJSON().subject).toBe(`${tmpEntityBase}p1`);
   });
 });
+
+// =============================================================================
+// Where-clause context references ({$ctx} carried through the IR)
+// =============================================================================
+
+describe('where-clause context references', () => {
+  afterEach(() => setQueryContext('wctx', null as any));
+
+  test('UNSET context: .equals(ctx) builds without throwing and carries the name', () => {
+    setQueryContext('wctx', null as any); // ensure unset
+    const q = Person.select((p) => p.name).where((p: any) =>
+      p.bestFriend.equals(getQueryContext('wctx')),
+    );
+    // Pre-auth where-context no longer throws at build; the wire carries the
+    // context *name* (a reference_expr with contextName), not a baked/undefined id.
+    const json: any = JSON.parse(JSON.stringify(q.toJSON()));
+    expect(JSON.stringify(json.where)).toContain('"contextName":"wctx"');
+    expect(JSON.stringify(json.where)).not.toContain('"value"'); // no baked id while unset
+
+    // fromJSON → toJSON preserves the reference verbatim.
+    const restored = QueryBuilder.fromJSON(json);
+    expect(JSON.stringify(restored.toJSON().where)).toBe(JSON.stringify(json.where));
+  });
+
+  test('SET context: lower() resolves the name to the concrete id', () => {
+    setQueryContext('wctx', {id: `${tmpEntityBase}u9`}, Person);
+    const q = Person.select((p) => p.name).where((p: any) =>
+      p.bestFriend.equals(getQueryContext('wctx')),
+    );
+    const ir: any = lower(q as any);
+    const where = JSON.stringify(ir.where);
+    expect(where).toContain(`${tmpEntityBase}u9`); // resolved
+    expect(where).not.toContain('contextName'); // name dropped after resolution
+  });
+
+  test('UNSET context, SELECT exec(): resolves to null (not ready), not a throw', async () => {
+    setQueryContext('wctx', null as any);
+    const result = await Person.select((p) => p.name).where((p: any) =>
+      p.bestFriend.equals(getQueryContext('wctx')),
+    );
+    expect(result).toBeNull();
+  });
+
+  test('UNSET context, MUTATION where: lower() throws UnresolvedContextError', () => {
+    setQueryContext('wctx', null as any);
+    const upd = UpdateBuilder.from(Person)
+      .set({hobby: 'x'})
+      .where((p: any) => p.bestFriend.equals(getQueryContext('wctx')));
+    expect(() => lower(upd as any)).toThrow(/context "wctx" is not set/i);
+  });
+});
