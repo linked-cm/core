@@ -1,7 +1,7 @@
 ---
 summary: Flip the dataset contract so datasets receive the live linked query object (the builder); make DSL-JSON the wire/interop format produced on demand at boundaries; make the IR an opt-in store detail behind a free lower() function (no public .build()); add mutation fromJSON; remove the RemoteDataset adapter; make query context a first-class JSON value with mutation parity; document the JSON spec; enable tree-shaking. Major version.
 packages: [core]
-status: Plan
+status: Tasks
 ---
 
 # 002 — Linked query contract: builders in, JSON on the wire, IR as a store detail
@@ -234,10 +234,161 @@ abstract class ForwardingDataset {
 ```
 Phase 6 (context) is large and orthogonal — candidate for its own ideation/tasks sub-cycle.
 
-## Open decisions to confirm before tasks
-1. `lower` as the name (vs `toIR`).
-2. Ship `ForwardingDataset` + `receiveQuery` in core (Phase 5) or leave to backend repos?
-3. Context scope in Phase 6 — all positions at once, or subject/`.for()` parity first then
-   where/value context as a follow-up?
-4. DSL-JSON `version` field now or later (Phase 8).
-5. Marker-interface hedge (`LinkedSelectQuery`) vs plain concrete-builder contract type.
+## Resolved decisions (defaults taken at tasks time)
+1. **Name = `lower(query)`** (mirrors `lowerMutationJSON`; concise).
+2. **Ship `ForwardingDataset` + `receiveQuery` in core** as reference transport bases
+   (parallel to `SparqlDataset` as the reference store).
+3. **Context** split into **6a** subject/`.for()` parity (select + mutations) and **6b**
+   where/value context refs. Both in scope, sequenced 6a → 6b.
+4. **DSL-JSON `version` field = yes, now** — a top-level `v` on the wire envelope.
+5. **Marker-interface hedge = yes** (`LinkedSelectQuery`/`Linked*Query`), builders implement it.
+
+# Tasks
+
+Conventions: each phase = one commit (parallel groups = one commit after integration).
+Quick gate after every phase = targeted `npx jest --testPathPatterns=<files>` +
+`npx tsc -p tsconfig-cjs.json --noEmit`. Full `npm test` runs at review. Golden baseline to
+preserve: `serialization.test.ts`, `mutation-serialization.test.ts`, `ir-select-golden`,
+`sparql-*-golden`, `store-routing`.
+
+## Dependency graph & parallel groups
+```
+P1 (lower)
+ ├─ P2 (contract flip)            ── after P1
+ └─ P4 (mutation fromJSON)        ── after P1        [P2 ∥ P4]
+P3 (SparqlDataset)                ── after P2
+P7 (tree-shaking)                 ── after P1,P2     [P3 ∥ P7]
+P5 (remove remote + transport)    ── after P2,P4
+P6a/P6b (context)                 ── after P2,P4     [P5 ∥ P6]
+P8 (docs + version + changeset)   ── after P1–P6
+```
+Same-file contention (builders, `index.ts`, query type files) means parallel groups run as
+one agent or are sequenced; the graph marks logical independence, not safe concurrent writes.
+
+## Phase 1 — `lower()` free function; retire public `build()`
+Tasks:
+- Create `src/queries/lower.ts`: `lower(query)` overloaded — select →
+  `buildSelectQuery(query.toRawInput())`; create/update/delete → move the bodies of the
+  builders' current `build()` here (the factory + `buildCanonical*` calls).
+- Make `QueryBuilder.toRawInput()` (and the mutation builders' equivalent state access)
+  reachable by `lower()` without `lower` importing the IR pipeline *through* the builder;
+  remove `build()` from all four builders. Confirm `QueryBuilder` no longer imports
+  `IRPipeline` (grep).
+- Update in-repo `build()` callers (tests, `QueryBuilder.exec` temporarily) to `lower()`.
+
+Validation:
+- `npx tsc -p tsconfig-cjs.json --noEmit` = 0; grep proves no `IRPipeline` import from
+  `QueryBuilder.ts`.
+- Test `src/tests/lower-parity.test.ts` — `lowerParity` cases: for `createSimple`,
+  `updateAddRemoveMulti`, `deleteMultiple`, `Person.select(['name']).where(...).limit(20)`
+  assert `lower(builder)` deep-equals the IR captured from the pre-change `build()` golden
+  (reuse `sanitize`). Assert select IR has `kind:'select'`, mutation IR has correct `kind`.
+
+## Phase 2 — Contract flip + naming + exec + routing  (after P1)
+Tasks:
+- Repoint type aliases: `SelectQuery = QueryBuilder` (impl `LinkedSelectQuery`),
+  `CreateQuery = CreateBuilder`, `UpdateQuery = UpdateBuilder`, `DeleteQuery = DeleteBuilder`.
+  Add `SelectQueryJSON = QueryBuilderJSON` (+ mutation `*MutationJSON` aliases). Keep
+  `IRSelectQuery`/`IR*Mutation` as the algebra names.
+- Add `LinkedSelectQuery`/`LinkedCreateQuery`/… interfaces (`toJSON()`, `readonly shape`);
+  builders `implements` them.
+- Migrate the ~23 IR-meaning `SelectQuery` references → `IRSelectQuery` (and mutation
+  equivalents). Enumerate via `grep -rn 'SelectQuery' src --include=*.ts`.
+- `IDataset`, `queryDispatch.QueryDispatch`, `LinkedStorage` typed to the builder; routing
+  reads `query.shape` (add a `shape` getter to builders if absent) instead of
+  `query.root.shape`; update the validity check.
+- `QueryBuilder.exec()` and mutation `exec()` dispatch `this` (the builder), not `lower()`.
+
+Validation:
+- typecheck 0; `store-routing.test.ts` updated: a recording `IDataset` receives a *builder*,
+  routes by shape, and `lower(received)` equals `lower(original)`. Cases: select default,
+  select `.for(id)`, create, update `.forAll()`, delete `.all()`.
+
+## Phase 3 — `SparqlDataset` lowers internally  (after P2)
+Tasks:
+- `SparqlDataset.{select,create,update,delete}Query(q)` → `const ir = lower(q)` then the
+  existing `*ToSparql(ir, opts)` path. Remove IR-typed params.
+Validation:
+- `sparql-select-golden`, `sparql-mutation-golden`, `sparql-algebra` green unchanged;
+  `sparql-fuseki` green when Docker present (else self-skips).
+
+## Phase 4 — Mutation `fromJSON` (json → builder)  (after P1; ∥ P2)
+Tasks:
+- Add `static fromJSON` to `CreateBuilder`/`UpdateBuilder`/`DeleteBuilder` reconstructing
+  builder state from the `*MutationJSON`: shape via `resolveShape`, data via a new
+  `decodeNodeDataToUpdatePartial` (or reuse `decodeNodeData` + a description→UpdatePartial
+  step) so `.set()` receives equivalent input; restore mode/targetId/ids/where
+  (`deserializeWherePath`).
+- Export the new `fromJSON`s.
+
+Validation:
+- Extend `mutation-serialization.test.ts`: `builder round-trip` — for every existing case,
+  `lower(Builder.fromJSON(b.toJSON()))` deep-equals `lower(b)` (sanitized). Add explicit
+  cases: update `where`, update `forAll`, delete `all`, delete `where`, computed-expression
+  update (multi-segment traversalPatterns survive).
+
+## Phase 5 — Remove `RemoteDataset`; add transport bases  (after P2,P4)
+Tasks:
+- Delete `src/remote/RemoteDataset.ts`, `RemoteClient.ts`, `RemoteProtocol.ts`,
+  `remote/index.ts`, `src/tests/remote-dataset.test.ts`; strip their exports from
+  `src/index.ts`.
+- Add `src/datasets/ForwardingDataset.ts` (abstract): `selectQuery(q)=>this.dispatch('select', q.toJSON())`, etc.; abstract `send(op, json): Promise<result>`; deserialize result.
+- Add `src/datasets/receiveQuery.ts`: `receiveQuery(op, json) → builder` (select via
+  `QueryBuilder.fromJSON`, mutations via the P4 `fromJSON`s) for the inbound boundary, and a
+  thin `handleIncoming(envelope) → LinkedStorage.<op>Query(builder)` helper.
+- Add the `v` version field to the wire envelope produced by `toJSON`/consumed by `fromJSON`
+  (reject unknown major).
+
+Validation:
+- `src/tests/forwarding.test.ts` — a `ForwardingDataset` whose `send` loops back through
+  `receiveQuery` into a recording `IDataset`: assert the delivered builder's `lower()` equals
+  the original builder's `lower()`, for select + each mutation. Assert unknown `v` major →
+  throws/structured error.
+
+## Phase 6 — Query context as a first-class JSON value
+### Phase 6a — subject/`.for()` context parity (select + mutations)  (after P2,P4)
+Tasks:
+- Define a context-ref encoding for the **subject** position: `{$ctx: name}` in
+  `SelectQueryJSON.subject` and mutation `targetId`. Stop eager-resolving in `toJSON`; emit
+  the ref when the subject is a `PendingQueryContext`.
+- `UpdateBuilder.for(ctx)`/`DeleteBuilder` accept `PendingQueryContext`; store + serialize.
+- Resolution moves to `lower()`: resolve `$ctx` against the live context map; **throw**
+  `UnresolvedContextError` if absent (replaces select's "pending → exec null").
+- Update `exec()` pending-guard accordingly.
+
+Validation:
+- `src/tests/query-context-json.test.ts`: ctx-ref survives `toJSON↔fromJSON`; `lower()`
+  yields concrete-subject IR when context set; throws `UnresolvedContextError` when unset;
+  identical behavior for `Person.update(...).for(ctx)` and delete.
+
+### Phase 6b — context refs in where-args & mutation values  (after 6a)
+Tasks:
+- Extend `serializeQueryArg`/`deserializeQueryArg` (where-args) and `encodeValue`/`decodeValue`
+  (mutation values) with the `{$ctx}` kind. Lower resolves them in-place; throw if unresolved.
+Validation:
+- Extend `query-context-json.test.ts`: `.where(p => p.owner.equals(getQueryContext('me')))`
+  and `Person.update({owner: getQueryContext('me')}).for(id)` round-trip and resolve/throw.
+
+## Phase 7 — Tree-shaking  (after P1,P2)
+Tasks:
+- Enumerate import-time side effects (`LinkedStorage` counter, `index.ts` `initModularApp`);
+  either refactor them to lazy or set `package.json` `sideEffects` to the explicit list of
+  files that must be kept.
+Validation:
+- `src/tests/treeshake-graph.test.ts` (static import-graph assertion) OR a documented bundle
+  probe showing a `QueryBuilder` + `ForwardingDataset` entry excludes `queries/IRLower`,
+  `queries/IRCanonicalize`, `sparql/*`.
+
+## Phase 8 — Docs + versioning  (after P1–P6)
+Tasks:
+- NEW `documentation/dsl-json.md`: full spec — envelope (`op`, `v`, `shape`), select shape,
+  mutation shapes, the `MutationValueJSON` kinds table, context `{$ctx}` refs, round-trip
+  guarantee, "this is the wire format" framing.
+- `README.md`: to/from JSON section + link to spec + `SparqlDataset` as reference store.
+- Rewrite the store-implementer guide in `documentation/intermediate-representation.md`
+  (builders in; IR via `lower()` optional; mapping table kept).
+- Retire/replace `docs/reports/017` at wrapup; major-version changeset describing the
+  breaking contract change + migration (`build()` → `lower()`; datasets receive builders).
+Validation:
+- Docs build/lint if present; manual check that every exported symbol in the contract is
+  documented; changeset present.
