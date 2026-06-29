@@ -1,0 +1,41 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/**
+ * IR-free "lowering specs" — the minimal, plain description each mutation
+ * builder hands to `lower()` so the canonical-IR construction can live entirely
+ * in the IR tier. The builders depend only on these types (no IR), keeping the
+ * IR pipeline reachable solely through `lower()`.
+ */
+import type {Shape, ShapeConstructor} from '../shapes/Shape.js';
+import type {UpdatePartial} from './QueryFactory.js';
+import type {WherePath} from './SelectQuery.js';
+import type {NodeId} from './MutationQuery.js';
+
+export interface CreateLowerSpec<S extends Shape = Shape> {
+  shapeClass: ShapeConstructor<S>;
+  /** The create data, with any fixed id already injected as `__id`. */
+  data: UpdatePartial<S>;
+}
+
+export interface UpdateLowerSpec<S extends Shape = Shape> {
+  shapeClass: ShapeConstructor<S>;
+  data: UpdatePartial<S>;
+  mode: 'for' | 'forAll' | 'where';
+  /** Resolved target id (id-based update); already resolved from any context. */
+  targetId?: string;
+  /** A context name to resolve at lowering when no concrete id is present. */
+  targetContextName?: string;
+  /** A pre-evaluated where path (where-mode). */
+  wherePath?: WherePath;
+}
+
+export interface DeleteLowerSpec<S extends Shape = Shape> {
+  shapeClass: ShapeConstructor<S>;
+  ids?: NodeId[];
+  mode: 'ids' | 'all' | 'where';
+  wherePath?: WherePath;
+}

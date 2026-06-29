@@ -19,6 +19,25 @@ import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 export type NodeId = {id: string} | string;
 
 export class MutationQueryFactory extends QueryFactory {
+  /**
+   * Normalize raw create/update data into a {@link NodeDescriptionValue} — the
+   * IR-free step shared by `toJSON()` and `lower()`. Kept on this base (which
+   * imports no IR) so the builders can normalize for serialization without
+   * pulling the canonical-IR pipeline.
+   */
+  describe(
+    shape: NodeShape,
+    data: unknown,
+    allowTopLevelId: boolean = false,
+  ): NodeDescriptionValue {
+    return this.convertUpdateObject(data as any, shape, allowTopLevelId);
+  }
+
+  /** Normalize delete ids (strings / `{id}`) to `NodeReferenceValue[]` (IR-free). */
+  normalizeNodeRefs(ids: NodeId[] | NodeId): NodeReferenceValue[] {
+    return this.convertNodeReferences(ids);
+  }
+
   protected convertUpdateObject(
     obj,
     shape: NodeShape,

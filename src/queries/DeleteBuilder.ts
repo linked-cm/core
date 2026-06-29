@@ -1,20 +1,14 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
-import {DeleteQueryFactory, type DeleteQuery, type IRDeleteQuery, type DeleteResponse} from './DeleteQuery.js';
+import type {DeleteQuery, DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {WIRE_VERSION} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
-import {
-  buildCanonicalDeleteAllMutationIR,
-  buildCanonicalDeleteWhereMutationIR,
-} from './IRMutation.js';
-import {toWhere} from './IRDesugar.js';
-import {canonicalizeWhere} from './IRCanonicalize.js';
-import {lowerWhereToIR} from './IRLower.js';
-import {type DeleteMutationJSON, decodeNodeDataToRaw} from './MutationSerialization.js';
+import {type DeleteMutationJSON} from './MutationSerialization.js';
 import {serializeWherePath, deserializeWherePath} from './QueryBuilderSerialization.js';
+import type {DeleteLowerSpec} from './mutationLowerSpec.js';
 
 type DeleteMode = 'ids' | 'all' | 'where';
 
@@ -125,32 +119,21 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   }
 
 
-  /** @internal Build the canonical IR. Consumed by `lower()`. */
-  _toIR(): IRDeleteQuery {
+  /** @internal The IR-free lowering spec consumed by `lower()`. Validates inputs. */
+  _lowerSpec(): DeleteLowerSpec<S> {
     const mode = this._mode || (this._ids ? 'ids' : undefined);
 
     if (mode === 'all') {
-      return buildCanonicalDeleteAllMutationIR({
-        shape: this._shape.shape,
-      });
+      return {shapeClass: this._shape, mode: 'all'};
     }
 
     if (mode === 'where') {
-      const wherePathSource = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
-      if (!wherePathSource) {
-        throw new Error(
-          'DeleteBuilder.where() requires a condition callback.',
-        );
+      const wherePath =
+        this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
+      if (!wherePath) {
+        throw new Error('DeleteBuilder.where() requires a condition callback.');
       }
-      const wherePath = wherePathSource;
-      const desugared = toWhere(wherePath);
-      const canonical = canonicalizeWhere(desugared);
-      const {where, wherePatterns} = lowerWhereToIR(canonical);
-      return buildCanonicalDeleteWhereMutationIR({
-        shape: this._shape.shape,
-        where,
-        wherePatterns,
-      });
+      return {shapeClass: this._shape, mode: 'where', wherePath};
     }
 
     // Default: ID-based delete
@@ -159,11 +142,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
         'DeleteBuilder requires at least one ID to delete. Use DeleteBuilder.from(shape, ids), .all(), or .where().',
       );
     }
-    const factory = new DeleteQueryFactory<S, {}>(
-      this._shape,
-      this._ids,
-    );
-    return factory.build();
+    return {shapeClass: this._shape, mode: 'ids', ids: this._ids};
   }
 
   /** Serialize this delete mutation to lightweight DSL-JSON. */

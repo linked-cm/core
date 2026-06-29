@@ -4,6 +4,7 @@ import {sanitize} from '../test-helpers/test-utils';
 import {QueryBuilder} from '../queries/QueryBuilder';
 import {buildSelectQuery} from '../queries/IRPipeline';
 import {lower} from '../queries/lower';
+import {lowerMutationJSON} from '../queries/lowerMutationJSON';
 
 /**
  * The free `lower()` function is the single entry point that turns any live
@@ -21,13 +22,14 @@ describe('lower()', () => {
     expect((lower(qb) as any).kind).toBe('select');
   });
 
-  test('mutations — lower equals the builder _toIR', () => {
+  test('mutations — lower(builder) equals lowerMutationJSON(builder.toJSON())', () => {
     const create = queryFactories.createSimple();
     const update = queryFactories.updateAddRemoveMulti();
     const del = queryFactories.deleteMultiple();
-    expect(sanitize(lower(create))).toEqual(sanitize((create as any)._toIR()));
-    expect(sanitize(lower(update))).toEqual(sanitize((update as any)._toIR()));
-    expect(sanitize(lower(del))).toEqual(sanitize((del as any)._toIR()));
+    // The live-builder path and the wire path must produce identical IR.
+    expect(sanitize(lower(create))).toEqual(sanitize(lowerMutationJSON(create.toJSON())));
+    expect(sanitize(lower(update))).toEqual(sanitize(lowerMutationJSON(update.toJSON())));
+    expect(sanitize(lower(del))).toEqual(sanitize(lowerMutationJSON(del.toJSON())));
     expect((lower(create) as any).kind).toBe('create');
     expect((lower(del) as any).kind).toBe('delete');
   });

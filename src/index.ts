@@ -106,9 +106,11 @@ export type {LinkedComponentInterface, QueryComponentLike} from './queries/Selec
 export {
   encodeNodeData,
   encodeValue,
+} from './queries/MutationSerialization.js';
+export {
   decodeNodeData,
   lowerMutationJSON,
-} from './queries/MutationSerialization.js';
+} from './queries/lowerMutationJSON.js';
 export type {
   MutationJSON,
   CreateMutationJSON,

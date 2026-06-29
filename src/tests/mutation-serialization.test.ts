@@ -1,7 +1,7 @@
 import {describe, expect, test} from '@jest/globals';
 import {Person, Dog, queryFactories} from '../test-helpers/query-fixtures';
 import {entity, sanitize} from '../test-helpers/test-utils';
-import {lowerMutationJSON} from '../queries/MutationSerialization';
+import {lowerMutationJSON} from '../queries/lowerMutationJSON';
 import {DeleteBuilder} from '../queries/DeleteBuilder';
 import {CreateBuilder} from '../queries/CreateBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
