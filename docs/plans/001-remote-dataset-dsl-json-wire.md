@@ -1,7 +1,7 @@
 ---
 summary: A RemoteDataset adapter that accepts the lightweight QueryBuilderJSON (DSL-JSON) over the wire, lowers it to IR via fromJSON().build(), and delegates to a wrapped IDataset — keeping json -> IR -> SPARQL translation on the dataset side.
 packages: [core]
-status: Plan
+status: Tasks
 ---
 
 # 001 — Remote Dataset (DSL-JSON over the wire)
@@ -203,3 +203,99 @@ export function toRemoteRequest(qb: QueryBuilder): RemoteRequest {
   + `npx tsc -p tsconfig-cjs.json --noEmit`.
 - Full/slow suite at review: `npm test`.
 - Command sources: `package.json` `test` script; jest config `jest.config.js`.
+
+# Tasks
+
+## Dependency graph
+
+```
+Phase 1 (protocol types) ──> Phase 2 (RemoteDataset) ──> Phase 4 (exports + tests + integration)
+                        └──> Phase 3 (RemoteClient) ──┘
+```
+
+Phase 1 establishes the contract. Phases 2 and 3 both depend only on Phase 1 and
+**can run in parallel** (different files, no shared writes). Phase 4 integrates
+(barrel exports + end-to-end test) and must run last. Given the small surface,
+phases will be executed sequentially in one session, but the graph is recorded for
+fidelity.
+
+## Phase 1 — Protocol types (`src/remote/RemoteProtocol.ts`)
+
+- Create `RemoteRequest`, `RemoteResponse<T>`, `RemoteErrorCode` exactly as in the
+  Contracts section.
+- Add internal helpers: `fail(code, err): RemoteResponse` and
+  `run<T>(code, fn): Promise<RemoteResponse<T>>` (try/catch wrapper) — exported for
+  reuse by `RemoteDataset`.
+- Imports are `import type` only (no runtime deps) except the helper functions.
+
+**Validation (quick gate):**
+- `npx tsc -p tsconfig-cjs.json --noEmit` exits 0.
+- Manual structural check: `RemoteErrorCode` union contains exactly the four codes
+  `lowering_failed | unsupported_op | handler_missing | execution_failed`.
+
+## Phase 2 — Server adapter (`src/remote/RemoteDataset.ts`)
+
+- `class RemoteDataset { constructor(private readonly target: IDataset) {} }`.
+- `async handle(req: RemoteRequest): Promise<RemoteResponse>` switching on `req.op`:
+  - `select`: `QueryBuilder.fromJSON(req.query).build()` inside try/catch →
+    `lowering_failed` on throw; else `run('execution_failed', () => target.selectQuery(ir))`.
+  - `create|update|delete`: if the optional `target.<op>Query` is missing →
+    `fail('handler_missing')`; else `run('execution_failed', () => target.<op>Query(req.query))`.
+  - default/unknown `op` → `fail('unsupported_op')`.
+- Depends on: Phase 1 types. (Stub: if built in parallel, hand-author the
+  `RemoteRequest`/`RemoteResponse` shapes locally — but here Phase 1 lands first.)
+
+**Validation (quick gate):**
+- `npx tsc -p tsconfig-cjs.json --noEmit` exits 0.
+- Covered by Phase 4 tests (no separate test file).
+
+## Phase 3 — Client helper (`src/remote/RemoteClient.ts`)
+
+- `toRemoteRequest(qb: QueryBuilder): RemoteRequest` → `{op:'select', query: qb.toJSON()}`.
+- `createRequest(ir)`, `updateRequest(ir)`, `deleteRequest(ir)` → wrap IR in the
+  envelope with the matching `op`.
+- Depends on: Phase 1 types + existing `QueryBuilder`.
+
+**Validation (quick gate):**
+- `npx tsc -p tsconfig-cjs.json --noEmit` exits 0.
+
+## Phase 4 — Exports + tests + integration (`src/index.ts`, `src/tests/remote-dataset.test.ts`)
+
+- Add to `src/index.ts`: `export {RemoteDataset} from './remote/RemoteDataset.js'`,
+  `export {toRemoteRequest, createRequest, updateRequest, deleteRequest} from './remote/RemoteClient.js'`,
+  `export type {RemoteRequest, RemoteResponse, RemoteErrorCode} from './remote/RemoteProtocol.js'`.
+- Add a `RemoteModule` namespace import to the `initModularApp()` `publicFiles` map
+  for parity with siblings.
+- New test file `src/tests/remote-dataset.test.ts` with a `RecordingDataset`
+  fake `IDataset` (captures the IR it receives, returns canned results).
+
+**Test specifications:**
+
+- `` `select round-trip — IR equivalence` `` — build
+  `QueryBuilder.from(Person).select(['name','hobby']).where(p => p.name.equals('Semmy')).limit(20)`.
+  `JSON.parse(JSON.stringify(toRemoteRequest(qb)))` → `new RemoteDataset(rec).handle(req)`.
+  Assert `rec.lastSelect` (the IR the fake received) `toEqual` `sanitize(qb.build())`
+  and that the response is `{ok:true, result: <canned>}`.
+- `` `select round-trip — payload is lighter than IR` `` — assert
+  `JSON.stringify(req.query).length < JSON.stringify(qb.build()).length` for a
+  projection-only query (documents the wire win).
+- `` `select — lowering_failed on unknown shape` `` — hand-craft
+  `{op:'select', query:{shape:'urn:does-not-exist', fields:[{path:'x'}]}}`; assert
+  response `{ok:false, error.code:'lowering_failed'}` and that `target.selectQuery`
+  was never called.
+- `` `create passthrough` `` — `createRequest(ir)` where `ir` is a minimal
+  `IRCreateMutation`; assert `rec.lastCreate toEqual ir` and `{ok:true}`.
+- `` `handler_missing` `` — wrap a target with no `createQuery`; assert
+  `{ok:false, error.code:'handler_missing'}`.
+- `` `unsupported_op` `` — pass `{op:'frobnicate'} as any`; assert
+  `{ok:false, error.code:'unsupported_op'}`.
+- `` `execution_failed` `` — target whose `selectQuery` rejects; assert
+  `{ok:false, error.code:'execution_failed'}` and the message is surfaced.
+
+**Validation (quick gate):**
+- `npx jest --config jest.config.js --runInBand --testPathPatterns='remote-dataset'`
+  — all cases above pass.
+- `npx tsc -p tsconfig-cjs.json --noEmit` exits 0.
+
+**Full review gate (deferred):** `npm test` — assert no regressions in the existing
+1141-passing suite.
