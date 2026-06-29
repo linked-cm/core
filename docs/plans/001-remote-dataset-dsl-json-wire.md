@@ -1,7 +1,7 @@
 ---
 summary: A RemoteDataset adapter that accepts the lightweight QueryBuilderJSON (DSL-JSON) over the wire, lowers it to IR via fromJSON().build(), and delegates to a wrapped IDataset — keeping json -> IR -> SPARQL translation on the dataset side.
 packages: [core]
-status: Review
+status: Implementation
 ---
 
 # 001 — Remote Dataset (DSL-JSON over the wire)
@@ -326,3 +326,135 @@ fidelity.
     non-strict tsconfig, control-flow narrowing on the boolean discriminant did not
     apply in tests, so assertions use `toMatchObject` (more robust). Flagged for
     review as a potential ergonomics gap for consumers.
+
+# Review
+
+Iteration 0 (select path) shipped and is green (1148 passing). Gaps surfaced:
+G1 mutations ship heavy IR, G2 transparent client, G3 HTTP transport, G5 response
+type guards, G6 round-trip breadth. **User decision:** iterate on **G1 only**, with
+the broader goal that **DSL-JSON becomes the primary wire format covering ALL linked
+query features, losslessly to/from JSON.** G2/G3/G5/G6 deferred to
+`docs/backlog/001-remote-dataset-deferred-gaps.md`.
+
+# Iteration 1 — Ideation (full mutation DSL-JSON)
+
+Goal: add lossless JSON (de)serialization for create/update/delete so the wire
+envelope carries DSL-JSON for mutations too (replacing iteration-0's IR passthrough).
+
+- **iD1 — Serialization level = builder/description-level (not IR-level).** Serialize
+  the normalized `NodeDescriptionValue` (`CreateQueryFactory.description` /
+  `UpdateQueryFactory.fields`) — post-`.set()`, post-callback-eval, pre-IR — plus
+  modes, ids, targetId, and where. On decode, rebuild the description (labels →
+  `PropertyShape` via the shape) and call the SAME `buildCanonical*MutationIR`
+  functions. Rationale: honors the explicit goal (DSL-JSON primary), matches the
+  select path (label-based, shape-relative), and reuses the proven canonical IR
+  builders for losslessness. Rejected: IR-level (simpler but "IR over the wire",
+  contradicts the goal).
+- **iD2 — Value codec.** Typed `MutationValueJSON` union covering every
+  `PropUpdateValue` kind: `lit | date | ref | node | array | setMod | expr | unset`.
+  Structural encoding (no shape needed to encode). `expr` reuses the IRExpression +
+  refs encoding from select serialization; `date` uses ISO; `unset` is an explicit
+  sentinel (plain JSON would drop `undefined`).
+- **iD3 — Callbacks.** `UpdateBuilder.set(fn)` may hold a *function*; `toJSON`
+  evaluates it via the factory (which runs `convertUpdateObject`, same as `build()`),
+  so only concrete data is serialized — mirrors how `QueryBuilder.toJSON` evaluates
+  `_whereFn`.
+- **iD4 — Where + modes.** `update_where`/`delete_where` reuse
+  `serializeWherePath`/`deserializeWherePath`; decode re-lowers via
+  `toWhere → canonicalizeWhere → lowerWhereToIR`. Modes (`for`/`forAll`/`where`,
+  `ids`/`all`/`where`) captured explicitly in the envelope.
+- **iD5 — Wire upgrade.** `RemoteRequest` create/update/delete carry the new
+  `Create/Update/DeleteMutationJSON`; `RemoteDataset` lowers via `lowerMutationJSON`.
+- **iD6 — Proof.** Mirror `ir-mutation-parity.test.ts`: assert
+  `lowerMutationJSON(wire(b.toJSON()))` deep-equals `b.build()` for every feature.
+
+## Inter-component contracts
+
+```ts
+// src/queries/MutationSerialization.ts
+export type MutationValueJSON =
+  | {kind: 'lit'; value: string | number | boolean}
+  | {kind: 'date'; value: string}                 // ISO 8601
+  | {kind: 'ref'; id: string}
+  | {kind: 'node'; data: MutationNodeDataJSON}
+  | {kind: 'array'; items: MutationValueJSON[]}
+  | {kind: 'setMod'; add?: MutationValueJSON[]; remove?: string[]}
+  | {kind: 'expr'; ir: IRExpression; refs?: Record<string, string[]>}
+  | {kind: 'unset'};
+export type MutationFieldJSON = {prop: string; value: MutationValueJSON};   // prop = label
+export type MutationNodeDataJSON = {shape: string; id?: string; fields: MutationFieldJSON[]};
+
+export type CreateMutationJSON = {op: 'create'; shape: string; data: MutationNodeDataJSON};
+export type UpdateMutationJSON = {op: 'update'; shape: string; mode: 'for'|'forAll'|'where';
+  targetId?: string; where?: WherePathJSON; data: MutationNodeDataJSON};
+export type DeleteMutationJSON =
+  | {op: 'delete'; shape: string; mode: 'ids'; ids: string[]}
+  | {op: 'delete'; shape: string; mode: 'all'}
+  | {op: 'delete'; shape: string; mode: 'where'; where: WherePathJSON};
+export type MutationJSON = CreateMutationJSON | UpdateMutationJSON | DeleteMutationJSON;
+
+export function encodeNodeData(d: NodeDescriptionValue): MutationNodeDataJSON;
+export function lowerMutationJSON(json: MutationJSON): CreateQuery | UpdateQuery | DeleteQuery;
+```
+
+## Iteration 1 — Plan
+
+Files: NEW `src/queries/MutationSerialization.ts` (codec + `lowerMutationJSON`);
+EDIT `CreateBuilder.ts`/`UpdateBuilder.ts`/`DeleteBuilder.ts` (add `toJSON()`);
+EDIT `src/remote/RemoteProtocol.ts` (mutation ops carry MutationJSON),
+`src/remote/RemoteDataset.ts` (lower via `lowerMutationJSON`),
+`src/remote/RemoteClient.ts` (`toRemoteRequest` accepts mutation builders);
+EDIT `src/index.ts` (exports); NEW `src/tests/mutation-serialization.test.ts`;
+EDIT `src/tests/remote-dataset.test.ts` (create via DSL-JSON path).
+
+Architecture compliance: `documentation/intermediate-representation.md` — decode calls
+the canonical IR builders unchanged, so the IR contract is preserved; no IR type
+changes. No `docs/architecture/` to reconcile.
+
+Pitfalls: (a) `expr`/`date`/`unset` are the JSON-lossy kinds — explicit encoding
+required. (b) decode must resolve nested shapes independently (each `node` carries its
+own `shape`). (c) `$add`/`$remove` set-mod keys (with `$`) are the normalized form.
+(d) reconstructed `prop` only needs `.id`, recovered from `shape.getPropertyShape(label)`.
+
+Test strategy: quick gate `npx jest --testPathPatterns='mutation-serialization|remote-dataset'`
++ `npx tsc -p tsconfig-cjs.json --noEmit`; full `npm test` at review.
+
+## Iteration 1 — Phases
+
+### Phase i1 — Codec + lowerMutationJSON (`src/queries/MutationSerialization.ts`)
+- JSON types above; `encodeValue`/`encodeNodeData` (structural), `decodeValue`/
+  `decodeNodeData` (label→PropertyShape via shape, rebuild ExpressionNode/Date/refs),
+  `lowerMutationJSON` dispatching to `buildCanonical*MutationIR` (+ where re-lowering
+  for `update_where`/`delete_where`).
+- **Validation:** `npx tsc -p tsconfig-cjs.json --noEmit` exits 0; covered by i3.
+
+### Phase i2 — Builder `toJSON()` (Create/Update/DeleteBuilder)
+- `CreateBuilder.toJSON()` → `{op:'create', shape, data: encodeNodeData(factory.description)}`.
+- `UpdateBuilder.toJSON()` → mode + targetId/where + `encodeNodeData(factory.fields)`
+  (evaluates fn-data via the factory).
+- `DeleteBuilder.toJSON()` → ids/all/where envelope (where via `serializeWherePath`).
+- **Validation:** typecheck exits 0; covered by i3.
+
+### Phase i3 — Round-trip parity tests (`src/tests/mutation-serialization.test.ts`)
+- For each feature from `ir-mutation-parity.test.ts`: create (simple/nested
+  refs+creates/fixedId), update-for (simple/setOverwrite/unset-single/unset-multi/
+  nested-with-id/nodeRef/add-remove/date/expr), update-forAll, update-where,
+  delete (ids/all/where). Assert
+  `sanitize(lowerMutationJSON(JSON.parse(JSON.stringify(b.toJSON())))) toEqual sanitize(b.build())`.
+- **Validation:** `npx jest --testPathPatterns='mutation-serialization'` all pass.
+
+### Phase i4 — Wire protocol + client + exports + integration
+- `RemoteProtocol`: `create|update|delete` ops carry `Create|Update|DeleteMutationJSON`.
+- `RemoteDataset`: mutation branches call `lowerMutationJSON(req)` (try/catch →
+  `lowering_failed`) then delegate to the matching target handler.
+- `RemoteClient.toRemoteRequest`: overloads to accept `QueryBuilder` (select) or a
+  mutation builder (calls its `toJSON()`); keep `createRequest`/… as thin wrappers
+  over `builder.toJSON()`.
+- `src/tests/remote-dataset.test.ts`: switch the create test to the DSL-JSON path and
+  assert the lowered IR the target receives equals `builder.build()`.
+- Exports in `src/index.ts` + `src/remote/index.ts`.
+- **Validation:** `npx jest --testPathPatterns='mutation-serialization|remote-dataset'`
+  pass; full `npm test` green; typecheck exits 0.
+
+## Iteration 1 — Dependency graph
+`i1 → i2 → i3`; `i1 → i4` (i4 also needs i2's `toJSON`). Executed sequentially.
