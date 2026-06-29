@@ -1,7 +1,7 @@
 ---
 summary: A RemoteDataset adapter that accepts the lightweight QueryBuilderJSON (DSL-JSON) over the wire, lowers it to IR via fromJSON().build(), and delegates to a wrapped IDataset — keeping json -> IR -> SPARQL translation on the dataset side.
 packages: [core]
-status: Implementation
+status: Review
 ---
 
 # 001 — Remote Dataset (DSL-JSON over the wire)
