@@ -3,6 +3,7 @@ import {resolveShape} from './resolveShape.js';
 import {DeleteQueryFactory, type DeleteQuery, type DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
+import {lower} from './lower.js';
 import {type WhereClause, processWhereClause} from './SelectQuery.js';
 import {
   buildCanonicalDeleteAllMutationIR,
@@ -96,8 +97,16 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   // Build & execute
   // ---------------------------------------------------------------------------
 
-  /** Build the IR mutation. */
+  /** Discriminator for the free `lower()` function and dataset routing. */
+  readonly __queryKind = 'delete' as const;
+
+  /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
   build(): DeleteQuery {
+    return lower(this);
+  }
+
+  /** @internal Build the canonical IR. Consumed by `lower()`. */
+  _toIR(): DeleteQuery {
     const mode = this._mode || (this._ids ? 'ids' : undefined);
 
     if (mode === 'all') {

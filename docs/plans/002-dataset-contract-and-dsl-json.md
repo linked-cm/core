@@ -1,7 +1,7 @@
 ---
 summary: Flip the dataset contract so datasets receive the live linked query object (the builder); make DSL-JSON the wire/interop format produced on demand at boundaries; make the IR an opt-in store detail behind a free lower() function (no public .build()); add mutation fromJSON; remove the RemoteDataset adapter; make query context a first-class JSON value with mutation parity; document the JSON spec; enable tree-shaking. Major version.
 packages: [core]
-status: Tasks
+status: Implementation
 ---
 
 # 002 — Linked query contract: builders in, JSON on the wire, IR as a store detail
@@ -322,3 +322,17 @@ Tasks:
 Validation:
 - Docs build/lint if present; manual check that every exported symbol in the contract is
   documented; changeset present.
+
+## Implementation progress
+
+- **Phase 1 — DONE (with deviation).** Added `src/queries/lower.ts` (free `lower(query)`,
+  discriminates on `__queryKind`: select → `buildSelectQuery(toRawInput())`, mutations →
+  builder `_toIR()`). `QueryBuilder` no longer imports `IRPipeline` (grep-verified). Added
+  `__queryKind` to all four builders; mutation `build()` bodies renamed to internal `_toIR()`.
+  Exported `lower`. New `src/tests/lower.test.ts`. Full suite 1175 passing.
+  - **Deviation:** kept `build()` as a `@deprecated` alias delegating to `lower(this)` rather
+    than removing it, to avoid churning ~50 `.build()` call sites across ~10 test files and
+    hard-breaking external callers in one step. Consequence: the IR pipeline is still
+    reachable from the builders via the deprecated `build()`, so the *full* tree-shaking win
+    (Phase 7) is reduced to shedding the SPARQL layer unless `build()` is later removed. The
+    free `lower()` is the canonical API going forward.

@@ -3,6 +3,7 @@ import {resolveShape} from './resolveShape.js';
 import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
 import {UpdateQueryFactory, type UpdateQuery} from './UpdateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
+import {lower} from './lower.js';
 import {type WhereClause, processWhereClause} from './SelectQuery.js';
 import {buildCanonicalUpdateWhereMutationIR} from './IRMutation.js';
 import {toWhere} from './IRDesugar.js';
@@ -106,8 +107,16 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   // Build & execute
   // ---------------------------------------------------------------------------
 
-  /** Build the IR mutation. */
+  /** Discriminator for the free `lower()` function and dataset routing. */
+  readonly __queryKind = 'update' as const;
+
+  /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
   build(): UpdateQuery {
+    return lower(this);
+  }
+
+  /** @internal Build the canonical IR. Consumed by `lower()`. */
+  _toIR(): UpdateQuery {
     if (!this._data) {
       throw new Error(
         'UpdateBuilder requires .set(data) before .build(). Specify what to update.',

@@ -13,7 +13,7 @@ import {
 } from './SelectQuery.js';
 import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
-import {buildSelectQuery} from './IRPipeline.js';
+import {lower} from './lower.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
@@ -625,9 +625,12 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
     return input;
   }
 
-  /** Build the IR (run the full pipeline: desugar → canonicalize → lower). */
+  /** Discriminator for the free `lower()` function and dataset routing. */
+  readonly __queryKind = 'select' as const;
+
+  /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
   build(): SelectQuery {
-    return buildSelectQuery(this.toRawInput());
+    return lower(this);
   }
 
   /** Execute the query and return results. */

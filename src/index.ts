@@ -52,6 +52,8 @@ import * as UpdateBuilderModule from './queries/UpdateBuilder.js';
 import * as DeleteBuilderModule from './queries/DeleteBuilder.js';
 // New dynamic query building API (Phase 2)
 export {QueryBuilder} from './queries/QueryBuilder.js';
+export {lower} from './queries/lower.js';
+export type {LowerableQuery} from './queries/lower.js';
 export {PropertyPath, walkPropertyPath} from './queries/PropertyPath.js';
 export type {WhereCondition, WhereOperator} from './queries/WhereCondition.js';
 
