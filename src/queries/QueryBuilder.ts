@@ -33,7 +33,7 @@ import {
   type RawMinusEntryJSON,
 } from './QueryBuilderSerialization.js';
 
-/** JSON representation of a QueryBuilder. */
+/** JSON representation of a SelectBuilder. */
 export type QueryBuilderJSON = {
   shape: string;
   fields?: FieldSetFieldJSON[];
@@ -62,7 +62,7 @@ interface MinusEntry<S extends Shape> {
   whereFn?: WhereClause<S>;
 }
 
-/** Internal state bag for QueryBuilder. */
+/** Internal state bag for SelectBuilder. */
 interface QueryBuilderInit<S extends Shape, R> {
   shape: ShapeConstructor<S>;
   selectFn?: QueryBuildFn<S, R>;
@@ -90,16 +90,16 @@ interface QueryBuilderInit<S extends Shape, R> {
  * An immutable, fluent query builder for select queries.
  *
  * Every mutation method (`.select()`, `.where()`, `.limit()`, etc.) returns
- * a **new** QueryBuilder instance — the original is never modified.
+ * a **new** SelectBuilder instance — the original is never modified.
  *
  * Implements `PromiseLike` so queries execute on `await`:
  * ```ts
- * const results = await QueryBuilder.from(Person).select(p => p.name);
+ * const results = await SelectBuilder.from(Person).select(p => p.name);
  * ```
  *
  * Generates IR directly via FieldSet, guaranteeing identical output to the existing DSL.
  */
-export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
+export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   implements PromiseLike<Result>, Promise<Result>
 {
   private readonly _shape: ShapeConstructor<S>;
@@ -146,8 +146,8 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /** Create a shallow clone with overrides. */
-  private clone<NR = R, NResult = Result>(overrides: Partial<QueryBuilderInit<S, any>> = {}): QueryBuilder<S, NR, NResult> {
-    return new QueryBuilder<S, NR, NResult>({
+  private clone<NR = R, NResult = Result>(overrides: Partial<QueryBuilderInit<S, any>> = {}): SelectBuilder<S, NR, NResult> {
+    return new SelectBuilder<S, NR, NResult>({
       shape: this._shape,
       selectFn: this._selectFn as any,
       whereFn: this._whereFn,
@@ -176,16 +176,16 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   // ---------------------------------------------------------------------------
 
   /**
-   * Create a QueryBuilder for the given shape.
+   * Create a SelectBuilder for the given shape.
    *
    * Accepts a shape class (e.g. `Person`), a NodeShape instance,
    * or a shape IRI string (resolved via the shape registry).
    */
   static from<S extends Shape>(
     shape: ShapeConstructor<S> | string,
-  ): QueryBuilder<S> {
+  ): SelectBuilder<S> {
     const resolved = resolveShape<S>(shape);
-    return new QueryBuilder<S>({shape: resolved});
+    return new SelectBuilder<S>({shape: resolved});
   }
 
   // ---------------------------------------------------------------------------
@@ -193,10 +193,10 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   // ---------------------------------------------------------------------------
 
   /** Set the select projection via a callback, labels, or FieldSet. */
-  select<NewR>(fn: QueryBuildFn<S, NewR>): QueryBuilder<S, NewR, QueryResponseToResultType<NewR, S>[]>;
-  select(labels: string[]): QueryBuilder<S>;
-  select<NewR>(fieldSet: FieldSet<NewR>): QueryBuilder<S, NewR, QueryResponseToResultType<NewR, S>[]>;
-  select<NewR = R>(fnOrLabelsOrFieldSet: QueryBuildFn<S, NewR> | string[] | FieldSet<any>): QueryBuilder<S, NewR, any> {
+  select<NewR>(fn: QueryBuildFn<S, NewR>): SelectBuilder<S, NewR, QueryResponseToResultType<NewR, S>[]>;
+  select(labels: string[]): SelectBuilder<S>;
+  select<NewR>(fieldSet: FieldSet<NewR>): SelectBuilder<S, NewR, QueryResponseToResultType<NewR, S>[]>;
+  select<NewR = R>(fnOrLabelsOrFieldSet: QueryBuildFn<S, NewR> | string[] | FieldSet<any>): SelectBuilder<S, NewR, any> {
     if (fnOrLabelsOrFieldSet instanceof FieldSet) {
       const labels = fnOrLabelsOrFieldSet.labels();
       const selectFn = ((p: any) =>
@@ -213,7 +213,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /** Select all decorated properties of the shape. */
-  selectAll(): QueryBuilder<S, any, QueryResponseToResultType<SelectAllQueryResponse<S>, S>[]> {
+  selectAll(): SelectBuilder<S, any, QueryResponseToResultType<SelectAllQueryResponse<S>, S>[]> {
     const propertyLabels = this._shape.shape
       .getUniquePropertyShapes()
       .map((ps) => ps.label);
@@ -223,7 +223,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /** Add a where clause. */
-  where(fn: WhereClause<S>): QueryBuilder<S, R, Result> {
+  where(fn: WhereClause<S>): SelectBuilder<S, R, Result> {
     return this.clone({whereFn: fn});
   }
 
@@ -238,7 +238,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
    *
    * Chainable: `.minus(A).minus(B)` produces two separate `MINUS { }` blocks.
    */
-  minus(shapeOrFn: ShapeConstructor<any> | WhereClause<S> | ((s: any) => any)): QueryBuilder<S, R, Result> {
+  minus(shapeOrFn: ShapeConstructor<any> | WhereClause<S> | ((s: any) => any)): SelectBuilder<S, R, Result> {
     const entry: MinusEntry<S> = {};
     if (typeof shapeOrFn === 'function' && 'shape' in shapeOrFn) {
       // ShapeConstructor — has a static .shape property
@@ -252,29 +252,29 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /** Set sort order. */
-  orderBy<OR>(fn: QueryBuildFn<S, OR>, direction: 'ASC' | 'DESC' = 'ASC'): QueryBuilder<S, R, Result> {
+  orderBy<OR>(fn: QueryBuildFn<S, OR>, direction: 'ASC' | 'DESC' = 'ASC'): SelectBuilder<S, R, Result> {
     return this.clone({sortByFn: fn as any, sortDirection: direction});
   }
 
   /**
    * @deprecated Use `orderBy()` instead.
    */
-  sortBy<OR>(fn: QueryBuildFn<S, OR>, direction: 'ASC' | 'DESC' = 'ASC'): QueryBuilder<S, R, Result> {
+  sortBy<OR>(fn: QueryBuildFn<S, OR>, direction: 'ASC' | 'DESC' = 'ASC'): SelectBuilder<S, R, Result> {
     return this.orderBy(fn, direction);
   }
 
   /** Set result limit. */
-  limit(n: number): QueryBuilder<S, R, Result> {
+  limit(n: number): SelectBuilder<S, R, Result> {
     return this.clone({limit: n});
   }
 
   /** Set result offset. */
-  offset(n: number): QueryBuilder<S, R, Result> {
+  offset(n: number): SelectBuilder<S, R, Result> {
     return this.clone({offset: n});
   }
 
   /** Target a single entity by ID. Implies singleResult; unwraps array Result type. */
-  for(id: string | NodeReferenceValue | null | undefined): QueryBuilder<S, R, Result extends (infer E)[] ? E : Result> {
+  for(id: string | NodeReferenceValue | null | undefined): SelectBuilder<S, R, Result extends (infer E)[] ? E : Result> {
     if (id instanceof PendingQueryContext) {
       // Store the pending context as subject — its .id getter resolves lazily
       // from the global context map when the query is built/serialized.
@@ -298,7 +298,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /** Target multiple entities by ID, or all if no ids given. */
-  forAll(ids?: (string | NodeReferenceValue)[]): QueryBuilder<S, R, Result> {
+  forAll(ids?: (string | NodeReferenceValue)[]): SelectBuilder<S, R, Result> {
     if (!ids) {
       return this.clone({subject: undefined, subjects: undefined, singleResult: false});
     }
@@ -307,7 +307,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /** Limit to one result. Unwraps array Result type to single element. */
-  one(): QueryBuilder<S, R, Result extends (infer E)[] ? E : Result> {
+  one(): SelectBuilder<S, R, Result extends (infer E)[] ? E : Result> {
     return this.clone<R, Result extends (infer E)[] ? E : Result>({limit: 1, singleResult: true});
   }
 
@@ -321,8 +321,8 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
    * ```ts
    * // DSL style
    * Person.select(p => p.bestFriend.preloadFor(PersonCard))
-   * // QueryBuilder style
-   * QueryBuilder.from(Person).select(p => [p.name]).preload('bestFriend', PersonCard)
+   * // SelectBuilder style
+   * SelectBuilder.from(Person).select(p => [p.name]).preload('bestFriend', PersonCard)
    * ```
    *
    * NOTE: Preloads hold live component references and are not serializable.
@@ -332,7 +332,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   preload<CS extends Shape, CR>(
     path: string,
     component: QueryComponentLike<CS, CR>,
-  ): QueryBuilder<S, R, Result> {
+  ): SelectBuilder<S, R, Result> {
     const newPreloads = [...(this._preloads || []), {path, component}];
     return this.clone({preloads: newPreloads});
   }
@@ -417,7 +417,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   // ---------------------------------------------------------------------------
 
   /**
-   * Serialize this QueryBuilder to a plain JSON object.
+   * Serialize this SelectBuilder to a plain JSON object.
    *
    * Selections are serializable regardless of how they were set (FieldSet,
    * string[], selectAll, or callback). Callback-based selections are eagerly
@@ -488,34 +488,34 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /**
-   * Reconstruct a QueryBuilder from a JSON object.
+   * Reconstruct a SelectBuilder from a JSON object.
    * Resolves shape IRI via getShapeClass() and field paths as label selections.
    */
-  static fromJSON<S extends Shape = Shape>(json: QueryBuilderJSON): QueryBuilder<S> {
-    let builder = QueryBuilder.from<S>(json.shape as any);
+  static fromJSON<S extends Shape = Shape>(json: QueryBuilderJSON): SelectBuilder<S> {
+    let builder = SelectBuilder.from<S>(json.shape as any);
 
     if (json.fields && json.fields.length > 0) {
       const fieldSet = FieldSet.fromJSON({
         shape: json.shape,
         fields: json.fields,
       });
-      builder = builder.select(fieldSet) as QueryBuilder<S>;
+      builder = builder.select(fieldSet) as SelectBuilder<S>;
     }
 
     if (json.limit !== undefined) {
-      builder = builder.limit(json.limit) as QueryBuilder<S>;
+      builder = builder.limit(json.limit) as SelectBuilder<S>;
     }
     if (json.offset !== undefined) {
-      builder = builder.offset(json.offset) as QueryBuilder<S>;
+      builder = builder.offset(json.offset) as SelectBuilder<S>;
     }
     if (json.subject) {
-      builder = builder.for(json.subject) as QueryBuilder<S>;
+      builder = builder.for(json.subject) as SelectBuilder<S>;
     }
     if (json.subjects && json.subjects.length > 0) {
-      builder = builder.forAll(json.subjects) as QueryBuilder<S>;
+      builder = builder.forAll(json.subjects) as SelectBuilder<S>;
     }
     if (json.singleResult && !json.subject) {
-      builder = builder.one() as QueryBuilder<S>;
+      builder = builder.one() as SelectBuilder<S>;
     }
 
     // Restore pre-evaluated data via clone — safe because fromJSON is in the same class.
@@ -553,7 +553,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
     }
 
     if (Object.keys(overrides).length > 0) {
-      builder = (builder as any).clone(overrides) as QueryBuilder<S>;
+      builder = (builder as any).clone(overrides) as SelectBuilder<S>;
     }
 
     return builder;
@@ -682,6 +682,9 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   get [Symbol.toStringTag](): string {
-    return 'QueryBuilder';
+    return 'SelectBuilder';
   }
 }
+
+/** @deprecated Renamed to `SelectBuilder`. This alias will be removed in a future major. */
+export {SelectBuilder as QueryBuilder};
