@@ -1,7 +1,7 @@
 ---
 summary: A RemoteDataset adapter that accepts the lightweight QueryBuilderJSON (DSL-JSON) over the wire, lowers it to IR via fromJSON().build(), and delegates to a wrapped IDataset — keeping json -> IR -> SPARQL translation on the dataset side.
 packages: [core]
-status: Ideation
+status: Plan
 ---
 
 # 001 — Remote Dataset (DSL-JSON over the wire)
@@ -88,3 +88,118 @@ shape during lowering).
   and typecheck `npx tsc -p tsconfig-cjs.json --noEmit`.
 - Full/slow suite deferred to review: `npm test` (Fuseki integration tests
   self-skip when Docker is unavailable).
+
+# Plan
+
+## Chosen route
+
+A single new module `src/remote/` exposing:
+1. A **wire envelope** type pair (`RemoteRequest` / `RemoteResponse`).
+2. A server-side **`RemoteDataset`** adapter that wraps a target `IDataset`,
+   lowers `select` DSL-JSON to IR via `QueryBuilder.fromJSON(json).build()`, passes
+   mutation IR straight through, and returns a discriminated response.
+3. A client-side **`toRemoteRequest`** helper (builder-level for select; IR for
+   mutations) so callers produce the lightweight payload before dispatch.
+
+No changes to core dispatch, `IDataset`, or the IR pipeline.
+
+## Inter-component contracts
+
+```ts
+// src/remote/RemoteProtocol.ts — the over-the-wire envelope
+import type {QueryBuilderJSON} from '../queries/QueryBuilder.js';
+import type {CreateQuery} from '../queries/CreateQuery.js';
+import type {UpdateQuery} from '../queries/UpdateQuery.js';
+import type {DeleteQuery} from '../queries/DeleteQuery.js';
+
+export type RemoteRequest =
+  | {op: 'select'; query: QueryBuilderJSON}   // lightweight DSL-JSON
+  | {op: 'create'; query: CreateQuery}        // IR passthrough (no mutation toJSON yet)
+  | {op: 'update'; query: UpdateQuery}
+  | {op: 'delete'; query: DeleteQuery};
+
+export type RemoteResponse<T = unknown> =
+  | {ok: true; result: T}
+  | {ok: false; error: {message: string; code: RemoteErrorCode}};
+
+export type RemoteErrorCode =
+  | 'lowering_failed'      // fromJSON/build threw (unknown shape/label, bad payload)
+  | 'unsupported_op'       // op not recognised
+  | 'handler_missing'      // target IDataset lacks the optional method
+  | 'execution_failed';    // target dataset threw while executing
+```
+
+```ts
+// src/remote/RemoteDataset.ts — server-side adapter
+export class RemoteDataset {
+  constructor(private readonly target: IDataset) {}
+
+  /** Lower (if needed) and delegate one wire request to the wrapped dataset. */
+  async handle(req: RemoteRequest): Promise<RemoteResponse> {
+    switch (req?.op) {
+      case 'select': {
+        let ir: SelectQuery;
+        try { ir = QueryBuilder.fromJSON(req.query).build(); }
+        catch (err) { return fail('lowering_failed', err); }
+        return run('execution_failed', () => this.target.selectQuery(ir));
+      }
+      case 'create': /* requires target.createQuery */ ...
+      case 'update': ...
+      case 'delete': ...
+      default: return fail('unsupported_op', ...);
+    }
+  }
+}
+```
+
+```ts
+// src/remote/RemoteClient.ts — client-side payload construction
+export function toRemoteRequest(qb: QueryBuilder): RemoteRequest {
+  return {op: 'select', query: qb.toJSON()};   // lightweight
+}
+// plus createRequest/updateRequest/deleteRequest(ir) helpers for mutations
+```
+
+## Files expected to change
+
+| File | Change |
+|---|---|
+| `src/remote/RemoteProtocol.ts` | NEW — envelope + error-code types, `fail`/`run` helpers |
+| `src/remote/RemoteDataset.ts` | NEW — `RemoteDataset` server adapter |
+| `src/remote/RemoteClient.ts` | NEW — `toRemoteRequest` + mutation request builders |
+| `src/index.ts` | export `RemoteDataset`, `toRemoteRequest`, protocol types |
+| `src/tests/remote-dataset.test.ts` | NEW — round-trip + error + size tests |
+
+## Architecture compliance
+
+- **`documentation/intermediate-representation.md`** — the store-implementer
+  contract: datasets consume canonical IR. `RemoteDataset` is *upstream* of that
+  contract: it produces IR via the public pipeline (`fromJSON().build()`) and hands
+  the wrapped dataset exactly the IR it already expects. No IR shape change, so the
+  contract is preserved.
+- **`documentation/sparql-algebra.md`** — unaffected; SPARQL compilation stays
+  entirely inside the wrapped dataset (`json -> IR -> SPARQL` remains the dataset's
+  job, as intended).
+- No architecture deviations or extensions required.
+
+## Pitfalls
+
+- **Shape registry requirement**: lowering needs the shapes registered on the
+  server; otherwise `fromJSON` throws. Handled by `lowering_failed` error code +
+  doc note. (This is the fundamental DSL-JSON tradeoff, not a bug.)
+- **Optional mutation handlers**: target `IDataset` may not implement
+  `createQuery/updateQuery/deleteQuery` — guard and return `handler_missing`.
+- **`fromJSON` callback caveat**: a builder restored from JSON has no live
+  callbacks, but `serialization.test.ts` proves the rebuilt FieldSet yields
+  equivalent IR — so the round-trip is safe for the selection/where/sort/minus
+  surface already covered by those tests.
+- **Mutations stay heavy**: create/update/delete still ship IR; documented as the
+  D1 boundary with a deferred follow-up (open-item #6).
+
+## Test strategy
+
+- Impacted package: root `@_linked/core` only.
+- Quick gate after each phase (1–2 min): `npx jest --config jest.config.js --runInBand --testPathPatterns='remote-dataset'`
+  + `npx tsc -p tsconfig-cjs.json --noEmit`.
+- Full/slow suite at review: `npm test`.
+- Command sources: `package.json` `test` script; jest config `jest.config.js`.
