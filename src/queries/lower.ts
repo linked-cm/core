@@ -14,30 +14,30 @@
  * implementation detail of stores that want it (e.g. SPARQL) — not the contract.
  */
 import {buildSelectQuery} from './IRPipeline.js';
-import type {SelectQuery} from './SelectQuery.js';
-import type {CreateQuery} from './CreateQuery.js';
-import type {UpdateQuery} from './UpdateQuery.js';
-import type {DeleteQuery} from './DeleteQuery.js';
+import type {IRSelectQuery} from './IntermediateRepresentation.js';
+import type {IRCreateQuery} from './CreateQuery.js';
+import type {IRUpdateQuery} from './UpdateQuery.js';
+import type {IRDeleteQuery} from './DeleteQuery.js';
 
 /** A select query that can be lowered (the select builder). */
 export type LowerableSelect = {readonly __queryKind: 'select'; toRawInput(): any};
 /** A mutation query that can be lowered (the mutation builders). */
-export type LowerableCreate = {readonly __queryKind: 'create'; _toIR(): CreateQuery};
-export type LowerableUpdate = {readonly __queryKind: 'update'; _toIR(): UpdateQuery};
-export type LowerableDelete = {readonly __queryKind: 'delete'; _toIR(): DeleteQuery};
+export type LowerableCreate = {readonly __queryKind: 'create'; _toIR(): IRCreateQuery};
+export type LowerableUpdate = {readonly __queryKind: 'update'; _toIR(): IRUpdateQuery};
+export type LowerableDelete = {readonly __queryKind: 'delete'; _toIR(): IRDeleteQuery};
 export type LowerableQuery =
   | LowerableSelect
   | LowerableCreate
   | LowerableUpdate
   | LowerableDelete;
 
-export function lower(query: LowerableSelect): SelectQuery;
-export function lower(query: LowerableCreate): CreateQuery;
-export function lower(query: LowerableUpdate): UpdateQuery;
-export function lower(query: LowerableDelete): DeleteQuery;
+export function lower(query: LowerableSelect): IRSelectQuery;
+export function lower(query: LowerableCreate): IRCreateQuery;
+export function lower(query: LowerableUpdate): IRUpdateQuery;
+export function lower(query: LowerableDelete): IRDeleteQuery;
 export function lower(
   query: LowerableQuery,
-): SelectQuery | CreateQuery | UpdateQuery | DeleteQuery {
+): IRSelectQuery | IRCreateQuery | IRUpdateQuery | IRDeleteQuery {
   if (query.__queryKind === 'select') {
     return buildSelectQuery(query.toRawInput());
   }

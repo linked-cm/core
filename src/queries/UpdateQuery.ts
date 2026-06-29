@@ -16,6 +16,9 @@ import {buildCanonicalUpdateMutationIR} from './IRMutation.js';
  */
 export type UpdateQuery = IRUpdateMutation | IRUpdateWhereMutation;
 
+/** The lowered IR for an update mutation (what `lower()` produces). */
+export type IRUpdateQuery = IRUpdateMutation | IRUpdateWhereMutation;
+
 export class UpdateQueryFactory<
   ShapeType extends Shape,
   U extends UpdatePartial<ShapeType>,

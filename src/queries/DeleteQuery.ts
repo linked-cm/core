@@ -14,6 +14,9 @@ import {buildCanonicalDeleteMutationIR} from './IRMutation.js';
  */
 export type DeleteQuery = IRDeleteMutation | IRDeleteAllMutation | IRDeleteWhereMutation;
 
+/** The lowered IR for a delete mutation (what `lower()` produces). */
+export type IRDeleteQuery = IRDeleteMutation | IRDeleteAllMutation | IRDeleteWhereMutation;
+
 export type DeleteResponse = {
   /**
    * The IDs of the items that were successfully deleted.

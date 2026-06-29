@@ -10,6 +10,9 @@ import {buildCanonicalCreateMutationIR} from './IRMutation.js';
  */
 export type CreateQuery = IRCreateMutation;
 
+/** The lowered IR for a create mutation (what `lower()` produces). */
+export type IRCreateQuery = IRCreateMutation;
+
 export type CreateResponse<U> = AddId<U, true>;
 
 export class CreateQueryFactory<

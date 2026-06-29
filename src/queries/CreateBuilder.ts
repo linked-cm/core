@@ -1,7 +1,7 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import type {UpdatePartial} from './QueryFactory.js';
-import {CreateQueryFactory, type CreateQuery, type CreateResponse} from './CreateQuery.js';
+import {CreateQueryFactory, type CreateQuery, type IRCreateQuery, type CreateResponse} from './CreateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
 import {encodeNodeData, type CreateMutationJSON} from './MutationSerialization.js';
@@ -83,12 +83,12 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   readonly __queryKind = 'create' as const;
 
   /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
-  build(): CreateQuery {
+  build(): IRCreateQuery {
     return lower(this);
   }
 
   /** @internal Build the canonical IR. Consumed by `lower()`. Throws if no data was set. */
-  _toIR(): CreateQuery {
+  _toIR(): IRCreateQuery {
     if (!this._data) {
       throw new Error(
         'CreateBuilder requires .set(data) before .build(). Specify what to create.',

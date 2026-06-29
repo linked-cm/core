@@ -15,6 +15,7 @@ import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
 import {lower} from './lower.js';
 import {getQueryDispatch} from './queryDispatch.js';
+import type {IRSelectQuery} from './IntermediateRepresentation.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
 import {FieldSet, type FieldSetJSON, type FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
@@ -629,7 +630,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
   readonly __queryKind = 'select' as const;
 
   /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
-  build(): SelectQuery {
+  build(): IRSelectQuery {
     return lower(this);
   }
 
@@ -643,7 +644,7 @@ export class QueryBuilder<S extends Shape = Shape, R = any, Result = any>
       // Pending context hasn't resolved yet — return null rather than querying without a subject.
       return Promise.resolve(null as Result);
     }
-    let query: SelectQuery;
+    let query: IRSelectQuery;
     try {
       query = this.build();
     } catch (err) {

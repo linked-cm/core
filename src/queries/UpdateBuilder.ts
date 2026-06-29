@@ -1,7 +1,7 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
-import {UpdateQueryFactory, type UpdateQuery} from './UpdateQuery.js';
+import {UpdateQueryFactory, type UpdateQuery, type IRUpdateQuery} from './UpdateQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {lower} from './lower.js';
 import {type WhereClause, processWhereClause} from './SelectQuery.js';
@@ -111,12 +111,12 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   readonly __queryKind = 'update' as const;
 
   /** @deprecated Use the free `lower(query)` function instead of `query.build()`. */
-  build(): UpdateQuery {
+  build(): IRUpdateQuery {
     return lower(this);
   }
 
   /** @internal Build the canonical IR. Consumed by `lower()`. */
-  _toIR(): UpdateQuery {
+  _toIR(): IRUpdateQuery {
     if (!this._data) {
       throw new Error(
         'UpdateBuilder requires .set(data) before .build(). Specify what to update.',
