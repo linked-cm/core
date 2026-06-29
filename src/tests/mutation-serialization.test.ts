@@ -60,6 +60,35 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
     );
   });
 
+  describe('coverage hardening (iteration 2)', () => {
+    // Gap 2: nested-create object inside a $add set-modification (+ ref in $remove).
+    check('set add nested-create + remove ref', () =>
+      Person.update({
+        friends: {add: [{name: 'AddedFriend'}], remove: [entity('p2')]},
+      } as any).for(entity('p1')),
+    );
+
+    // Gap 1: multi-segment computed-expression update (emits traversalPatterns).
+    check('multi-segment expression update', () =>
+      Person.update((p: any) => ({hobby: p.bestFriend.name.concat('!')})).for(
+        entity('p1'),
+      ),
+    );
+  });
+
+  test('multi-segment expression update emits traversalPatterns that round-trip', () => {
+    const builder = Person.update((p: any) => ({
+      hobby: p.bestFriend.name.concat('!'),
+    })).for(entity('p1'));
+    const built: any = builder.build();
+    // Sanity: this scenario actually exercises the traversalPatterns path.
+    expect(Array.isArray(built.traversalPatterns)).toBe(true);
+    const lowered: any = lowerMutationJSON(
+      JSON.parse(JSON.stringify(builder.toJSON())),
+    );
+    expect(sanitize(lowered)).toEqual(sanitize(built));
+  });
+
   test('date value survives the wire as a Date', () => {
     const ir: any = lowerMutationJSON(
       JSON.parse(JSON.stringify(queryFactories.updateBirthDate().toJSON())),

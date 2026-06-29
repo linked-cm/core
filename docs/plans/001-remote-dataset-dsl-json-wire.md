@@ -482,3 +482,25 @@ Test strategy: quick gate `npx jest --testPathPatterns='mutation-serialization|r
   `src/tests/remote-dataset.test.ts` create test switched to the DSL-JSON path + a
   mutation `lowering_failed` case. Exports added to `index.ts`/`remote/index.ts`.
   Validation: `npx tsc -p tsconfig-cjs.json --noEmit` exits 0; impacted suites green.
+
+# Iteration 2 — Close round-trip coverage gaps
+
+Goal: harden the "all features" guarantee surfaced in iteration-1 review.
+- Gap 1: multi-segment computed-expression update (emits `traversalPatterns`).
+- Gap 2: nested-create object inside a `$add` set-modification.
+Test-only; fix the codec if a gap exposes a real defect. Stays in this plan doc.
+
+## Iteration 2 — Phases
+### Phase j1 — add round-trip cases to `src/tests/mutation-serialization.test.ts`
+- multi-segment expression update (assign `p.bestFriend.name` to a property) →
+  assert `lowerMutationJSON(wire(b.toJSON()))` ≡ `b.build()`, incl. any traversalPatterns.
+- `$add` with a nested-create object (+ `$remove` ref) → assert round-trip.
+- **Validation:** `npx jest --testPathPatterns='mutation-serialization'` all pass;
+  full `npm test` green.
+
+## Iteration 2 — Progress
+- **Phase j1 — DONE.** Added round-trip cases: nested-create object inside `$add`
+  (+ ref in `$remove`), and a multi-segment computed-expression update
+  (`p.bestFriend.name.concat('!')`) — the latter exercises the `ExpressionNode`
+  multi-segment-ref path and asserts the regenerated `traversalPatterns` (`__trav_0__`)
+  match `build()`. Both round-trip to identical IR. Full suite: 1175 passing, 0 failing.
