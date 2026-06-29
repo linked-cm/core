@@ -5,7 +5,11 @@
  */
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
+import type {CreateQuery} from '../queries/CreateQuery.js';
+import type {UpdateQuery} from '../queries/UpdateQuery.js';
+import type {DeleteQuery} from '../queries/DeleteQuery.js';
 import {QueryBuilder} from '../queries/QueryBuilder.js';
+import {lowerMutationJSON} from '../queries/MutationSerialization.js';
 import {fail, run, type RemoteRequest, type RemoteResponse} from './RemoteProtocol.js';
 
 /**
@@ -43,21 +47,42 @@ export class RemoteDataset {
         }
         return run('execution_failed', () => this.target.selectQuery(ir));
       }
-      case 'create':
+      case 'create': {
         if (!this.target.createQuery) {
           return fail('handler_missing', 'target IDataset does not implement createQuery');
         }
-        return run('execution_failed', () => this.target.createQuery!(req.query));
-      case 'update':
+        let ir: CreateQuery;
+        try {
+          ir = lowerMutationJSON(req) as CreateQuery;
+        } catch (err) {
+          return fail('lowering_failed', err);
+        }
+        return run('execution_failed', () => this.target.createQuery!(ir));
+      }
+      case 'update': {
         if (!this.target.updateQuery) {
           return fail('handler_missing', 'target IDataset does not implement updateQuery');
         }
-        return run('execution_failed', () => this.target.updateQuery!(req.query));
-      case 'delete':
+        let ir: UpdateQuery;
+        try {
+          ir = lowerMutationJSON(req) as UpdateQuery;
+        } catch (err) {
+          return fail('lowering_failed', err);
+        }
+        return run('execution_failed', () => this.target.updateQuery!(ir));
+      }
+      case 'delete': {
         if (!this.target.deleteQuery) {
           return fail('handler_missing', 'target IDataset does not implement deleteQuery');
         }
-        return run('execution_failed', () => this.target.deleteQuery!(req.query));
+        let ir: DeleteQuery;
+        try {
+          ir = lowerMutationJSON(req) as DeleteQuery;
+        } catch (err) {
+          return fail('lowering_failed', err);
+        }
+        return run('execution_failed', () => this.target.deleteQuery!(ir));
+      }
       default:
         return fail('unsupported_op', `unsupported op: ${String((req as {op?: unknown})?.op)}`);
     }

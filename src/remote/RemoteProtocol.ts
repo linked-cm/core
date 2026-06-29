@@ -7,23 +7,24 @@
 /**
  * Wire protocol for {@link RemoteDataset}.
  *
- * A `RemoteRequest` is what travels over the wire to a remote endpoint. The
- * `select` op carries the lightweight DSL-JSON (`QueryBuilderJSON`) produced by
- * `QueryBuilder.toJSON()`; the receiving side lowers it to IR via
- * `QueryBuilder.fromJSON(json).build()`. Mutations carry the IR directly, since
- * the mutation builders do not (yet) have a `toJSON` serializer — see plan 001,
- * decision D1.
+ * A `RemoteRequest` is what travels over the wire to a remote endpoint. Every op
+ * carries lightweight DSL-JSON: `select` carries `QueryBuilderJSON` (from
+ * `QueryBuilder.toJSON()`), and create/update/delete carry the mutation builders'
+ * `toJSON()` output. The receiving side lowers select via
+ * `QueryBuilder.fromJSON(json).build()` and mutations via `lowerMutationJSON(json)`.
  */
 import type {QueryBuilderJSON} from '../queries/QueryBuilder.js';
-import type {CreateQuery} from '../queries/CreateQuery.js';
-import type {UpdateQuery} from '../queries/UpdateQuery.js';
-import type {DeleteQuery} from '../queries/DeleteQuery.js';
+import type {
+  CreateMutationJSON,
+  UpdateMutationJSON,
+  DeleteMutationJSON,
+} from '../queries/MutationSerialization.js';
 
 export type RemoteRequest =
   | {op: 'select'; query: QueryBuilderJSON}
-  | {op: 'create'; query: CreateQuery}
-  | {op: 'update'; query: UpdateQuery}
-  | {op: 'delete'; query: DeleteQuery};
+  | CreateMutationJSON
+  | UpdateMutationJSON
+  | DeleteMutationJSON;
 
 export type RemoteResponse<T = unknown> =
   | {ok: true; result: T}

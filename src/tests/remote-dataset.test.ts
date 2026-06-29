@@ -3,7 +3,7 @@ import {Person} from '../test-helpers/query-fixtures';
 import {sanitize} from '../test-helpers/test-utils';
 import {QueryBuilder} from '../queries/QueryBuilder';
 import {RemoteDataset} from '../remote/RemoteDataset';
-import {toRemoteRequest, createRequest} from '../remote/RemoteClient';
+import {toRemoteRequest} from '../remote/RemoteClient';
 import type {RemoteRequest} from '../remote/RemoteProtocol';
 import type {IDataset} from '../interfaces/IDataset';
 import type {SelectQuery} from '../queries/SelectQuery';
@@ -66,20 +66,28 @@ describe('RemoteDataset', () => {
     expect(rec.selectCalls).toBe(0);
   });
 
-  test('create passthrough — IR delivered unchanged', async () => {
-    const ir: CreateQuery = {
-      kind: 'create',
-      shape: Person.shape.id,
-      data: {
-        shape: Person.shape.id,
-        fields: [{property: `${Person.shape.id}/name`, value: 'Alice'}],
-      },
-    } as any;
+  test('create round-trip — DSL-JSON lowered to IR equivalent to build()', async () => {
+    const builder = (Person as any).create({name: 'Alice', hobby: 'Hiking'});
+    const req = overTheWire(toRemoteRequest(builder));
     const rec = new RecordingDataset();
-    const res = await new RemoteDataset(rec).handle(overTheWire(createRequest(ir)));
+    const res = await new RemoteDataset(rec).handle(req);
 
     expect(res).toMatchObject({ok: true});
-    expect(rec.lastCreate).toEqual(ir);
+    // The IR the wrapped dataset received equals the IR built locally.
+    expect(sanitize(rec.lastCreate)).toEqual(sanitize(builder.build()));
+  });
+
+  test('mutation lowering_failed on unknown shape, target untouched', async () => {
+    const rec = new RecordingDataset();
+    const req: RemoteRequest = {
+      op: 'create',
+      shape: 'urn:nope',
+      data: {shape: 'urn:nope', fields: []},
+    } as any;
+    const res = await new RemoteDataset(rec).handle(req);
+
+    expect(res).toMatchObject({ok: false, error: {code: 'lowering_failed'}});
+    expect(rec.lastCreate).toBeUndefined();
   });
 
   test('handler_missing when target lacks the optional handler', async () => {
@@ -88,8 +96,8 @@ describe('RemoteDataset', () => {
         return [];
       },
     };
-    const ir = {kind: 'create', shape: 'x', data: {shape: 'x', fields: []}} as any;
-    const res = await new RemoteDataset(selectOnly).handle(createRequest(ir));
+    const req = toRemoteRequest((Person as any).create({name: 'Alice'}));
+    const res = await new RemoteDataset(selectOnly).handle(req);
 
     expect(res).toMatchObject({ok: false, error: {code: 'handler_missing'}});
   });

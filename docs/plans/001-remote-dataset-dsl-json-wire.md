@@ -474,3 +474,11 @@ Test strategy: quick gate `npx jest --testPathPatterns='mutation-serialization|r
   computed expression, set add/remove, unset single/multi, nested-with-id, refs),
   update forAll/where, delete ids/all/where; each asserts
   `lowerMutationJSON(wire(b.toJSON()))` ≡ `b.build()`. All pass (1171 total).
+- **Phase i4 — Wire protocol + client + exports — DONE.** `RemoteRequest` mutation
+  ops now carry `Create/Update/DeleteMutationJSON` (self-describing `op`);
+  `RemoteDataset` lowers them via `lowerMutationJSON` with a `lowering_failed` guard;
+  `RemoteClient.toRemoteRequest` is now universal (select + mutation builders); the
+  IR-based `createRequest/updateRequest/deleteRequest` helpers were removed.
+  `src/tests/remote-dataset.test.ts` create test switched to the DSL-JSON path + a
+  mutation `lowering_failed` case. Exports added to `index.ts`/`remote/index.ts`.
+  Validation: `npx tsc -p tsconfig-cjs.json --noEmit` exits 0; impacted suites green.

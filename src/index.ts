@@ -42,6 +42,7 @@ import * as owl from './ontologies/owl.js';
 import * as npm from './ontologies/npm.js';
 import * as Sparql from './sparql/index.js';
 import * as RemoteModule from './remote/index.js';
+import * as MutationSerializationModule from './queries/MutationSerialization.js';
 import * as QueryBuilderModule from './queries/QueryBuilder.js';
 import * as PropertyPathModule from './queries/PropertyPath.js';
 import * as WhereConditionModule from './queries/WhereCondition.js';
@@ -85,18 +86,30 @@ export type {LinkedComponentInterface, QueryComponentLike} from './queries/Selec
 
 // Remote datasets — lightweight DSL-JSON over the wire, lowered to IR server-side
 export {RemoteDataset} from './remote/RemoteDataset.js';
-export {
-  toRemoteRequest,
-  createRequest,
-  updateRequest,
-  deleteRequest,
-} from './remote/RemoteClient.js';
+export {toRemoteRequest, type RemoteRequestable} from './remote/RemoteClient.js';
 export type {
   RemoteRequest,
   RemoteResponse,
   RemoteError,
   RemoteErrorCode,
 } from './remote/RemoteProtocol.js';
+
+// Mutation DSL-JSON serialization (create/update/delete to/from JSON)
+export {
+  encodeNodeData,
+  encodeValue,
+  decodeNodeData,
+  lowerMutationJSON,
+} from './queries/MutationSerialization.js';
+export type {
+  MutationJSON,
+  CreateMutationJSON,
+  UpdateMutationJSON,
+  DeleteMutationJSON,
+  MutationValueJSON,
+  MutationFieldJSON,
+  MutationNodeDataJSON,
+} from './queries/MutationSerialization.js';
 
 export function initModularApp() {
   let publicFiles = {
@@ -136,6 +149,7 @@ export function initModularApp() {
     npm,
     Sparql,
     RemoteModule,
+    MutationSerializationModule,
     QueryBuilderModule,
     PropertyPathModule,
     WhereConditionModule,

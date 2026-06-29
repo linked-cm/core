@@ -4,12 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 export {RemoteDataset} from './RemoteDataset.js';
-export {
-  toRemoteRequest,
-  createRequest,
-  updateRequest,
-  deleteRequest,
-} from './RemoteClient.js';
+export {toRemoteRequest, type RemoteRequestable} from './RemoteClient.js';
 export type {
   RemoteRequest,
   RemoteResponse,
