@@ -1,7 +1,7 @@
 ---
 summary: A RemoteDataset adapter that accepts the lightweight QueryBuilderJSON (DSL-JSON) over the wire, lowers it to IR via fromJSON().build(), and delegates to a wrapped IDataset — keeping json -> IR -> SPARQL translation on the dataset side.
 packages: [core]
-status: Tasks
+status: Implementation
 ---
 
 # 001 — Remote Dataset (DSL-JSON over the wire)
@@ -299,3 +299,10 @@ fidelity.
 
 **Full review gate (deferred):** `npm test` — assert no regressions in the existing
 1141-passing suite.
+
+# Implementation progress
+
+- **Phase 1 — Protocol types — DONE.** Created `src/remote/RemoteProtocol.ts`
+  (`RemoteRequest`, `RemoteResponse<T>`, `RemoteError`, `RemoteErrorCode` with the
+  four codes, plus `fail`/`run` helpers). Validation: `npx tsc -p tsconfig-cjs.json --noEmit`
+  exits 0.
