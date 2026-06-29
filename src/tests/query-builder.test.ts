@@ -725,16 +725,31 @@ describe('QueryBuilder — .for() with PendingQueryContext', () => {
     expect(qb.hasPendingContext()).toBe(false);
   });
 
-  test('toJSON().subject resolves lazily from PendingQueryContext', () => {
+  test('toJSON().subject carries a {$ctx} reference, not the resolved id', () => {
     const pending = new PendingQueryContext('qbPending');
     const qb = Person.select((p) => p.name).for(pending as any);
 
-    // Before context is set, subject is undefined
-    expect(qb.toJSON().subject).toBeUndefined();
+    // The wire carries the context reference regardless of local resolution —
+    // the receiver resolves it against its own context map at lowering time.
+    expect(qb.toJSON().subject).toEqual({$ctx: 'qbPending'});
 
-    // After setting the context, subject resolves via the lazy getter
     setQueryContext('qbPending', {id: `${tmpEntityBase}u1`}, Person);
-    expect(qb.toJSON().subject).toBe(`${tmpEntityBase}u1`);
+    expect(qb.toJSON().subject).toEqual({$ctx: 'qbPending'});
+  });
+
+  test('toJSON/fromJSON round-trips a {$ctx} subject and resolves live', () => {
+    const pending = new PendingQueryContext('qbPending');
+    const qb = Person.select((p) => p.name).for(pending as any);
+    const restored = QueryBuilder.fromJSON(qb.toJSON());
+
+    // Still a context reference after the round-trip.
+    expect(restored.toJSON().subject).toEqual({$ctx: 'qbPending'});
+    expect(restored.hasPendingContext()).toBe(true);
+
+    // And it resolves live once the context lands.
+    setQueryContext('qbPending', {id: `${tmpEntityBase}u1`}, Person);
+    expect(restored.hasPendingContext()).toBe(false);
+    expect((restored as any).toRawInput().subject?.id).toBe(`${tmpEntityBase}u1`);
   });
 
   test('.for(null) still sets _nullSubject (not pending)', () => {

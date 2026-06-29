@@ -20,6 +20,7 @@ import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
 import {FieldSet, type FieldSetJSON, type FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
 import {PendingQueryContext} from './QueryContext.js';
+import {encodeContextRef, isContextRefJSON, type ContextRefJSON} from './ContextRef.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {
   serializeWherePath,
@@ -41,7 +42,8 @@ export type QueryBuilderJSON = {
   fields?: FieldSetFieldJSON[];
   limit?: number;
   offset?: number;
-  subject?: string;
+  /** A node id, or a `{$ctx: name}` context reference resolved at lowering. */
+  subject?: string | ContextRefJSON;
   subjects?: string[];
   singleResult?: boolean;
   orderDirection?: 'ASC' | 'DESC';
@@ -49,7 +51,6 @@ export type QueryBuilderJSON = {
   sortBy?: SortByPathJSON;
   minusEntries?: RawMinusEntryJSON[];
   nullSubject?: boolean;
-  pendingContextName?: string;
 };
 
 /** A preload entry binding a property path to a component's query. */
@@ -276,7 +277,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /** Target a single entity by ID. Implies singleResult; unwraps array Result type. */
-  for(id: string | NodeReferenceValue | null | undefined): SelectBuilder<S, R, Result extends (infer E)[] ? E : Result> {
+  for(id: string | NodeReferenceValue | PendingQueryContext | null | undefined): SelectBuilder<S, R, Result extends (infer E)[] ? E : Result> {
     if (id instanceof PendingQueryContext) {
       // Store the pending context as subject — its .id getter resolves lazily
       // from the global context map when the query is built/serialized.
@@ -285,10 +286,10 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     if (id == null) {
       // Return a builder that resolves to null when executed (no subject = no query).
       // This commonly happens when getQueryContext() returns null before the user is authenticated.
-      return this.clone({subject: undefined, subjects: undefined, singleResult: true, _nullSubject: true}) as any;
+      return this.clone({subject: undefined, subjects: undefined, singleResult: true, _nullSubject: true, _pendingContextName: undefined}) as any;
     }
     const subject: NodeReferenceValue = typeof id === 'string' ? {id: resolveUriOrThrow(id)} : id;
-    return this.clone({subject, subjects: undefined, singleResult: true}) as any;
+    return this.clone({subject, subjects: undefined, singleResult: true, _pendingContextName: undefined}) as any;
   }
 
   /**
@@ -302,10 +303,10 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   /** Target multiple entities by ID, or all if no ids given. */
   forAll(ids?: (string | NodeReferenceValue)[]): SelectBuilder<S, R, Result> {
     if (!ids) {
-      return this.clone({subject: undefined, subjects: undefined, singleResult: false});
+      return this.clone({subject: undefined, subjects: undefined, singleResult: false, _pendingContextName: undefined});
     }
     const subjects = ids.map((id) => typeof id === 'string' ? {id: resolveUriOrThrow(id)} : id);
-    return this.clone({subject: undefined, subjects, singleResult: false});
+    return this.clone({subject: undefined, subjects, singleResult: false, _pendingContextName: undefined});
   }
 
   /** Limit to one result. Unwraps array Result type to single element. */
@@ -447,7 +448,11 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     if (this._offset !== undefined) {
       json.offset = this._offset;
     }
-    if (this._subject && typeof this._subject === 'object' && 'id' in this._subject) {
+    if (this._pendingContextName) {
+      // Carry the context reference, not its (possibly unresolved) id, so the
+      // receiver resolves it against its own context map at lowering time.
+      json.subject = encodeContextRef(this._pendingContextName);
+    } else if (this._subject && typeof this._subject === 'object' && 'id' in this._subject) {
       json.subject = (this._subject as NodeReferenceValue).id;
     }
     if (this._subjects && this._subjects.length > 0) {
@@ -483,9 +488,6 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     if (this._nullSubject) {
       json.nullSubject = true;
     }
-    if (this._pendingContextName) {
-      json.pendingContextName = this._pendingContextName;
-    }
 
     return json;
   }
@@ -512,7 +514,12 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       builder = builder.offset(json.offset) as SelectBuilder<S>;
     }
     if (json.subject) {
-      builder = builder.for(json.subject) as SelectBuilder<S>;
+      // A `{$ctx}` subject rehydrates as a pending context (preserving the name
+      // so it re-serializes as a context reference and resolves live).
+      const subject = isContextRefJSON(json.subject)
+        ? new PendingQueryContext(json.subject.$ctx)
+        : json.subject;
+      builder = builder.for(subject) as SelectBuilder<S>;
     }
     if (json.subjects && json.subjects.length > 0) {
       builder = builder.forAll(json.subjects) as SelectBuilder<S>;
@@ -548,11 +555,6 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     // Restore nullSubject flag
     if (json.nullSubject) {
       overrides._nullSubject = true;
-    }
-
-    // Restore pending context name
-    if (json.pendingContextName) {
-      overrides._pendingContextName = json.pendingContextName;
     }
 
     if (Object.keys(overrides).length > 0) {

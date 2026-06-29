@@ -50,6 +50,12 @@ import {
 import type {IRCreateQuery} from './CreateQuery.js';
 import type {IRUpdateQuery} from './UpdateQuery.js';
 import type {IRDeleteQuery} from './DeleteQuery.js';
+import {
+  isContextRefJSON,
+  resolveContextId,
+  type ContextRefJSON,
+} from './ContextRef.js';
+import {PendingQueryContext} from './QueryContext.js';
 
 // =============================================================================
 // JSON types
@@ -59,6 +65,7 @@ export type MutationValueJSON =
   | {kind: 'lit'; value: string | number | boolean}
   | {kind: 'date'; value: string}
   | {kind: 'ref'; id: string}
+  | {kind: 'ctxRef'; name: string}
   | {kind: 'node'; data: MutationNodeDataJSON}
   | {kind: 'array'; items: MutationValueJSON[]}
   | {kind: 'setMod'; add?: MutationValueJSON[]; remove?: string[]}
@@ -85,9 +92,8 @@ export type UpdateMutationJSON = {
   op: 'update';
   shape: string;
   mode: 'for' | 'forAll' | 'where';
-  targetId?: string;
-  /** A query-context name used as the target subject (resolved at lowering). */
-  targetContext?: string;
+  /** A node id, or a `{$ctx: name}` context reference resolved at lowering. */
+  targetId?: string | ContextRefJSON;
   where?: WherePathJSON;
   data: MutationNodeDataJSON;
 };
@@ -141,6 +147,11 @@ function encodeSingleValue(value: SinglePropertyUpdateValue): MutationValueJSON 
     return {kind: 'lit', value};
   }
   if (value && typeof value === 'object') {
+    // Query-context reference — carry the name, resolve at lowering (checked
+    // before the generic `.id` branch since a PendingQueryContext has an `.id` getter).
+    if (value instanceof PendingQueryContext) {
+      return {kind: 'ctxRef', name: value.contextName};
+    }
     if ('fields' in value) {
       return {kind: 'node', data: encodeNodeData(value as NodeDescriptionValue)};
     }
@@ -190,6 +201,12 @@ function decodeValue(json: MutationValueJSON): PropUpdateValue {
       return new Date(json.value);
     case 'ref':
       return {id: json.id};
+    case 'ctxRef': {
+      // Lowering path: a mutation must hit a concrete node, so resolve the
+      // context now and throw if it isn't set.
+      const id = resolveContextId(json.name, true)!;
+      return {id} as PropUpdateValue;
+    }
     case 'node':
       return decodeNodeData(json.data) as unknown as PropUpdateValue;
     case 'array':
@@ -269,10 +286,15 @@ export function lowerMutationJSON(
       const shape = requireShape(json.shape);
       const updates = decodeNodeData(json.data);
       if (json.mode === 'for') {
-        if (!json.targetId) {
+        // A `{$ctx}` target resolves against the current context map; a mutation
+        // must hit a concrete subject, so an unresolved context throws.
+        const id = isContextRefJSON(json.targetId)
+          ? resolveContextId(json.targetId.$ctx, true)
+          : json.targetId;
+        if (!id) {
           throw new Error('update mode "for" requires a targetId');
         }
-        return buildCanonicalUpdateMutationIR({id: json.targetId, shape, updates});
+        return buildCanonicalUpdateMutationIR({id, shape, updates});
       }
       let where: IRExpression | undefined;
       let wherePatterns: IRGraphPattern[] | undefined;
@@ -314,6 +336,10 @@ function decodeValueToRaw(json: MutationValueJSON): unknown {
       return new Date(json.value);
     case 'ref':
       return {id: json.id};
+    case 'ctxRef':
+      // Rehydration path: preserve the live reference so it re-serializes as a
+      // `{$ctx}` marker and resolves at the rebuilt builder's own lowering.
+      return new PendingQueryContext(json.name);
     case 'node':
       return decodeNodeDataToRaw(json.data);
     case 'array':

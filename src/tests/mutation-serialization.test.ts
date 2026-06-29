@@ -159,8 +159,8 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
         .for(getQueryContext('ctx-x'));
 
       const json: any = JSON.parse(JSON.stringify(b.toJSON()));
-      expect(json.targetContext).toBe('ctx-x');
-      expect(json.targetId).toBeUndefined();
+      // Unified context reference: the target slot carries a {$ctx} marker.
+      expect(json.targetId).toEqual({$ctx: 'ctx-x'});
 
       // unresolved → lowering throws
       expect(() => lower(b as any)).toThrow(UnresolvedContextError);
@@ -172,6 +172,27 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       expect((lower(b as any) as any).id).toBe(entity('p1').id);
       expect((lower(UpdateBuilder.fromJSON(json)) as any).id).toBe(entity('p1').id);
       setQueryContext('ctx-x', undefined);
+    });
+
+    test('inbound mutation JSON with a {$ctx} field value resolves at lower (or throws)', () => {
+      setQueryContext('ctx-v', undefined); // ensure unset
+      // A wire envelope (e.g. authored elsewhere, or hand-built for interop)
+      // carrying a unified context reference as a node field value.
+      const json: any = JSON.parse(
+        JSON.stringify(
+          Person.update({bestFriend: entity('p2')}).for(entity('p1')).toJSON(),
+        ),
+      );
+      const field = json.data.fields.find((f: any) => f.prop === 'bestFriend');
+      field.value = {kind: 'ctxRef', name: 'ctx-v'};
+
+      // unresolved → lowering throws (a mutation must hit a concrete node)
+      expect(() => lowerMutationJSON(json)).toThrow(UnresolvedContextError);
+
+      // set the context → the field resolves and lowering succeeds
+      setQueryContext('ctx-v', {id: entity('p2').id}, Person);
+      expect(() => lowerMutationJSON(json)).not.toThrow();
+      setQueryContext('ctx-v', undefined);
     });
   });
 

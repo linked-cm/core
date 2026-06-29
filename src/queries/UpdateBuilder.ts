@@ -5,6 +5,7 @@ import {UpdateQueryFactory, type UpdateQuery, type IRUpdateQuery} from './Update
 import {getQueryDispatch} from './queryDispatch.js';
 import {WIRE_VERSION} from './wireVersion.js';
 import {PendingQueryContext, getQueryContext, UnresolvedContextError} from './QueryContext.js';
+import {encodeContextRef, isContextRefJSON} from './ContextRef.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import {buildCanonicalUpdateWhereMutationIR} from './IRMutation.js';
@@ -93,8 +94,8 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     const resolved = resolveShape(json.shape);
     const data = decodeNodeDataToRaw(json.data) as any;
     if (json.mode === 'for') {
-      if (json.targetContext) {
-        return new UpdateBuilder({shape: resolved, data, targetContextName: json.targetContext, mode: 'for'});
+      if (isContextRefJSON(json.targetId)) {
+        return new UpdateBuilder({shape: resolved, data, targetContextName: json.targetId.$ctx, mode: 'for'});
       }
       return new UpdateBuilder({shape: resolved, data, targetId: json.targetId, mode: 'for'});
     }
@@ -253,7 +254,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       data: encodeNodeData(factory.fields),
     };
     if (mode === 'for') {
-      if (this._targetContextName) json.targetContext = this._targetContextName;
+      if (this._targetContextName) json.targetId = encodeContextRef(this._targetContextName);
       else json.targetId = this._targetId;
     }
     if (mode === 'where') {
