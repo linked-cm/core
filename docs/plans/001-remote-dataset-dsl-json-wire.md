@@ -315,3 +315,14 @@ fidelity.
   (`toRemoteRequest(qb)` → DSL-JSON select envelope; `createRequest`/`updateRequest`/
   `deleteRequest` → IR envelopes). Validation: `npx tsc -p tsconfig-cjs.json --noEmit`
   exits 0.
+- **Phase 4 — Exports + tests + integration — DONE.** Added `src/remote/index.ts`
+  barrel; wired named + namespace (`RemoteModule`) exports into `src/index.ts`.
+  Created `src/tests/remote-dataset.test.ts` (7 cases: IR-equivalence round-trip,
+  lighter-payload, `lowering_failed`, create passthrough, `handler_missing`,
+  `unsupported_op`, `execution_failed`). Validation: targeted suite passes (7/7);
+  `npx tsc -p tsconfig-cjs.json --noEmit` exits 0; full run 1148 passed / 0 failed
+  (was 1141 — +7 new, no regressions).
+  - Note: response narrowing relied on a discriminated union; under this repo's
+    non-strict tsconfig, control-flow narrowing on the boolean discriminant did not
+    apply in tests, so assertions use `toMatchObject` (more robust). Flagged for
+    review as a potential ergonomics gap for consumers.
