@@ -1,6 +1,6 @@
 ---
 summary: Expand the hand-written linked-query E2E suite (queries + seed data) to cover features core supports but currently leaves untested, exercised through the live-query/store contract.
-status: Implementation
+status: Review
 source: docs/linked-query-test-coverage.md
 ---
 
@@ -289,3 +289,43 @@ Each phase = one commit (tests + updated plan doc).
 - **Phase 3 → Phase 4** (numeric/date operators need `Metric`).
 - Phases **2, 5, 6, 7, 8** depend only on Phase 1 and are mutually independent
   (parallelizable in principle; executed sequentially here, each gated).
+
+## Review
+
+**Outcome:** all 8 phases implemented. `src/tests/sparql-fuseki-coverage.test.ts`
+adds **71 passing E2E tests + 7 quarantined (skip)**, all through the live-query
+store contract. **Full suite: 1269 passed, 0 failed, 121 skipped** (no
+regressions). One core bug fixed (`exprNestedPath` alias collision).
+
+### Coverage delivered
+- §1 MINUS, negation/quantifier, expression-WHERE, computed projections,
+  expression updates, bulk/conditional mutations, 11/14 deep-nesting sub-selects.
+- §2 operators: string, numeric, date, `isDefined`/`defaultTo`, `str`/`datatype`,
+  `md5`/`sha256` (exact digests).
+- §3 datatype coercion (decimal/double/long/integer/date + multi-valued numeric).
+- §4 DSL property paths (sequence/alternative/inverse/transitive) E2E.
+- §5 builder: orderBy DESC/multi-key, top-level offset windowing.
+- §6 DSL-JSON round-trip (select/create/update).
+- §7 `{$ctx}` subject/where-arg/delete-by-context/unresolved-rejection.
+
+### Bugs surfaced (quarantined, backlogged) — gaps for a follow-up cycle
+- backlog 003: `updateExprTraversal` / `updateExprSharedTraversal` (UPDATE
+  expression-over-traversal unscoped → data corruption). **High priority.**
+- backlog 004: `pluralFilteredNestedSubSelect` (filter dropped),
+  `subSelectWithCount` (nested aggregate mis-scoped), `subSelectWithOne`
+  (null-property row dropped under `.one()`).
+- backlog 005: `isNotDefined` (never matches), `Expr.ifThen` (wrong branch).
+- backlog 002: `sum`/`avg`/`min`/`max` not reachable from the DSL (count only).
+
+### Remaining coverage gaps (not bugs — candidates for an iteration)
+- Operator tail not yet asserted: `hours/minutes/seconds`, `encodeForUri`,
+  `iri`/`isLiteral`/`isNumeric`/`isBlank`, `zeroOrMore`/`zeroOrOne` paths.
+- `{$ctx}` as update-target and mutation field value (subject/where/delete done).
+- DSL-JSON delete round-trip (select/create/update done).
+- Boolean expression projection (`customResultEqualsBoolean`) — known limitation.
+
+### Environment note
+Local Fuseki runs from the Apache Jena 5.5.0 standalone distribution (the docker
+image registry host is egress-blocked). Helper: `bash
+/home/user/fuseki-dist/run-fuseki-tests.sh '<jest-pattern>'`. This is local-only
+scaffolding, not committed to the repo.
