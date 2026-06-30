@@ -1,6 +1,6 @@
 ---
-summary: Expand the hand-written linked-query E2E test suite (queries + seed data) to cover the features core supports but currently leaves untested.
-status: Ideation
+summary: Expand the hand-written linked-query E2E suite (queries + seed data) to cover features core supports but currently leaves untested, exercised through the live-query/store contract.
+status: Plan
 source: docs/linked-query-test-coverage.md
 ---
 
@@ -9,89 +9,200 @@ source: docs/linked-query-test-coverage.md
 ## Context
 
 `src/tests/sparql-fuseki.test.ts` runs 77 of 132 fixtures from
-`query-fixtures.ts` against the Fuseki `Person/Employee/Dog/Pet` seed graph.
-The full gap analysis lives in `docs/linked-query-test-coverage.md`. This plan
-turns that analysis into an implemented, committed test expansion.
+`query-fixtures.ts` against the Fuseki `Person/Employee/Dog/Pet` graph. The full
+gap analysis is in `docs/linked-query-test-coverage.md`. The recent dev merge
+flipped the contract: **IR is an internal detail**, datasets receive the live
+query and lower internally (`SparqlDataset.selectQuery(query)` →
+`lower(query)`), and **DSL-JSON** (`toJSON`/`fromJSON`) + **`{$ctx}`** context
+references are now first-class. This plan turns the gap analysis into an
+implemented, committed test expansion written against that contract.
 
-## Scope (candidate)
+## Architecture decisions
 
-1. Wire the 55 already-written-but-unexecuted fixtures into the Fuseki suite.
-2. Add fixtures + tests for the ~50 untested expression/filter operators.
-3. Extend the seed graph for datatype coverage (decimal/double/float/long/date).
-   Language tags are out of scope (single language assumed; not in core).
-4. Property paths through the DSL (not just raw SPARQL).
-5. Builder features untested E2E (multi-key orderBy, top-level offset, casting).
-6. **DSL-JSON round-trip E2E** — `fromJSON(query.toJSON()).exec()` for select +
-   each mutation, asserting identical results against the seed graph.
-7. **`{$ctx}` context references E2E** — subject / update target / mutation field
-   values / delete ids / where-clause args, delete-by-context, and
-   `UnresolvedContextError` on unresolved mutations.
+1. **New test file `src/tests/sparql-fuseki-coverage.test.ts`** (matches the
+   `sparql-fuseki` pattern used by `npm run test:fuseki`). Keeps the existing
+   2,100-line suite untouched and the diff reviewable. It owns an **extended
+   seed** = the existing `Person/Employee/Dog/Pet` triples **+** a new `Metric`
+   block **+** a few extra `Person` edges (for property paths). It manages the
+   shared `nashville-test` dataset with `clearAllData → loadTestData` in
+   `beforeAll` and `clearAllData` in `afterAll`, so it is order-independent of
+   the existing file under `--runInBand`.
+2. **Result assertions go through the store contract.** Build a DSL query and
+   run it via `new FusekiStore(...).selectQuery(query)` / `createQuery` /
+   `updateQuery` / `deleteQuery`. The store lowers internally. Golden/IR-string
+   checks (`captureQuery` → `lower` → `selectToSparql`) are used only where
+   pinning exact SPARQL is the point (existing golden files).
+3. **Additive-only changes to `query-fixtures.ts`.** Add a new `Metric` shape +
+   property refs and new fixtures; **do not modify** existing
+   `Person/Employee/Dog/Pet` shapes or existing fixtures — that keeps every
+   `ir-*` / `sparql-*-golden` snapshot valid.
+4. **Separate `Metric` shape** (decision 3B) for datatype coverage; single-valued
+   `score:decimal, rating:double, views:long, count:integer, joinedOn:date`
+   **plus** one multi-valued numeric field `scores: decimal[]`.
+5. **Phase ordering**: §1 (wire unexecuted fixtures) lands first and is validated
+   with `npm run test:fuseki` before later phases. Aggregates are out (backlog
+   002); only `count` is tested.
 
-## Test style (post dev-merge contract)
+## Scope → what each area adds
 
-- **Result assertions go through the store / `IDataset` contract**: build a DSL
-  query and run it via `FusekiStore.selectQuery(query)` / `createQuery` /
-  `updateQuery` / `deleteQuery`; the store lowers internally via `lower()`. This
-  matches how consumers use the library now that **IR is an internal detail**.
-- **Golden / IR-string checks** (`captureQuery` → `lower` → `selectToSparql`)
-  are used only where pinning exact SPARQL is the point.
-- New code references `SelectBuilder` (not `QueryBuilder`), `lower()` (not the
-  removed `build()`), and the `IR*` type names.
+- **§1 — Wire 55 unexecuted fixtures** (MINUS, bulk/conditional mutations,
+  expression WHERE, negation/quantifier, computed projections, expression
+  updates, deep nesting). Groups 1–6 are SOUND → straight exact-result tests via
+  the store. The deep-nesting group (15) is RISKY → **investigate-first spike,
+  then fix surfaced bugs immediately** (decision 2A; pause + report only if a fix
+  balloons). A couple need extra seed (e.g. `whereExprStrlen` needs a name > 5
+  chars; `updateExprCallback` needs a `Dog` `d1` with `guardDogLevel`).
+- **§2 — Operators** (all verified to lower correctly): string
+  (`concat/contains/startsWith/endsWith/substr/replace/matches/before/after`),
+  numeric (`minus/times/divide/abs/round/ceil/floor/power`), date components
+  (`year/month/day/hours/minutes/seconds`), null/conditional
+  (`isDefined/isNotDefined/defaultTo/Expr.ifThen`), comparison (`gte/lte`), RDF
+  introspection (`str/datatype/iri/isLiteral/isNumeric`), hashes (`md5`,
+  `sha256` — exact digest of a seed literal; skip `sha512`). Each as a filter
+  and/or projection fixture with an exact expected value.
+- **§3 — Datatypes** via `Metric`: assert JS coercion (`decimal/double/long/
+  integer` → `number`, `date` → `Date`), negative-number round-trip, and the
+  **multi-valued numeric** field's array collection + dedup + ordering.
+- **§4 — DSL property paths E2E**: shapes whose decorator path is
+  `{seq|inv|alt|oneOrMore|zeroOrMore|zeroOrOne}` used in `Shape.select(...)`,
+  asserting mapped results against a seeded chain (today only golden/raw-SPARQL).
+- **§5 — Builder features**: multi-key `orderBy`, mixed ASC/DESC, `orderBy` on a
+  nested path, **top-level `offset`** windowing, `.as(Shape)` casting through a
+  traversal. (`SelectBuilder` is the renamed builder.)
+- **§6 — DSL-JSON round-trip E2E**: for a representative select + each mutation,
+  `store.selectQuery(fromJSON(q.toJSON()))` equals `store.selectQuery(q)`; assert
+  the wire envelope carries `v` and `op`. (Currently only unit round-trip tested.)
+- **§7 — `{$ctx}` E2E**: `getQueryContext('user')` as select subject, update
+  target, mutation field value, delete id, and where-arg; delete-by-context
+  (`Person.delete(getQueryContext('user'))`); `UnresolvedContextError` when a
+  mutation's context is unset at lowering; select resolves to `null` when unset.
 
-## Test surfaces (discovered)
+## Files expected to change
 
-- Quick/full: `npm test` (`jest --runInBand`, matches `src/tests/*.test.ts`).
-- Fuseki E2E: `npm run test:fuseki` (spins up docker compose Fuseki, runs
-  `sparql-fuseki` pattern, tears down). Tests self-skip when Fuseki is absent.
-- Architecture docs: none present (`docs/architecture/` empty; private
-  `semantu-agents` skills were not fetched — no git access).
+- `src/test-helpers/query-fixtures.ts` — **add** `Metric` shape + property refs;
+  **add** new operator / datatype / property-path / builder fixtures. Additive
+  only.
+- `src/tests/sparql-fuseki-coverage.test.ts` — **new**. Extended seed + all
+  §1–§7 store-contract result assertions.
+- `src/tests/sparql-select-golden.test.ts` — optional, only where a new operator
+  warrants an exact-SPARQL pin.
+- Bug-fix targets if the §1 deep-nesting spike fails — most likely
+  `src/sparql/resultMapping.ts` (nested grouping) and/or
+  `src/queries/IRLower.ts` / `IRProjection.ts`. Unknown until the spike.
+- `docs/plans/001-...md` — updated after each phase.
+
+## Inter-component contracts (already in code; tests depend on them)
+
+```ts
+// Store contract (src/sparql/SparqlDataset.ts) — receives the LIVE query
+store.selectQuery(query: SelectQuery): Promise<ResultRow[] | ResultRow | null>
+store.createQuery(query: CreateQuery): Promise<{id: string} & Record<string,unknown>>
+store.updateQuery(query: UpdateQuery): Promise<{id: string} | void>
+store.deleteQuery(query: DeleteQuery): Promise<{count: number; deleted: {id:string}[]}>
+
+// DSL-JSON (src/queries: fromJSON.ts / lower.ts)
+fromJSON(query.toJSON())            // DSL-JSON → live query (op-detected, carries v)
+
+// Context (src/queries/QueryContext.ts + ContextRef.ts)
+setQueryContext('user', {id}, Person); getQueryContext('user')  // → {$ctx:'user'}
+// mutations throw UnresolvedContextError when unresolved at lower() time
+
+// Seed-data URI contract (src/shapes/SHACL.ts:629, :930)
+shapeURI  = `https://linked.cm/shape/core/${ShapeName}`         // e.g. .../Metric
+propURI   = `${shapeURI}/${propertyLabel}`                       // e.g. .../Metric/score
+```
+
+Example (representative new test):
+
+```ts
+const store = new FusekiStore(FUSEKI_BASE_URL, 'nashville-test');
+
+// §3 datatype coercion
+const m = await store.selectQuery(Metric.select(x => [x.score, x.joinedOn]).for(entity('m1')));
+expect(typeof m.score).toBe('number');
+expect(m.joinedOn).toBeInstanceOf(Date);
+
+// §6 DSL-JSON round-trip equivalence
+const q = Person.select(p => [p.name, p.friends.name]);
+expect(await store.selectQuery(fromJSON(q.toJSON())))
+  .toEqual(await store.selectQuery(q));
+
+// §7 context-bound select (user = p3)
+const r = await store.selectQuery(Person.select(p => p.name).where(p => p.bestFriend.equals(getQueryContext('user'))));
+```
+
+## Potential pitfalls
+
+- **Don't touch `Person`'s rows/shape** — golden snapshots will churn. New data
+  goes on `Metric`/new entities and new edges only.
+- **Shared dataset**: both Fuseki files use `nashville-test`; rely on
+  beforeAll/afterAll clear+load and `--runInBand` ordering.
+- **`whereExprStrlen`** needs a name > 5 chars in the seed (current names ≤ 5).
+- **Hash tests**: compute expected `md5`/`sha256` in JS from the literal's
+  lexical form; keep the hashed field a plain/`xsd:string` literal.
+- **`power`** unrolls to repeated multiplication — assert the number, not SPARQL.
+- **Multi-valued numeric** dedup is by string form; assert a sorted array.
+- **Known limitations to exclude from exact-result scope**:
+  `customResultEqualsBoolean` (boolean not projected) and `whereWithContextPath`
+  (documented tautology) — leave as-is or assert current behavior only.
+- **Language tags** out of scope.
+
+## Architecture compliance
+
+- `npx semantu-agents docs architecture` returns nothing and `docs/architecture/`
+  does not exist (the private `semantu-agents` skills were not fetched — no git
+  access). **No architecture docs to comply with.** The design follows the
+  documented query contract instead: `documentation/dsl-json.md` and the dev
+  changeset `.changeset/dataset-contract-and-dsl-json.md` (live-query/store
+  contract, IR internal). New tests use only public exports (`lower`, `fromJSON`,
+  `getQueryContext`, the `Shape` DSL, `FusekiStore`/`SparqlDataset`).
+
+## Test strategy
+
+- **Impacted package**: root `@_linked/core` only.
+- **Quick regression gate after each phase (~1–2 min, no Docker)** — catches
+  fixture/golden regressions from `query-fixtures.ts` edits:
+  `npx jest --config jest.config.js --runInBand --testPathPattern='ir-|sparql-.*-golden|serialization|field-set|query-builder|lower|mutation-serialization'`
+- **Fuseki gate after each phase** (validates the new E2E tests; required before
+  continuing past §1): `npm run test:fuseki` (brings up docker Fuseki, runs the
+  `sparql-fuseki` pattern incl. the new file, tears down).
+- **Full suite deferred to review**: `npm test`.
+- **Command sources**: `package.json` scripts (`test`, `test:fuseki`).
+- **Skip/defer rationale**: the full suite and Docker-backed Fuseki run are
+  slower; the quick golden gate is the fast inner loop, Fuseki runs per phase.
 
 ## Ideation findings (explored)
 
-- **Aggregates `sum/avg/min/max`: NOT reachable from the DSL.** Only `count`
-  (via `.size()`). IR (`aggregate_expr`) + SPARQL serialization already support
-  all five generically; the gap is the DSL surface + FieldSet/IRDesugar lowering
-  (`aggregation?: 'count'` is hardcoded). Exposing them is ~5 small edits.
-- **Property paths through the DSL: pipeline is sound E2E** (decorator
-  `{seq|inv|alt|oneOrMore|...}` → IRTraversePattern.pathExpr → `pathExprToSparql`),
-  but **no test runs `Shape.select` on a complex-path decorator and asserts
-  mapped results** — existing path tests use raw SPARQL or golden strings. Safe
-  to add; should pass.
-- **All untested operators lower to valid SPARQL** (CONCAT/CONTAINS/STRSTARTS/
-  SUBSTR/REPLACE/REGEX, ABS/ROUND/CEIL/FLOOR, YEAR/MONTH/DAY, BOUND/COALESCE/IF,
-  gte/lte, STR/DATATYPE, MD5/SHA256/SHA512). None broken. `power` unrolls to
-  repeated multiplication by design. Exact-result tests are safe.
-- **Fixture soundness:** Groups MINUS, bulk/conditional mutations, expression
-  WHERE, negation/quantifier, computed projections, expression updates are all
-  **SOUND** (golden-tested). The 15 **deep-nesting/sub-select fixtures are
-  RISKY** — no golden SPARQL tests, only type tests; exact-result assertions may
-  surface nested-mapping bugs.
+- **Aggregates `sum/avg/min/max`: NOT reachable from the DSL** (only `count`).
+  IR + SPARQL support them generically; deferred to backlog 002.
+- **Property paths through the DSL: pipeline sound E2E**, but no result-asserting
+  test exists yet.
+- **All untested operators lower to valid SPARQL** — none broken (`power`
+  unrolls by design).
+- **Fixture soundness**: MINUS, bulk/conditional mutations, expression WHERE,
+  negation/quantifier, computed projections, expression updates = SOUND; the 15
+  deep-nesting sub-selects = RISKY (no golden SPARQL, only type tests).
+- **DSL-JSON + `{$ctx}`** tested only at unit/round-trip level — never against
+  Fuseki.
 
 ## Accepted decisions
 
-- All five gap categories in scope. §1 (wire unexecuted fixtures) is the first
-  phase(s) and must be validated (`npm run test:fuseki`) before later phases.
-- Extend the existing `Person`/Fuseki graph for new edges; add a **separate new
-  shape** (not on `Person`) for datatype coverage. Must keep all existing
-  golden/E2E assertions valid when touching shared fixtures.
-- Assert **exact** results, matching the current suite's style.
-- Mutations tested against the throwaway test graph (no separate dataset needed).
-- **Language-tagged strings are out of scope** — single language assumed; lang
-  behavior is not in core, so no lang tests.
-- **Test style**: store/`IDataset` contract for result assertions; golden only
-  where pinning exact SPARQL fits. (Post dev-merge: IR is internal.)
-- **Add DSL-JSON round-trip + `{$ctx}` E2E coverage** to scope — both are
-  currently tested only at unit/round-trip level (`lower.test.ts`,
-  `mutation-serialization.test.ts`, `query-builder.test.ts`) and **never
-  executed against Fuseki**, so they need result-asserting E2E tests.
-- **Aggregates `sum/avg/min/max`: deferred to backlog** (Decision 1B) →
-  `docs/backlog/002-dsl-aggregates-sum-avg-min-max.md`. Only `count` is tested
-  in this effort.
-- **Deep-nesting RISKY group (15 fixtures): investigate-first, then fix**
-  (Decision 2A). Spike the 15 through the store against the seed graph, land the
-  passing ones as exact tests, and **fix surfaced bugs immediately** — pausing
-  only if a fix is truly ballooning, in which case report back before continuing.
-- **Datatype shape `Metric`** (Decision 3B): separate from `Person`; single-
-  valued `score:decimal, rating:double, views:long, count:integer, joinedOn:date`
-  **plus one multi-valued numeric field** (e.g. `scores: decimal[]`) to cover
-  multi-valued numeric literal coercion/dedup/ordering.
+- All five original categories in scope + DSL-JSON round-trip + `{$ctx}`. §1
+  first, validated via `npm run test:fuseki` before later phases.
+- Result assertions through the store/`IDataset` contract; golden only where
+  pinning SPARQL fits. New code uses `SelectBuilder`/`lower()`/`IR*` names.
+- Separate `Metric` shape (single-valued typed fields + one multi-valued numeric
+  field); existing `Person` graph extended only with new edges.
+- Assert exact results; mutations run against the throwaway test graph.
+- Language tags out of scope.
+- Aggregates `sum/avg/min/max` deferred → backlog 002 (count only here).
+- Deep-nesting RISKY group: investigate-first, then fix surfaced bugs
+  immediately; pause + report only if a fix truly balloons.
+
+## Open questions / unclear areas
+
+- Exact pass rate of the 15 deep-nesting fixtures is unknown until the §1 spike;
+  the size of any fix is therefore unbounded until then (mitigated by the
+  pause-and-report rule).
+- Whether any new operator deserves a golden-SPARQL pin in addition to the
+  result assertion (decide per-operator during implementation).
