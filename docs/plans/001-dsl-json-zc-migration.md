@@ -192,7 +192,8 @@ it exists.
 Each phase keeps the **round-trip conformance suite green** (the invariant), plus `tsc` clean and
 no full-suite regressions. The phase order keeps the build green throughout.
 
-### Phase 1 — Round-trip conformance harness (the gate) — status: pending
+### Phase 1 — Round-trip conformance harness (the gate) — status: done
+_Validated: passes on current code — 110 passed, 18 excluded (pre-migration projection gaps + preload), 0 failed._
 Write `src/tests/dsl-json-roundtrip.test.ts`: for every select fixture assert
 `lower(fromJSON(q.toJSON()))` deep-equals `lower(q)`; for every mutation fixture assert
 `lowerMutationJSON(m.toJSON())` deep-equals `lower(m)`. Format-agnostic — it only checks semantic
