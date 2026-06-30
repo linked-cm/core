@@ -25,6 +25,7 @@ import {
 } from './resultMapping.js';
 import {generateEntityUri, type SparqlOptions} from './sparqlUtils.js';
 import {Shape} from '../shapes/Shape.js';
+import {lower} from '../queries/lower.js';
 
 /**
  * Abstract base class for SPARQL-backed datasets.
@@ -76,46 +77,50 @@ export abstract class SparqlDataset extends Shape implements IDataset {
   protected abstract executeSparqlUpdate(sparql: string): Promise<void>;
 
   async selectQuery(query: SelectQuery): Promise<SelectResult> {
-    const sparql = selectToSparql(query, this.options);
+    const ir = lower(query);
+    const sparql = selectToSparql(ir, this.options);
     const json = await this.executeSparqlSelect(sparql);
-    return mapSparqlSelectResult(json, query);
+    return mapSparqlSelectResult(json, ir);
   }
 
   async createQuery(query: CreateQuery): Promise<CreateResult> {
-    const uri = query.data.id || generateEntityUri(query.data.shape, this.options);
-    query.data.id = uri;
-    const sparql = createToSparql(query, this.options);
+    const ir = lower(query);
+    const uri = ir.data.id || generateEntityUri(ir.data.shape, this.options);
+    ir.data.id = uri;
+    const sparql = createToSparql(ir, this.options);
     await this.executeSparqlUpdate(sparql);
-    return mapSparqlCreateResult(uri, query);
+    return mapSparqlCreateResult(uri, ir);
   }
 
   async updateQuery(query: UpdateQuery): Promise<UpdateResult> {
-    if (query.kind === 'update_where') {
-      const sparql = updateWhereToSparql(query, this.options);
+    const ir = lower(query);
+    if (ir.kind === 'update_where') {
+      const sparql = updateWhereToSparql(ir, this.options);
       await this.executeSparqlUpdate(sparql);
       return {id: ''} as UpdateResult;
     }
-    const sparql = updateToSparql(query, this.options);
+    const sparql = updateToSparql(ir, this.options);
     await this.executeSparqlUpdate(sparql);
-    return mapSparqlUpdateResult(query);
+    return mapSparqlUpdateResult(ir);
   }
 
   async deleteQuery(query: DeleteQuery): Promise<DeleteResponse> {
-    if (query.kind === 'delete_all') {
-      const sparql = deleteAllToSparql(query, this.options);
+    const ir = lower(query);
+    if (ir.kind === 'delete_all') {
+      const sparql = deleteAllToSparql(ir, this.options);
       await this.executeSparqlUpdate(sparql);
       return {deleted: [], count: 0};
     }
-    if (query.kind === 'delete_where') {
-      const sparql = deleteWhereToSparql(query, this.options);
+    if (ir.kind === 'delete_where') {
+      const sparql = deleteWhereToSparql(ir, this.options);
       await this.executeSparqlUpdate(sparql);
       return {deleted: [], count: 0};
     }
-    const sparql = deleteToSparql(query, this.options);
+    const sparql = deleteToSparql(ir, this.options);
     await this.executeSparqlUpdate(sparql);
     return {
-      deleted: query.ids,
-      count: query.ids.length,
+      deleted: ir.ids,
+      count: ir.ids.length,
     };
   }
 

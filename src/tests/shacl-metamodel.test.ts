@@ -10,11 +10,12 @@ import {createToSparql} from '../sparql/irToAlgebra';
 import {xsd} from '../ontologies/xsd';
 import '../ontologies/rdf';
 import '../ontologies/shacl';
+import {lower} from '../queries/lower';
 
 describe('meta-model serialization', () => {
   test('NodeShape.create serializes node + property + constraints', () => {
     const shapeIri = 'https://example.org/shape/Person';
-    const ir = (NodeShape.create({
+    const ir = lower((NodeShape.create({
       targetClass: {id: 'https://example.org/Person'},
       properties: [
         {
@@ -28,7 +29,7 @@ describe('meta-model serialization', () => {
       ],
     } as any) as any)
       .withId(shapeIri)
-      .build();
+      ) as any;
     const sparql = createToSparql(ir);
 
     expect(sparql).toContain(`<${shapeIri}> rdf:type shacl:NodeShape`);

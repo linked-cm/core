@@ -4,6 +4,7 @@ import {sanitize} from '../test-helpers/test-utils';
 import {FieldSet} from '../queries/FieldSet';
 import {PropertyPath, walkPropertyPath} from '../queries/PropertyPath';
 import {QueryBuilder} from '../queries/QueryBuilder';
+import {lower} from '../queries/lower';
 
 const personShape = Person.shape;
 
@@ -400,12 +401,12 @@ describe('FieldSet — extended serialization', () => {
 describe('FieldSet — QueryBuilder integration', () => {
   test('QueryBuilder.select(fieldSet) produces same IR as callback', async () => {
     const fs = FieldSet.for(personShape, ['name', 'hobby']);
-    const builderIR = QueryBuilder.from(Person)
+    const builderIR = lower(QueryBuilder.from(Person)
       .select(fs)
-      .build();
-    const callbackIR = QueryBuilder.from(Person)
+      );
+    const callbackIR = lower(QueryBuilder.from(Person)
       .select((p) => [p.name, p.hobby])
-      .build();
+      );
 
     expect(sanitize(builderIR)).toEqual(sanitize(callbackIR));
   });
@@ -453,9 +454,9 @@ describe('FieldSet — sub-select extraction', () => {
   });
 
   test('sub-select FieldSet produces valid IR with projections', () => {
-    const directIR = QueryBuilder.from(Person)
+    const directIR = lower(QueryBuilder.from(Person)
       .select((p) => p.friends.select((f: any) => [f.name]))
-      .build();
+      );
     expect(directIR.kind).toBe('select');
     // Sub-select should produce at least one projection entry
     expect(directIR.projection.length).toBeGreaterThanOrEqual(1);

@@ -11,6 +11,7 @@ import {List, rdfList} from '../shapes/List';
 import {PathNode} from '../shapes/PathNode';
 import {createToSparql} from '../sparql/irToAlgebra';
 import '../ontologies/rdf';
+import {lower} from '../queries/lower';
 
 const {linkedShape} = linkedPackage('list-test');
 const prop = (n: string) => ({id: `https://example.org/list#${n}`});
@@ -25,7 +26,7 @@ class Holder extends Shape {
 
 const sparqlFor = (items: unknown[], opts?: {base?: string}) =>
   createToSparql(
-    (Holder.create({items: rdfList(items, opts)}) as any).withId('https://example.org/h').build(),
+    lower((Holder.create({items: rdfList(items, opts)}) as any).withId('https://example.org/h')) as any,
   );
 
 describe('List / PathNode / rdfList', () => {

@@ -44,6 +44,7 @@ import {shacl} from '../ontologies/shacl.js';
 import {xsd} from '../ontologies/xsd.js';
 import {getSimplePathId} from '../paths/normalizePropertyPath.js';
 import {getAllShapeClasses, getShapeClass} from '../utils/ShapeClass.js';
+import {UnresolvedContextError} from '../queries/QueryContext.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -181,6 +182,20 @@ function bindingKey(alias: string, property: string): string {
 
 function contextAliasKey(contextIri: string): string {
   return `__ctx__${contextIri}`;
+}
+
+/**
+ * Defense-in-depth: a `reference_expr`/`context_property_expr` must arrive here with its
+ * IRI already resolved (lowering's `resolveContextRefs` fills it from `contextName`). If it
+ * didn't — an unresolved `{$ctx}` reaching the algebra through some path that bypassed
+ * resolution — fail with a clear `UnresolvedContextError` instead of an opaque
+ * `undefined.substring` crash deeper in URI formatting.
+ */
+function resolvedContextIri(iri: string | undefined, contextName?: string): string {
+  if (iri === undefined) {
+    throw new UnresolvedContextError(contextName ?? '<unknown>');
+  }
+  return iri;
 }
 
 function mergeKeySets(...sets: ReadonlySet<string>[]): Set<string> {
@@ -1157,11 +1172,12 @@ function processExpressionForProperties(
       // Context entity property — emit a triple with fixed IRI as subject.
       // Use raw IRI as registry key to avoid collision between IRIs that
       // sanitize to the same string (e.g. ctx-1 vs ctx_1).
-      const ctxKey = contextAliasKey(expr.contextIri);
+      const contextIri = resolvedContextIri(expr.contextIri, expr.contextName);
+      const ctxKey = contextAliasKey(contextIri);
       if (!registry.has(ctxKey, expr.property)) {
         const varName = registry.getOrCreate(ctxKey, expr.property);
         const triple = tripleOf(
-          iriTerm(expr.contextIri),
+          iriTerm(contextIri),
           resolvePropertyPredicateTerm(expr.property),
           varTerm(varName),
         );
@@ -1189,7 +1205,7 @@ function collectRequiredBindingKeys(expr: IRExpression): Set<string> {
     case 'property_expr':
       return new Set([bindingKey(expr.sourceAlias, expr.property)]);
     case 'context_property_expr':
-      return new Set([bindingKey(contextAliasKey(expr.contextIri), expr.property)]);
+      return new Set([bindingKey(contextAliasKey(resolvedContextIri(expr.contextIri, expr.contextName)), expr.property)]);
     case 'binary_expr':
       return mergeKeySets(
         collectRequiredBindingKeys(expr.left),
@@ -1255,13 +1271,13 @@ function convertExpression(
     }
 
     case 'reference_expr':
-      return {kind: 'iri_expr', value: expr.value};
+      return {kind: 'iri_expr', value: resolvedContextIri(expr.value, expr.contextName)};
 
     case 'alias_expr':
       return {kind: 'variable_expr', name: expr.alias};
 
     case 'context_property_expr': {
-      const ctxKey = `__ctx__${expr.contextIri}`;
+      const ctxKey = `__ctx__${resolvedContextIri(expr.contextIri, expr.contextName)}`;
       const ctxVarName = registry.getOrCreate(ctxKey, expr.property);
       return {kind: 'variable_expr', name: ctxVarName};
     }

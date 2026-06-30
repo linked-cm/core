@@ -4,6 +4,7 @@ import {entity, captureDslIR, sanitize} from '../test-helpers/test-utils';
 import {CreateBuilder} from '../queries/CreateBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
 import {DeleteBuilder} from '../queries/DeleteBuilder';
+import {lower} from '../queries/lower';
 
 // =============================================================================
 // Create IR equivalence tests
@@ -14,9 +15,9 @@ describe('CreateBuilder — IR equivalence', () => {
     const dslIR = await captureDslIR(() =>
       Person.create({name: 'Test Create', hobby: 'Chess'}),
     );
-    const builderIR = CreateBuilder.from(Person)
+    const builderIR = lower(CreateBuilder.from(Person)
       .set({name: 'Test Create', hobby: 'Chess'})
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -27,12 +28,12 @@ describe('CreateBuilder — IR equivalence', () => {
         friends: [entity('p2'), {name: 'New Friend'}],
       }),
     );
-    const builderIR = CreateBuilder.from(Person)
+    const builderIR = lower(CreateBuilder.from(Person)
       .set({
         name: 'Test Create',
         friends: [entity('p2'), {name: 'New Friend'}],
       })
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -44,10 +45,10 @@ describe('CreateBuilder — IR equivalence', () => {
         bestFriend: {id: `${tmpEntityBase}fixed-id-2`},
       } as any),
     );
-    const builderIR = CreateBuilder.from(Person)
+    const builderIR = lower(CreateBuilder.from(Person)
       .set({name: 'Fixed', bestFriend: {id: `${tmpEntityBase}fixed-id-2`}} as any)
       .withId(`${tmpEntityBase}fixed-id`)
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 });
@@ -61,10 +62,10 @@ describe('UpdateBuilder — IR equivalence', () => {
     const dslIR = await captureDslIR(() =>
       Person.update({hobby: 'Chess'}).for(entity('p1')),
     );
-    const builderIR = UpdateBuilder.from(Person)
+    const builderIR = lower(UpdateBuilder.from(Person)
       .for(entity('p1'))
       .set({hobby: 'Chess'})
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -74,10 +75,10 @@ describe('UpdateBuilder — IR equivalence', () => {
         friends: {add: [entity('p2')], remove: [entity('p3')]},
       }).for(entity('p1')),
     );
-    const builderIR = UpdateBuilder.from(Person)
+    const builderIR = lower(UpdateBuilder.from(Person)
       .for(entity('p1'))
       .set({friends: {add: [entity('p2')], remove: [entity('p3')]}})
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -87,12 +88,12 @@ describe('UpdateBuilder — IR equivalence', () => {
         bestFriend: {id: `${tmpEntityBase}p3-best-friend`, name: 'Bestie'},
       }).for(entity('p1')),
     );
-    const builderIR = UpdateBuilder.from(Person)
+    const builderIR = lower(UpdateBuilder.from(Person)
       .for(entity('p1'))
       .set({
         bestFriend: {id: `${tmpEntityBase}p3-best-friend`, name: 'Bestie'},
       })
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -100,10 +101,10 @@ describe('UpdateBuilder — IR equivalence', () => {
     const dslIR = await captureDslIR(() =>
       Person.update({friends: [entity('p2')]}).for(entity('p1')),
     );
-    const builderIR = UpdateBuilder.from(Person)
+    const builderIR = lower(UpdateBuilder.from(Person)
       .for(entity('p1'))
       .set({friends: [entity('p2')]})
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -111,10 +112,10 @@ describe('UpdateBuilder — IR equivalence', () => {
     const dslIR = await captureDslIR(() =>
       Person.update({birthDate: new Date('2020-01-01')}).for(entity('p1')),
     );
-    const builderIR = UpdateBuilder.from(Person)
+    const builderIR = lower(UpdateBuilder.from(Person)
       .for(entity('p1'))
       .set({birthDate: new Date('2020-01-01')})
-      .build();
+      );
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 });
@@ -126,7 +127,7 @@ describe('UpdateBuilder — IR equivalence', () => {
 describe('DeleteBuilder — IR equivalence', () => {
   test('delete — single via .from(shape, id)', async () => {
     const dslIR = await captureDslIR(() => Person.delete(entity('to-delete')));
-    const builderIR = DeleteBuilder.from(Person, entity('to-delete')).build();
+    const builderIR = lower(DeleteBuilder.from(Person, entity('to-delete')));
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 
@@ -134,10 +135,10 @@ describe('DeleteBuilder — IR equivalence', () => {
     const dslIR = await captureDslIR(() =>
       Person.delete([entity('to-delete-1'), entity('to-delete-2')]),
     );
-    const builderIR = DeleteBuilder.from(Person, [
+    const builderIR = lower(DeleteBuilder.from(Person, [
       entity('to-delete-1'),
       entity('to-delete-2'),
-    ]).build();
+    ]));
     expect(sanitize(builderIR)).toEqual(sanitize(dslIR));
   });
 });
@@ -234,29 +235,29 @@ describe('Mutation builders — input non-mutation', () => {
 // =============================================================================
 
 describe('Mutation builders — guards', () => {
-  test('UpdateBuilder — .build() without .for() throws', () => {
+  test('UpdateBuilder — lower() without .for() throws', () => {
     const builder = UpdateBuilder.from(Person).set({hobby: 'Chess'});
-    expect(() => builder.build()).toThrow(/requires .for/);
+    expect(() => lower(builder)).toThrow(/requires .for/);
   });
 
-  test('UpdateBuilder — .build() without .set() throws', () => {
+  test('UpdateBuilder — lower() without .set() throws', () => {
     const builder = UpdateBuilder.from(Person).for(entity('p1'));
-    expect(() => builder.build()).toThrow(/requires .set/);
+    expect(() => lower(builder)).toThrow(/requires .set/);
   });
 
-  test('CreateBuilder — .build() without .set() throws', () => {
+  test('CreateBuilder — lower() without .set() throws', () => {
     const builder = CreateBuilder.from(Person);
-    expect(() => builder.build()).toThrow(/requires .set/);
+    expect(() => lower(builder)).toThrow(/requires .set/);
   });
 
-  test('DeleteBuilder — .build() without ids throws', () => {
+  test('DeleteBuilder — lower() without ids throws', () => {
     const builder = DeleteBuilder.from(Person);
-    expect(() => builder.build()).toThrow(/requires at least one ID/);
+    expect(() => lower(builder)).toThrow(/requires at least one ID/);
   });
 
-  test('DeleteBuilder — .build() with empty ids throws', () => {
+  test('DeleteBuilder — lower() with empty ids throws', () => {
     const builder = DeleteBuilder.from(Person, [] as any);
-    expect(() => builder.build()).toThrow(/requires at least one ID/);
+    expect(() => lower(builder)).toThrow(/requires at least one ID/);
   });
 });
 
