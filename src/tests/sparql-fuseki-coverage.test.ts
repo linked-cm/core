@@ -25,7 +25,8 @@ import {
   executeSparqlUpdate,
   clearAllData,
 } from '../test-helpers/fuseki-test-store';
-import {setQueryContext} from '../queries/QueryContext';
+import {setQueryContext, getQueryContext} from '../queries/QueryContext';
+import {fromJSON} from '../queries/fromJSON';
 import {createHash} from 'node:crypto';
 
 import '../ontologies/rdf';
@@ -156,6 +157,106 @@ const runSel = (name: keyof typeof queryFactories) =>
 
 const find = (rows: Row[], id: string): Row =>
   rows.find((r) => r.id.includes(id))!;
+
+// =========================================================================
+// §5 — Builder features (ordering / pagination)
+// =========================================================================
+describe('coverage §5 — builder features', () => {
+  const names = async (q: any) => ((await store.selectQuery(q)) as Row[]).map((r) => r.name);
+
+  test('orderBy DESC', async () => {
+    if (!fusekiAvailable) return;
+    expect(await names(Person.select((p: any) => p.name).orderBy((p: any) => p.name, 'DESC')))
+      .toEqual(['Semmy', 'Quinn', 'Moa', 'Maximilian', 'Jinx']);
+  });
+
+  test('multi-key orderBy [hobby, name] (nulls first, then by name)', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await store.selectQuery(
+      Person.select((p: any) => [p.name, p.hobby]).orderBy((p: any) => [p.hobby, p.name]),
+    )) as Row[];
+    expect(rows.map((r) => r.name)).toEqual(['Jinx', 'Maximilian', 'Quinn', 'Moa', 'Semmy']);
+  });
+
+  test('top-level offset + limit windowing', async () => {
+    if (!fusekiAvailable) return;
+    // names asc: Jinx, Maximilian, Moa, Quinn, Semmy → offset(1).limit(2)
+    expect(await names(Person.select((p: any) => p.name).orderBy((p: any) => p.name).offset(1).limit(2)))
+      .toEqual(['Maximilian', 'Moa']);
+  });
+});
+
+// =========================================================================
+// §6 — DSL-JSON round-trip E2E (toJSON → fromJSON → run == run)
+// =========================================================================
+describe('coverage §6 — DSL-JSON round-trip', () => {
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  test('select round-trips losslessly (v:1.0) and yields identical results', async () => {
+    if (!fusekiAvailable) return;
+    const q = Person.select((p: any) => [p.name, p.friends.name]);
+    const json = (q as any).toJSON();
+    expect(json.v).toBe('1.0');
+    const direct = await store.selectQuery(q);
+    const viaJson = await store.selectQuery(fromJSON(json) as any);
+    expect(viaJson).toEqual(direct);
+  });
+
+  test('create round-trips and executes via fromJSON', async () => {
+    if (!fusekiAvailable) return;
+    const cq = Person.create({name: 'JsonRoundTrip'} as any);
+    const created = (await store.createQuery(fromJSON((cq as any).toJSON()) as any)) as Row;
+    expect(created.name).toBe('JsonRoundTrip');
+    const verify = await executeSparqlQuery(`SELECT ?n WHERE { <${created.id}> <${P}/name> ?n }`);
+    expect(verify.results.bindings[0].n.value).toBe('JsonRoundTrip');
+    await executeSparqlUpdate(`DELETE WHERE { <${created.id}> ?p ?o }`);
+  });
+
+  test('update round-trips and applies via fromJSON', async () => {
+    if (!fusekiAvailable) return;
+    const uq = Person.update({hobby: 'JsonHobby'}).for({id: `${ENT}p1`});
+    await store.updateQuery(fromJSON((uq as any).toJSON()) as any);
+    const verify = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${P}/hobby> ?h }`);
+    expect(verify.results.bindings.map((b: any) => b.h.value)).toEqual(['JsonHobby']);
+  });
+});
+
+// =========================================================================
+// §7 — {$ctx} context references E2E
+// =========================================================================
+describe('coverage §7 — {$ctx} context', () => {
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  test('context as select subject (user = p3 → Jinx)', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(
+      Person.select((p: any) => p.name).for(getQueryContext('user')),
+    )) as Row;
+    expect(r.id).toContain('p3');
+    expect(r.name).toBe('Jinx');
+  });
+
+  test('context as where-arg (bestFriend == user p3 → p2)', async () => {
+    if (!fusekiAvailable) return;
+    expect(ids((await store.selectQuery(
+      Person.select().where((p: any) => p.bestFriend.equals(getQueryContext('user'))),
+    )) as Row[])).toEqual(['p2']);
+  });
+
+  test('delete-by-context removes the context entity (p3)', async () => {
+    if (!fusekiAvailable) return;
+    await store.deleteQuery(Person.delete(getQueryContext('user')) as any);
+    const remaining = (await store.selectQuery(queryFactories.selectName())) as Row[];
+    expect(ids(remaining)).toEqual(['p1', 'p2', 'p4', 'p5']);
+  });
+
+  test('mutation with an unresolved context rejects', async () => {
+    if (!fusekiAvailable) return;
+    await expect(
+      store.updateQuery(Person.update({hobby: 'x'}).for(getQueryContext('no-such-ctx')) as any),
+    ).rejects.toThrow(/context/i);
+  });
+});
 
 // =========================================================================
 // §4 — DSL property paths E2E (complex decorator paths → SPARQL → results)

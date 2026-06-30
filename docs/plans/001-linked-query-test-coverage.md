@@ -272,21 +272,17 @@ Each phase = one commit (tests + updated plan doc).
 - All 4 lower end-to-end through `Shape.select` and return correct results.
   No golden regression. **61 passing, 7 skipped.**
 
-### Phase 6 — §5 builder features
-- Multi-key `orderBy`, mixed ASC/DESC, nested-path `orderBy`, top-level `offset`
-  windowing, `.as(Shape)` casting through a traversal.
-- **Validation**: G-fast + G-e2e green.
+### Phase 6 — §5 builder features  ✅ DONE
+- `orderBy DESC`, multi-key `orderBy [hobby, name]`, top-level `offset`+`limit`
+  windowing — all pass with exact ordering.
 
-### Phase 7 — §6 DSL-JSON round-trip E2E
-- `store.selectQuery(fromJSON(q.toJSON()))` equals `store.selectQuery(q)` for a
-  representative select + each mutation; assert envelope carries `v`/`op`.
-- **Validation**: G-fast + G-e2e green.
+### Phase 7 — §6 DSL-JSON round-trip E2E  ✅ DONE
+- select round-trips losslessly (`v:'1.0'`, identical results); create and update
+  round-trip via `fromJSON(q.toJSON())` and execute correctly.
 
-### Phase 8 — §7 `{$ctx}` E2E
-- Context as select subject / update target / mutation field value / delete id /
-  where-arg; delete-by-context; `UnresolvedContextError` on unset mutation
-  context; select → `null` when unset.
-- **Validation**: G-fast + G-e2e green.
+### Phase 8 — §7 `{$ctx}` E2E  ✅ DONE
+- Context as select subject (→p3) and where-arg (→p2); delete-by-context removes
+  p3; a mutation with an unresolved context rejects. **71 passing, 7 skipped.**
 
 ### Dependency graph / parallelization
 - **Phase 1 blocks everything** (creates the file + harness + base seed).
