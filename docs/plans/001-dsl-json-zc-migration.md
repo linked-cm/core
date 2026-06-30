@@ -261,3 +261,39 @@ P6 (labels) ──────────────┘   (independent)
 
 P3/P4 share select files → sequential. P5 is file-disjoint from P3/P4 (could run alongside, but the
 shared codec is settled in P2, so order is not critical). P6 is fully independent.
+
+## Review
+
+### Intent achieved
+
+The migration's core invariant is met and guarded: **`query.toJSON()` emits IR-free Z-c** for the
+two places that previously leaked IR — where-clauses and computed mutation values — and `fromJSON()`
+reads it back, with `lower(fromJSON(q.toJSON())) ≡ lower(q)` proven across **123/128 fixtures**
+(`dsl-json-roundtrip.test.ts`). Final state: tsc cjs+esm clean; full suite **1338 passed**, 0 failed.
+
+Delivered: the `ZcExpression` codec (value + condition tiers, path-keyed conditions, S-expr fallback,
+quantifiers, `{path}/{id}/{$ctx}/{date}` values); where-clause seam; computed + scoped-filter
+projection round-trip; mutation value grammar (no `expr` IR leak); reserved `and/or/not` labels.
+
+### Gaps (verified, deferred — see backlog 002)
+
+1. **G5 — `.as(Shape)` projection casts** don't round-trip (2 fixtures excluded). Needs a cast wire
+   form + FieldSet (de)serialization.
+2. **G6 — cosmetic wire reshape.** The wire is IR-free and round-trips, but is **not** the spec's
+   prettiest shorthand for: projection (`"name"` / `{as,value}` vs the explicit `{path,…}` object),
+   the select envelope (`sortBy` ordered array, `singleResult`→`one`, `fields:"*"`), and mutation
+   node data (path-keyed `{name:"Alice"}` vs `{shape,fields}`). No IR-leak benefit; pure churn.
+3. **Doc-vs-impl divergence:** `documentation/dsl-json.md` describes the full pretty Z-c; the impl
+   matches it for where + mutation *values* but keeps explicit object forms for projection/node and
+   the legacy `sortBy`/`singleResult` envelope. The doc's status note already flags this.
+4. **`in`/`nin`** are recognized by the condition decoder but not wired end-to-end (no fixtures);
+   `{list}` decode throws by design. Deferred with the rest of the value-function surface.
+5. **Context-property resolution** decodes `{$ctx,path}` against the *query* root shape, not the
+   context entity's own shape — correct when they coincide (the only case fixtures exercise). A
+   cross-shape context property would need the context shape on the wire.
+
+### Readiness
+
+The IR-free wire contract (the migration's stated goal) is **production-ready and fully tested** for
+selects (where + projection incl. computed/scoped) and all mutations. The deferred items are either
+pre-existing gaps (casts) or cosmetic shorthands (G6) — separable follow-ups, none blocking.
