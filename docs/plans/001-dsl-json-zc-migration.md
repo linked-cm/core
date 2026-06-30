@@ -233,7 +233,8 @@ computed (`expr`) → S-expr via the codec. Rewrite `mutation-serialization.test
 - **Validation:** round-trip suite green; full suite green; `tsc` green.
 - **Depends on:** Phase 2. Independent of Phases 3–4 (different files).
 
-### Phase 6 — Reserve `and`/`or`/`not` labels — status: pending
+### Phase 6 — Reserve `and`/`or`/`not` labels — status: done
+_Validated: reserved-labels.test.ts 4/4 pass; full suite 1325 passed (no existing shape uses the reserved labels)._
 Reject those three as property labels at shape registration (`SHACL.ts`). Add a test asserting it
 throws.
 - **Validation:** new test passes; full suite green.
