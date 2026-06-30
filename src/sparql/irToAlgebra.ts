@@ -946,7 +946,18 @@ export function selectToAlgebra(
       } else if (!varName) {
         // Non-variable expression (binary_expr, function_expr, etc.)
         // → project as (expr AS ?alias)
-        projection.push({kind: 'expression', expression: sparqlExpr, alias: item.alias});
+        let exprAlias = item.alias;
+        if (traversalAliasSet.has(exprAlias)) {
+          // The output alias collides with a traversal target variable — e.g. a
+          // computed expression over a traversed path lowers to
+          // (UCASE(?a1_name) AS ?a1), and ?a1 is already bound by the traverse
+          // triple. Rename the output so SPARQL doesn't reuse an in-scope var.
+          exprAlias = `${exprAlias}_expr`;
+          for (const rm of query.resultMap) {
+            if (rm.alias === item.alias) rm.alias = exprAlias;
+          }
+        }
+        projection.push({kind: 'expression', expression: sparqlExpr, alias: exprAlias});
       }
     }
   }

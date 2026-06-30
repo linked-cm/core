@@ -247,8 +247,15 @@ describe('coverage §1 — computed projections', () => {
       p4: ['Quinn', 5], p5: ['Maximilian', 10],
     });
   });
-  // exprNestedPath (p.bestFriend.name.ucase()) is handled in Phase 2 — it
-  // surfaced an alias-collision bug in expression-over-traversal projection.
+  test('exprNestedPath — bestFriend.name.ucase() (fixed alias collision)', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('exprNestedPath')) as Row[];
+    // Only p2 has a bestFriend (p3 "Jinx") → "JINX"; others have no bestFriend.
+    const byId = Object.fromEntries(
+      rows.filter((r) => r.expr != null).map((r) => [r.id.replace(ENT, ''), r.expr]),
+    );
+    expect(byId).toEqual({p2: 'JINX'});
+  });
 });
 
 // =========================================================================

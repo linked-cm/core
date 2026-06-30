@@ -9,7 +9,14 @@ running fixtures through the live Fuseki store. Golden tests missed these
 because they only assert substring presence, not SPARQL validity or result
 correctness.
 
-## Bug 1 — SELECT: computed expression over a traversal emits invalid SPARQL
+## Bug 1 — SELECT: computed expression over a traversal emits invalid SPARQL — ✅ FIXED
+
+> Fixed in `src/sparql/irToAlgebra.ts` (projection loop): an expression
+> projection whose output alias collides with a traversal target variable is now
+> renamed to `${alias}_expr` (mirroring the existing aggregate-collision guard),
+> and `query.resultMap` is updated to match. `exprNestedPath` is un-quarantined
+> and asserts `{p2: 'JINX'}`.
+
 
 `Person.select(p => p.bestFriend.name.ucase())` (fixture `exprNestedPath`)
 generates:
