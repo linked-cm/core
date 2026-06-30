@@ -13,6 +13,7 @@ import {
   Employee,
   Dog,
   Metric,
+  PathNode,
   tmpEntityBase,
 } from '../test-helpers/query-fixtures';
 import {FusekiStore} from '../test-helpers/FusekiStore';
@@ -38,6 +39,7 @@ const D = 'https://linked.cm/shape/core/Dog';
 const PET = 'https://linked.cm/shape/core/Pet';
 const E = 'https://linked.cm/shape/core/Employee';
 const M = 'https://linked.cm/shape/core/Metric';
+const PP = 'linked://pp/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const ENT = tmpEntityBase;
@@ -105,6 +107,18 @@ const BASE_DATA = `
 <${ENT}m2> <${RDF_TYPE}> <${M}> .
 <${ENT}m2> <${M}/score> "-7.25"^^<${XSD}decimal> .
 <${ENT}m2> <${M}/count> "-3"^^<${XSD}integer> .
+<${ENT}pna> <${RDF_TYPE}> <${PP}Node> .
+<${ENT}pna> <${PP}name> "A" .
+<${ENT}pna> <${PP}knows> <${ENT}pnb> .
+<${ENT}pna> <${PP}email> "a@x" .
+<${ENT}pna> <${PP}phone> "555" .
+<${ENT}pna> <${PP}manages> <${ENT}pnb> .
+<${ENT}pnb> <${RDF_TYPE}> <${PP}Node> .
+<${ENT}pnb> <${PP}name> "B" .
+<${ENT}pnb> <${PP}knows> <${ENT}pnc> .
+<${ENT}pnb> <${PP}manages> <${ENT}pnc> .
+<${ENT}pnc> <${RDF_TYPE}> <${PP}Node> .
+<${ENT}pnc> <${PP}name> "C" .
 `.trim();
 
 let fusekiAvailable = false;
@@ -142,6 +156,46 @@ const runSel = (name: keyof typeof queryFactories) =>
 
 const find = (rows: Row[], id: string): Row =>
   rows.find((r) => r.id.includes(id))!;
+
+// =========================================================================
+// §4 — DSL property paths E2E (complex decorator paths → SPARQL → results)
+// =========================================================================
+describe('coverage §4 — property paths', () => {
+  const PNA = {id: `${ENT}pna`};
+  const PNB = {id: `${ENT}pnb`};
+
+  test('sequence path: knows/name (pna → "B")', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(
+      PathNode.select((n: any) => n.friendName).for(PNA),
+    )) as Row;
+    expect(r.friendName).toBe('B');
+  });
+
+  test('alternative path: email|phone (pna → both)', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(
+      PathNode.select((n: any) => n.contact).for(PNA),
+    )) as Row;
+    expect([...(r.contact as string[])].sort()).toEqual(['555', 'a@x']);
+  });
+
+  test('inverse+sequence path: ^knows/name (pnb → "A")', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(
+      PathNode.select((n: any) => n.knownByName).for(PNB),
+    )) as Row;
+    expect(r.knownByName).toBe('A');
+  });
+
+  test('transitive path: manages+/name (pna → ["B","C"])', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(
+      PathNode.select((n: any) => n.reportNames).for(PNA),
+    )) as Row;
+    expect([...(r.reportNames as string[])].sort()).toEqual(['B', 'C']);
+  });
+});
 
 // =========================================================================
 // §2 — Operators (string / numeric / date / null / introspection / hash)

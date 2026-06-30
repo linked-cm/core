@@ -266,10 +266,11 @@ Each phase = one commit (tests + updated plan doc).
   condition is true).
 - **57 passing, 7 skipped.**
 
-### Phase 5 — §4 DSL property paths E2E
-- Path shapes (`seq/inv/alt/oneOrMore/zeroOrMore/zeroOrOne`) used in
-  `Shape.select`; add seed edges (parent/manages chains) for transitive/inverse.
-- **Validation**: G-fast + G-e2e green.
+### Phase 5 — §4 DSL property paths E2E  ✅ DONE
+- Added `PathNode` shape (sequence `knows/name`, alternative `email|phone`,
+  inverse+sequence `^knows/name`, transitive `manages+/name`) + seed chain.
+- All 4 lower end-to-end through `Shape.select` and return correct results.
+  No golden regression. **61 passing, 7 skipped.**
 
 ### Phase 6 — §5 builder features
 - Multi-key `orderBy`, mixed ASC/DESC, nested-path `orderBy`, top-level `offset`

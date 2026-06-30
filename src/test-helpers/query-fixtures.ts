@@ -161,6 +161,43 @@ export class Metric extends Shape {
   }
 }
 
+/**
+ * Property-path coverage shape. Uses complex decorator paths (sequence,
+ * alternative, inverse, transitive) so Shape.select(...) lowers them end-to-end.
+ * Paths use explicit raw IRIs; seed data is keyed on those same IRIs.
+ */
+const PP = 'linked://pp/';
+export const pathNodeClass: NodeReferenceValue = {id: `${PP}Node`};
+
+@linkedShape
+export class PathNode extends Shape {
+  static targetClass = pathNodeClass;
+
+  // sequence: knows / name → the name of who this node knows
+  @literalProperty({path: {seq: [{id: `${PP}knows`}, {id: `${PP}name`}]}, maxCount: 1})
+  get friendName(): string {
+    return '';
+  }
+
+  // alternative: email | phone
+  @literalProperty({path: {alt: [{id: `${PP}email`}, {id: `${PP}phone`}]}})
+  get contact(): string[] {
+    return [];
+  }
+
+  // inverse + sequence: ^knows / name → name of who knows this node
+  @literalProperty({path: {seq: [{inv: {id: `${PP}knows`}}, {id: `${PP}name`}]}, maxCount: 1})
+  get knownByName(): string {
+    return '';
+  }
+
+  // transitive sequence: manages+ / name → names of all transitive reports
+  @literalProperty({path: {seq: [{oneOrMore: {id: `${PP}manages`}}, {id: `${PP}name`}]}})
+  get reportNames(): string[] {
+    return [];
+  }
+}
+
 @linkedShape
 export class Employee extends Person {
   static targetClass = employeeClass;
