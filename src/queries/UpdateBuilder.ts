@@ -224,7 +224,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       if (!wherePath) {
         throw new Error('UpdateBuilder.where() requires a condition callback.');
       }
-      json.where = serializeWherePath(wherePath);
+      json.where = serializeWherePath(wherePath, this._shape.shape);
     }
     return json;
   }

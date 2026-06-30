@@ -175,7 +175,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
         op: 'delete',
         shape,
         mode: 'where',
-        where: serializeWherePath(wherePath),
+        where: serializeWherePath(wherePath, this._shape.shape),
       };
     }
     if (!this._ids || this._ids.length === 0) {

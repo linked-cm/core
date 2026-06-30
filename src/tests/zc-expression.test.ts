@@ -107,11 +107,22 @@ describe('ZcExpression — condition tier', () => {
     expect(encodeCondition(node, shape)).toEqual({name: 'Alice', birthDate: {'>': 5}});
   });
 
-  test('alias comparison (relation) → {rel: {id}} and decodes to alias_expr', () => {
-    const a = tracedAliasExpression(pathToSegmentIds(shape, 'bestFriend'));
-    const node = new ExpressionNode(cmp('=', a.ir, {kind: 'reference_expr', value: 'p:3'}), a._refs);
+  test('relation property comparison → {rel: {id}} decodes to property_expr (no traversal)', () => {
+    // `p.bestFriend.equals(x)` compares the property VALUE → property_expr, not a
+    // traversal/alias. (alias_expr is only the bare subject — empty path.)
+    const p = prop(pathToSegmentIds(shape, 'bestFriend'));
+    const node = new ExpressionNode(cmp('=', p.ir, {kind: 'reference_expr', value: 'p:3'}), p._refs);
     const zc = encodeCondition(node, shape);
     expect(zc).toEqual({bestFriend: {id: 'p:3'}});
+    const where: any = decodeCondition(zc, shape);
+    expect(where.expressionNode.ir.left.kind).toBe('property_expr');
+  });
+
+  test('bare subject comparison (empty path) → {"": {id}} decodes to alias_expr', () => {
+    const a = tracedAliasExpression([]);
+    const node = new ExpressionNode(cmp('=', a.ir, {kind: 'reference_expr', value: 'p:1'}), a._refs);
+    const zc = encodeCondition(node, shape);
+    expect(zc).toEqual({'': {id: 'p:1'}});
     const where: any = decodeCondition(zc, shape);
     expect(where.expressionNode.ir.left.kind).toBe('alias_expr');
   });

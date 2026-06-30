@@ -93,12 +93,6 @@ export function pathToSegmentIds(shape: NodeShape, path: string): string[] {
   return walkPropertyPath(shape, path).segments.map((s) => s.id);
 }
 
-/** Whether the final segment of a path is a relation (object property → node). */
-function pathEndsInRelation(shape: NodeShape, path: string): boolean {
-  const segs = walkPropertyPath(shape, path).segments;
-  const last = segs[segs.length - 1] as unknown as {valueShape?: unknown};
-  return !!last && !!last.valueShape;
-}
 
 // ---------------------------------------------------------------------------
 // refs merging
@@ -202,15 +196,20 @@ export function decodeValueExpr(
   return {ir: {kind: 'literal_expr', value: zc as never}, refs: new Map()};
 }
 
-/** Resolve a dotted path to a property_expr (literal) or alias_expr (relation node). */
+/**
+ * Resolve a dotted path to its expression node:
+ *  - empty path `""` → `alias_expr` (the bare subject, e.g. `p.equals(x)`);
+ *  - any non-empty path → `property_expr` (a property access, relation or not —
+ *    `p.bestFriend.equals(x)` compares the property value, no traversal).
+ */
 function propertyOrAlias(
   shape: NodeShape,
   path: string,
 ): {ir: IRExpression; refs: PropertyRefMap} {
-  const segmentIds = pathToSegmentIds(shape, path);
-  const node = pathEndsInRelation(shape, path)
-    ? tracedAliasExpression(segmentIds)
-    : tracedPropertyExpression(segmentIds);
+  const node =
+    path === ''
+      ? tracedAliasExpression([])
+      : tracedPropertyExpression(pathToSegmentIds(shape, path));
   return {ir: node.ir, refs: node._refs};
 }
 

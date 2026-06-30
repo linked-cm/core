@@ -467,9 +467,9 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     }
 
     if (this._whereFn) {
-      json.where = serializeWherePath(processWhereClause(this._whereFn, this._shape));
+      json.where = serializeWherePath(processWhereClause(this._whereFn, this._shape), this._shape.shape);
     } else if (this._where) {
-      json.where = serializeWherePath(this._where);
+      json.where = serializeWherePath(this._where, this._shape.shape);
     }
 
     if (this._sortByFn) {
@@ -481,9 +481,13 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     }
 
     if (this._minusEntries && this._minusEntries.length > 0) {
-      json.minusEntries = this._evaluateMinusEntries().map(serializeRawMinusEntry);
+      json.minusEntries = this._evaluateMinusEntries().map((e) =>
+        serializeRawMinusEntry(e, this._shape.shape),
+      );
     } else if (this._rawMinusEntries && this._rawMinusEntries.length > 0) {
-      json.minusEntries = this._rawMinusEntries.map(serializeRawMinusEntry);
+      json.minusEntries = this._rawMinusEntries.map((e) =>
+        serializeRawMinusEntry(e, this._shape.shape),
+      );
     }
 
     if (this._nullSubject) {

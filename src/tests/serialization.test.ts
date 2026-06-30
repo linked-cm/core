@@ -241,52 +241,31 @@ describe('QueryBuilder — serialization', () => {
 // =============================================================================
 
 describe('QueryBuilder — where clause serialization', () => {
-  test('toJSON — simple where equals', () => {
+  test('toJSON — simple where equals (Z-c implicit equals)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.name.equals('Bob'))
       .toJSON();
 
-    expect(json.where).toBeDefined();
-    expect(json.where!.kind).toBe('expression');
-    if (json.where!.kind === 'expression') {
-      expect(json.where!.ir.kind).toBe('binary_expr');
-      if (json.where!.ir.kind === 'binary_expr') {
-        expect(json.where!.ir.operator).toBe('=');
-      }
-    }
+    expect(json.where).toEqual({name: 'Bob'});
   });
 
-  test('toJSON — where with nodeRef arg', () => {
+  test('toJSON — where with nodeRef arg (Z-c {id} value)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.bestFriend.equals({id: `${tmpEntityBase}p1`}))
       .toJSON();
 
-    expect(json.where).toBeDefined();
-    expect(json.where!.kind).toBe('expression');
-    if (json.where!.kind === 'expression') {
-      expect(json.where!.ir.kind).toBe('binary_expr');
-      if (json.where!.ir.kind === 'binary_expr') {
-        expect(json.where!.ir.right.kind).toBe('reference_expr');
-      }
-    }
+    expect(json.where).toEqual({bestFriend: {id: `${tmpEntityBase}p1`}});
   });
 
-  test('toJSON — where with AND', () => {
+  test('toJSON — where with AND (Z-c implicit-AND multi-key)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.name.equals('Bob').and(p.hobby.equals('Chess')))
       .toJSON();
 
-    expect(json.where).toBeDefined();
-    expect(json.where!.kind).toBe('expression');
-    if (json.where!.kind === 'expression') {
-      expect(json.where!.ir.kind).toBe('logical_expr');
-      if (json.where!.ir.kind === 'logical_expr') {
-        expect(json.where!.ir.operator).toBe('and');
-      }
-    }
+    expect(json.where).toEqual({name: 'Bob', hobby: 'Chess'});
   });
 
   test('round-trip — simple where equals produces same IR', () => {

@@ -209,7 +209,8 @@ how `.some/.every/.none` build `ExistsCondition` (P1) and encode the quantifier 
 focused unit test `src/tests/zc-expression.test.ts` over representative IR trees.
 - **Validation:** `tsc` (cjs+esm) green; the unit test passes; not yet wired into serialization.
 
-### Phase 3 — Where-clause seam — status: pending
+### Phase 3 — Where-clause seam — status: done
+_Validated: gate green (110); full suite 1321 passed; tsc cjs+esm clean. serialize/deserializeWherePath delegate to the codec; legacy evaluation/andOr/QueryStep machinery removed; where-format test assertions rewritten to Z-c. Fixed alias_expr-vs-property_expr rule: empty path = subject (alias), non-empty = property._
 Rewrite `serializeWherePath`/`deserializeWherePath` (`QueryBuilderSerialization.ts`) to delegate to
 the codec; replace `WherePathJSON`/`ExistsConditionJSON` with `ZcCondition`. Update `RawMinusEntry`
 (its `where`). Update the where-related assertions in `serialization.test.ts`.
