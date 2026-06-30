@@ -241,7 +241,8 @@ throws.
 - **Validation:** new test passes; full suite green.
 - **Depends on:** none (independent).
 
-### Phase 7 — Finalize test suites + full validation — status: pending
+### Phase 7 — Finalize + full validation — status: done
+_Validated: tsc cjs+esm clean; full suite 1338 passed, 0 failed (119 skipped = Fuseki/docker + 5 gate exclusions); round-trip gate 123 passed. Removed dead refsToRecord/recordToRefs; refreshed the mutation-codec header. serialization.test.ts / mutation-serialization.test.ts assertions updated to Z-c in their respective phases._
 Finish rewriting `serialization.test.ts` and `mutation-serialization.test.ts` to the exact Z-c
 shapes (any assertions not already updated). Full `tsc` (cjs+esm) + `jest` run; confirm the Fuseki
 suite still compiles (it self-skips without Docker).

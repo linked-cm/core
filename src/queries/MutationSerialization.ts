@@ -15,9 +15,11 @@
  * Property keys are serialized as **labels** (shape-relative, lightweight); decoding
  * resolves them back via the registered shape.
  *
- * `JSON.stringify` is lossy for three of the value kinds (`Date` collapses to a
- * string, `ExpressionNode` is a live object, `undefined` is dropped), so each is
- * given an explicit tagged encoding.
+ * Values use the Z-c grammar (documentation/dsl-json.md): a bare scalar is a
+ * literal; objects tag the kinds `JSON.stringify` can't represent natively
+ * (`{date}`, `{id}`, `{$ctx}`, `{list}`, `{node}`, `{add,remove}`, `{unset}`);
+ * and a computed value is an S-expr array via the shared `ZcExpression` codec —
+ * so the wire carries no IR.
  */
 import {
   type NodeDescriptionValue,
@@ -101,23 +103,6 @@ export type MutationJSON =
 // =============================================================================
 // Value codec
 // =============================================================================
-
-function refsToRecord(
-  refs: ReadonlyMap<string, readonly string[]>,
-): Record<string, string[]> | undefined {
-  if (!refs || refs.size === 0) return undefined;
-  const out: Record<string, string[]> = {};
-  for (const [k, v] of refs) out[k] = [...v];
-  return out;
-}
-
-export function recordToRefs(
-  refs?: Record<string, string[]>,
-): Map<string, readonly string[]> {
-  const m = new Map<string, readonly string[]>();
-  if (refs) for (const [k, v] of Object.entries(refs)) m.set(k, v);
-  return m;
-}
 
 /** Encode a single (non-array, non-setMod) property value. */
 function encodeSingleValue(value: SinglePropertyUpdateValue): MutationValueJSON {
