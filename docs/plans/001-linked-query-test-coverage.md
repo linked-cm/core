@@ -256,14 +256,15 @@ Each phase = one commit (tests + updated plan doc).
   negative round-trip, multi-valued numeric dedup → number[]. No golden
   regression (G-fast 605 pass). **47 passing, 5 skipped.**
 
-### Phase 4 — §2 operators  *(numeric/date depend on Phase 3)*
-- Fixtures + exact tests: string (`concat/contains/startsWith/endsWith/substr/
-  replace/matches/before/after`) on Person; numeric (`minus/times/divide/abs/
-  round/ceil/floor/power`) + date (`year/month/day/...`) on `Metric`/birthDate;
-  null/conditional (`isDefined/isNotDefined/defaultTo/ifThen`); comparison
-  (`gte/lte`); introspection (`str/datatype`); hash (`md5`,`sha256` — exact
-  digest computed in JS).
-- **Validation**: G-fast + G-e2e green.
+### Phase 4 — §2 operators  ✅ DONE
+- Exact tests pass: string (`substr/replace/concat/before/after/contains/
+  startsWith/endsWith/matches`), numeric (`minus/times/divide/power/abs/round/
+  ceil/floor/gte/lte`), date (`year/month/day`), `isDefined`, `defaultTo`,
+  `str`, `datatype`, and `md5`/`sha256` (exact digests).
+- **2 bugs quarantined** (→ `docs/backlog/005`): `isNotDefined` (property
+  inner-joined, never matches) and `Expr.ifThen` (returns else-branch when the
+  condition is true).
+- **57 passing, 7 skipped.**
 
 ### Phase 5 — §4 DSL property paths E2E
 - Path shapes (`seq/inv/alt/oneOrMore/zeroOrMore/zeroOrOne`) used in

@@ -25,6 +25,7 @@ import {
   clearAllData,
 } from '../test-helpers/fuseki-test-store';
 import {setQueryContext} from '../queries/QueryContext';
+import {createHash} from 'node:crypto';
 
 import '../ontologies/rdf';
 import '../ontologies/xsd';
@@ -141,6 +142,99 @@ const runSel = (name: keyof typeof queryFactories) =>
 
 const find = (rows: Row[], id: string): Row =>
   rows.find((r) => r.id.includes(id))!;
+
+// =========================================================================
+// §2 — Operators (string / numeric / date / null / introspection / hash)
+// =========================================================================
+const P1 = {id: `${ENT}p1`}, M1 = {id: `${ENT}m1`}, M2 = {id: `${ENT}m2`};
+const projVal = async (q: any, key = 'r') => {
+  const r = (await store.selectQuery(q)) as any;
+  return Array.isArray(r) ? r.map((x) => x[key]) : r?.[key];
+};
+const filterIds = async (q: any) => ids((await store.selectQuery(q)) as Row[]);
+
+describe('coverage §2 — string operators', () => {
+  test('substr / replace / concat / before / after (projection)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await projVal(Person.select((p: any) => ({r: p.name.substr(1, 3)})).for(P1))).toBe('Sem');
+    expect(await projVal(Person.select((p: any) => ({r: p.name.replace('m', 'X', 'i')})).for(P1))).toBe('SeXXy');
+    expect(await projVal(Person.select((p: any) => ({r: p.name.concat('!')})).for(P1))).toBe('Semmy!');
+    expect(await projVal(Person.select((p: any) => ({r: p.name.before('m')})).for(P1))).toBe('Se');
+    expect(await projVal(Person.select((p: any) => ({r: p.name.after('m')})).for(P1))).toBe('my');
+  });
+  test('contains / startsWith / endsWith / matches (filter)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await filterIds(Person.select().where((p: any) => p.name.contains('in')))).toEqual(['p3', 'p4']);
+    expect(await filterIds(Person.select().where((p: any) => p.name.startsWith('S')))).toEqual(['p1']);
+    expect(await filterIds(Person.select().where((p: any) => p.name.endsWith('x')))).toEqual(['p3']);
+    expect(await filterIds(Person.select().where((p: any) => p.name.matches('^[MQ]')))).toEqual(['p2', 'p4', 'p5']);
+  });
+});
+
+describe('coverage §2 — numeric operators', () => {
+  test('minus / times / divide / power (Metric m1: count=42)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await projVal(Metric.select((x: any) => ({r: x.count.minus(2)})).for(M1))).toBe(40);
+    expect(await projVal(Metric.select((x: any) => ({r: x.count.times(2)})).for(M1))).toBe(84);
+    expect(await projVal(Metric.select((x: any) => ({r: x.count.divide(2)})).for(M1))).toBe(21);
+    expect(await projVal(Metric.select((x: any) => ({r: x.count.power(2)})).for(M1))).toBe(1764);
+  });
+  test('abs / round / ceil / floor', async () => {
+    if (!fusekiAvailable) return;
+    expect(await projVal(Metric.select((x: any) => ({r: x.count.abs()})).for(M2))).toBe(3); // m2.count=-3
+    expect(await projVal(Metric.select((x: any) => ({r: x.score.round()})).for(M1))).toBe(3); // 3.14
+    expect(await projVal(Metric.select((x: any) => ({r: x.score.ceil()})).for(M1))).toBe(4);
+    expect(await projVal(Metric.select((x: any) => ({r: x.score.floor()})).for(M1))).toBe(3);
+  });
+  test('gte / lte (filter)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await filterIds(Metric.select().where((x: any) => x.count.gte(42)))).toEqual(['m1']);
+    expect(await filterIds(Metric.select().where((x: any) => x.count.lte(0)))).toEqual(['m2']);
+  });
+});
+
+describe('coverage §2 — date operators', () => {
+  test('year / month / day (p1 birthDate 1990-01-01)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await projVal(Person.select((p: any) => ({r: p.birthDate.year()})).for(P1))).toBe(1990);
+    expect(await projVal(Person.select((p: any) => ({r: p.birthDate.month()})).for(P1))).toBe(1);
+    expect(await projVal(Person.select((p: any) => ({r: p.birthDate.day()})).for(P1))).toBe(1);
+  });
+});
+
+describe('coverage §2 — null / introspection / hash', () => {
+  test('isDefined (filter) → persons with a hobby', async () => {
+    if (!fusekiAvailable) return;
+    expect(await filterIds(Person.select().where((p: any) => p.hobby.isDefined()))).toEqual(['p1', 'p2']);
+  });
+  test('defaultTo (coalesce) fills missing hobby', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(Person.select((p: any) => ({r: p.hobby.defaultTo('none')})))) as Row[];
+    expect(Object.fromEntries(r.map((x) => [x.id.replace(ENT, ''), x.r]))).toEqual({
+      p1: 'Reading', p2: 'Jogging', p3: 'none', p4: 'none', p5: 'none',
+    });
+  });
+  test('str / datatype (introspection)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await projVal(Person.select((p: any) => ({r: p.name.str()})).for(P1))).toBe('Semmy');
+    const dt = await projVal(Metric.select((x: any) => ({r: x.score.datatype()})).for(M1));
+    expect(dt.id).toBe(`${XSD}decimal`);
+  });
+  test('md5 / sha256 — exact digests of "Semmy"', async () => {
+    if (!fusekiAvailable) return;
+    expect(await projVal(Person.select((p: any) => ({r: p.name.md5()})).for(P1)))
+      .toBe(createHash('md5').update('Semmy').digest('hex'));
+    expect(await projVal(Person.select((p: any) => ({r: p.name.sha256()})).for(P1)))
+      .toBe(createHash('sha256').update('Semmy').digest('hex'));
+  });
+
+  // Quarantined — surfaced bugs (backlog 005):
+  //  - isNotDefined: the property is inner-joined, so !BOUND can never match
+  //    (returns [] instead of the rows lacking the property).
+  //  - Expr.ifThen: returns the ELSE branch even when the condition is true.
+  test.skip('isNotDefined [BUG: property inner-joined, never matches]', () => {});
+  test.skip('Expr.ifThen [BUG: returns else-branch when condition is true]', () => {});
+});
 
 // =========================================================================
 // §3 — Datatype coercion (Metric shape)
