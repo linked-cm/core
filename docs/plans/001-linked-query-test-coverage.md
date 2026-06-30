@@ -1,6 +1,6 @@
 ---
 summary: Expand the hand-written linked-query E2E suite (queries + seed data) to cover features core supports but currently leaves untested, exercised through the live-query/store contract.
-status: Tasks
+status: Implementation
 source: docs/linked-query-test-coverage.md
 ---
 
@@ -220,16 +220,22 @@ Validation gates per phase:
 
 Each phase = one commit (tests + updated plan doc).
 
-### Phase 1 — Scaffolding + §1 SOUND groups  *(blocks all later phases)*
+### Phase 1 — Scaffolding + §1 SOUND groups  *(blocks all later phases)*  ✅ DONE
 - New `src/tests/sparql-fuseki-coverage.test.ts`: extended seed (existing graph +
-  small additions) + `FusekiStore` harness (`selectQuery`/`createQuery`/
-  `updateQuery`/`deleteQuery`, skip-if-no-Fuseki).
-- Seed additions: a Person with a name > 5 chars (`whereExprStrlen`); a `Dog`
-  `d1` with `guardDogLevel` (`updateExprCallback`).
-- Wire SOUND fixtures with exact assertions: MINUS (7), bulk/conditional
-  mutations (6), expression WHERE (9), negation/quantifier (5), computed
-  projections (4), expression updates (4).
-- **Validation**: G-fast green; G-e2e green with the new tests executing.
+  `p5` long name + `d1` Dog) + `FusekiStore` harness (skip-if-no-Fuseki).
+- Wired SOUND fixtures with exact assertions: MINUS (7), negation/quantifier (5),
+  expression WHERE (7 selects + `whereExprUpdateBuilder`/`whereExprDeleteBuilder`),
+  computed projections (3), expression updates (`updateExprCallback`,
+  `updateExprNow`), bulk/conditional mutations (`updateForAll`, `updateWhere`,
+  `deleteWhere`, `deleteAll`, `deleteAllBuilder`).
+- **Result: 31 passing, 2 skipped.**
+- **Bugs surfaced** (→ `docs/backlog/003`): `exprNestedPath` (SELECT alias
+  collision → 400), `updateExprTraversal` + `updateExprSharedTraversal` (UPDATE
+  expression-over-traversal is unscoped → silent data corruption). Quarantined
+  (skip); decision pending (fix now vs. defer) — likely-to-balloon mutation fix.
+- **Validation**: G-e2e green (31/31 non-skipped pass against standalone Fuseki).
+- Local Fuseki: Apache Jena 5.5.0 standalone (docker image host egress-blocked);
+  run via `bash /home/user/fuseki-dist/run-fuseki-tests.sh '<pattern>'`.
 
 ### Phase 2 — §1 deep-nesting RISKY group (spike → fix)
 - Run the 15 deep-nesting fixtures through the store; triage pass/fail.
