@@ -41,6 +41,7 @@ import * as coreOntology from './ontologies/linked-core.js';
 import * as owl from './ontologies/owl.js';
 import * as npm from './ontologies/npm.js';
 import * as Sparql from './sparql/index.js';
+import * as MutationSerializationModule from './queries/MutationSerialization.js';
 import * as QueryBuilderModule from './queries/QueryBuilder.js';
 import * as PropertyPathModule from './queries/PropertyPath.js';
 import * as WhereConditionModule from './queries/WhereCondition.js';
@@ -49,7 +50,25 @@ import * as CreateBuilderModule from './queries/CreateBuilder.js';
 import * as UpdateBuilderModule from './queries/UpdateBuilder.js';
 import * as DeleteBuilderModule from './queries/DeleteBuilder.js';
 // New dynamic query building API (Phase 2)
-export {QueryBuilder} from './queries/QueryBuilder.js';
+export {SelectBuilder, QueryBuilder} from './queries/QueryBuilder.js';
+export {lower} from './queries/lower.js';
+export type {LowerableQuery} from './queries/lower.js';
+export {fromJSON} from './queries/fromJSON.js';
+export type {QueryJSON} from './queries/fromJSON.js';
+export {
+  getQueryContext,
+  setQueryContext,
+  subscribeQueryContext,
+  PendingQueryContext,
+  UnresolvedContextError,
+} from './queries/QueryContext.js';
+export {
+  CONTEXT_REF_KEY,
+  encodeContextRef,
+  isContextRefJSON,
+  resolveContextId,
+} from './queries/ContextRef.js';
+export type {ContextRefJSON} from './queries/ContextRef.js';
 export {PropertyPath, walkPropertyPath} from './queries/PropertyPath.js';
 export type {WhereCondition, WhereOperator} from './queries/WhereCondition.js';
 
@@ -64,6 +83,7 @@ export type {QueryBuilderJSON} from './queries/QueryBuilder.js';
 export {CreateBuilder} from './queries/CreateBuilder.js';
 export {UpdateBuilder} from './queries/UpdateBuilder.js';
 export {DeleteBuilder} from './queries/DeleteBuilder.js';
+export type {DeleteId} from './queries/DeleteBuilder.js';
 
 // Expressions — computed fields and functions
 export {ExpressionNode} from './expressions/ExpressionNode.js';
@@ -81,6 +101,26 @@ export type {
 
 // Phase 5 — Component query integration
 export type {LinkedComponentInterface, QueryComponentLike} from './queries/SelectQuery.js';
+
+
+// Mutation DSL-JSON serialization (create/update/delete to/from JSON)
+export {
+  encodeNodeData,
+  encodeValue,
+} from './queries/MutationSerialization.js';
+export {
+  decodeNodeData,
+  lowerMutationJSON,
+} from './queries/lowerMutationJSON.js';
+export type {
+  MutationJSON,
+  CreateMutationJSON,
+  UpdateMutationJSON,
+  DeleteMutationJSON,
+  MutationValueJSON,
+  MutationFieldJSON,
+  MutationNodeDataJSON,
+} from './queries/MutationSerialization.js';
 
 export function initModularApp() {
   let publicFiles = {
@@ -119,6 +159,7 @@ export function initModularApp() {
     owl,
     npm,
     Sparql,
+    MutationSerializationModule,
     QueryBuilderModule,
     PropertyPathModule,
     WhereConditionModule,

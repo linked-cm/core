@@ -12,8 +12,9 @@ import {
   captureRawQuery,
 } from "../test-helpers/query-capture-store";
 import { buildSelectQuery } from "../queries/IRPipeline";
-import type { SelectQuery } from "../queries/SelectQuery";
+import type { IRSelectQuery } from "../queries/IntermediateRepresentation";
 import { setQueryContext } from "../queries/QueryContext";
+import {lower} from '../queries/lower';
 
 setQueryContext("user", { id: "user-1" }, Person);
 
@@ -33,9 +34,9 @@ const sanitize = (value: unknown): unknown => {
 
 const captureIR = async (
   runner: () => Promise<unknown>
-): Promise<SelectQuery> => {
+): Promise<IRSelectQuery> => {
   const query = await captureQuery(runner);
-  return sanitize(query) as SelectQuery;
+  return sanitize(query) as IRSelectQuery;
 };
 
 type SelectCase = {
@@ -55,7 +56,7 @@ type SelectCase = {
   requiredResultKeys?: string[];
 };
 
-const assertSelectCase = (ir: SelectQuery, testCase: SelectCase) => {
+const assertSelectCase = (ir: IRSelectQuery, testCase: SelectCase) => {
   expect(ir.kind).toBe("select");
   expect(ir.root.kind).toBe("shape_scan");
   expect(ir.root.alias).toBeDefined();
@@ -732,12 +733,12 @@ describe("IR pipeline behavior", () => {
     expect(ir.limit).toBeUndefined();
   });
 
-  test("build() returns canonical IR", async () => {
+  test("lower() returns canonical IR", async () => {
     const query = Person.select((p) => p.name).where((p) =>
       p.name.equals("Semmy")
     );
 
-    const ir = query.build();
+    const ir = lower(query);
 
     expect(ir.kind).toBe("select");
     expect(ir.projection.length).toBe(1);
@@ -746,12 +747,12 @@ describe("IR pipeline behavior", () => {
 
   test("builder accepts already-lowered IR as pass-through", async () => {
     const query = Person.select((p) => p.name);
-    const ir = query.build();
+    const ir = lower(query);
 
     expect(buildSelectQuery(ir)).toBe(ir);
   });
 
-  test("build preserves nested sub-select projections inside array selections", async () => {
+  test("lower() preserves nested sub-select projections inside array selections", async () => {
     const query = await captureRawQuery(() =>
       queryFactories.pluralFilteredNestedSubSelect()
     );

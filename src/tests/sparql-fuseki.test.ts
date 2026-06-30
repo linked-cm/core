@@ -10,6 +10,7 @@
 import {describe, expect, test, beforeAll, afterAll} from '@jest/globals';
 import {queryFactories, Person, tmpEntityBase} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
+import {lower} from '../queries/lower';
 import {
   selectToSparql,
   createToSparql,
@@ -1954,8 +1955,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
   test('selectQuery — returns mapped result rows', async () => {
     if (!fusekiAvailable) return;
 
-    const ir = await captureQuery(queryFactories.selectName) as IRSelectQuery;
-    const result = await store.selectQuery(ir);
+    const result = await store.selectQuery(queryFactories.selectName());
 
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
@@ -1969,8 +1969,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
   test('selectQuery — nested traversals', async () => {
     if (!fusekiAvailable) return;
 
-    const ir = await captureQuery(queryFactories.selectFriendsName) as IRSelectQuery;
-    const result = await store.selectQuery(ir);
+    const result = await store.selectQuery(queryFactories.selectFriendsName());
 
     expect(Array.isArray(result)).toBe(true);
     const rows = result as ResultRow[];
@@ -1984,8 +1983,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
   test('createQuery — creates entity and returns echoed result', async () => {
     if (!fusekiAvailable) return;
 
-    const ir = (await captureQuery(queryFactories.createSimple)) as IRCreateMutation;
-    const result = await store.createQuery(ir);
+    const result = await store.createQuery(queryFactories.createSimple());
 
     expect(result).toBeDefined();
     expect(result.id).toBeDefined();
@@ -2007,16 +2005,16 @@ describe('SparqlDataset (via FusekiStore)', () => {
     if (!fusekiAvailable) return;
 
     const customUri = `${ENT}custom-webid-test`;
-    const ir = (await captureQuery(
-      queryFactories.createWithFixedId,
-    )) as IRCreateMutation;
 
-    // The IR should have data.id set from __id
-    expect(ir.data.id).toBe(`${tmpEntityBase}fixed-id`);
+    // The __id propagates into the lowered IR's data.id
+    expect(
+      (lower(queryFactories.createWithFixedId()) as any as IRCreateMutation).data.id,
+    ).toBe(`${tmpEntityBase}fixed-id`);
 
-    // Override to our test URI to avoid collision with other tests
-    ir.data.id = customUri;
-    const result = await store.createQuery(ir);
+    // Build with a custom id to avoid collision with other tests
+    const result = await store.createQuery(
+      Person.create({__id: customUri, name: 'Fixed'} as any),
+    );
 
     // The returned id must be the custom URI, not an auto-generated one
     expect(result.id).toBe(customUri);
@@ -2036,20 +2034,16 @@ describe('SparqlDataset (via FusekiStore)', () => {
     if (!fusekiAvailable) return;
 
     // Simulate the auth pattern: create user, then create account referencing user
-    const userIr = (await captureQuery(
-      queryFactories.createSimple,
-    )) as IRCreateMutation;
-    const userResult = await store.createQuery(userIr);
+    const userResult = await store.createQuery(queryFactories.createSimple());
     expect(userResult.id).toBeDefined();
 
     // Now create a second entity that references the first via bestFriend
-    const accountIr = (await captureQuery(() =>
+    const accountResult = await store.createQuery(
       Person.create({
         name: 'Account Entity',
         bestFriend: {id: userResult.id},
       } as any),
-    )) as IRCreateMutation;
-    const accountResult = await store.createQuery(accountIr);
+    );
     expect(accountResult.id).toBeDefined();
 
     // The critical check: userResult.id must still be intact after being
@@ -2079,8 +2073,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
   test('updateQuery — updates entity and returns echoed result', async () => {
     if (!fusekiAvailable) return;
 
-    const ir = (await captureQuery(queryFactories.updateSimple)) as IRUpdateMutation;
-    const result = await store.updateQuery(ir);
+    const result = await store.updateQuery(queryFactories.updateSimple());
 
     expect(result).toBeDefined();
     expect(result.id).toBeDefined();
@@ -2104,12 +2097,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
       }
     `);
 
-    const ir = {
-      kind: 'delete' as const,
-      shape: P,
-      ids: [{id: toDeleteUri}],
-    };
-    const result = await store.deleteQuery(ir);
+    const result = await store.deleteQuery(Person.delete({id: toDeleteUri}));
 
     expect(result.count).toBe(1);
     expect(result.deleted).toEqual([{id: toDeleteUri}]);

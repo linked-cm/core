@@ -1,14 +1,17 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
-import {UpdateQueryFactory, type UpdateQuery} from './UpdateQuery.js';
+import {MutationQueryFactory} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {type WhereClause, processWhereClause} from './SelectQuery.js';
-import {buildCanonicalUpdateWhereMutationIR} from './IRMutation.js';
-import {toWhere} from './IRDesugar.js';
-import {canonicalizeWhere} from './IRCanonicalize.js';
-import {lowerWhereToIR} from './IRLower.js';
+import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
+import {PendingQueryContext, getQueryContext, UnresolvedContextError} from './QueryContext.js';
+import {encodeContextRef, isContextRefJSON} from './ContextRef.js';
+import type {NodeShape} from '../shapes/SHACL.js';
+import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import type {ExpressionUpdateProxy, ExpressionUpdateResult} from '../expressions/ExpressionMethods.js';
+import {encodeNodeData, decodeNodeDataToRaw, type UpdateMutationJSON} from './MutationSerialization.js';
+import {serializeWherePath, deserializeWherePath} from './QueryBuilderSerialization.js';
+import type {UpdateLowerSpec} from './mutationLowerSpec.js';
 
 type UpdateMode = 'for' | 'forAll' | 'where';
 
@@ -21,6 +24,10 @@ interface UpdateBuilderInit<S extends Shape> {
   targetId?: string;
   mode?: UpdateMode;
   whereFn?: WhereClause<S>;
+  /** A pre-resolved where path (used by fromJSON; no live callback). */
+  where?: WherePath;
+  /** A query-context name used as the target subject (resolved at lowering). */
+  targetContextName?: string;
 }
 
 /**
@@ -44,6 +51,8 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   private readonly _targetId?: string;
   private readonly _mode?: UpdateMode;
   private readonly _whereFn?: WhereClause<S>;
+  private readonly _where?: WherePath;
+  private readonly _targetContextName?: string;
 
   private constructor(init: UpdateBuilderInit<S>) {
     this._shape = init.shape;
@@ -51,6 +60,8 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     this._targetId = init.targetId;
     this._mode = init.mode;
     this._whereFn = init.whereFn;
+    this._where = init.where;
+    this._targetContextName = init.targetContextName;
   }
 
   private clone(overrides: Partial<UpdateBuilderInit<S>> = {}): UpdateBuilder<S, any, any> {
@@ -60,6 +71,8 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       targetId: this._targetId,
       mode: this._mode,
       whereFn: this._whereFn,
+      where: this._where,
+      targetContextName: this._targetContextName,
       ...overrides,
     });
   }
@@ -73,14 +86,35 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     return new UpdateBuilder<S>({shape: resolved});
   }
 
+  /** Reconstruct an UpdateBuilder from its DSL-JSON (inverse of `toJSON`). */
+  static fromJSON(json: UpdateMutationJSON): UpdateBuilder {
+    assertWireVersion(json.v);
+    const resolved = resolveShape(json.shape);
+    const data = decodeNodeDataToRaw(json.data) as any;
+    if (json.mode === 'for') {
+      if (isContextRefJSON(json.targetId)) {
+        return new UpdateBuilder({shape: resolved, data, targetContextName: json.targetId.$ctx, mode: 'for'});
+      }
+      return new UpdateBuilder({shape: resolved, data, targetId: json.targetId, mode: 'for'});
+    }
+    if (json.mode === 'forAll') {
+      return new UpdateBuilder({shape: resolved, data, mode: 'forAll'});
+    }
+    const where = deserializeWherePath(resolved.shape, json.where!);
+    return new UpdateBuilder({shape: resolved, data, mode: 'where', where});
+  }
+
   // ---------------------------------------------------------------------------
   // Fluent API
   // ---------------------------------------------------------------------------
 
   /** Target a specific entity by ID. */
-  for(id: string | NodeReferenceValue): UpdateBuilder<S, U, AddId<U>> {
+  for(id: string | NodeReferenceValue | PendingQueryContext): UpdateBuilder<S, U, AddId<U>> {
+    if (id instanceof PendingQueryContext) {
+      return this.clone({targetContextName: id.contextName, targetId: undefined, mode: 'for'}) as unknown as UpdateBuilder<S, U, AddId<U>>;
+    }
     const resolvedId = typeof id === 'string' ? id : id.id;
-    return this.clone({targetId: resolvedId, mode: 'for'}) as unknown as UpdateBuilder<S, U, AddId<U>>;
+    return this.clone({targetId: resolvedId, targetContextName: undefined, mode: 'for'}) as unknown as UpdateBuilder<S, U, AddId<U>>;
   }
 
   /** Update all instances of this shape type. Returns void. */
@@ -104,78 +138,104 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   // Build & execute
   // ---------------------------------------------------------------------------
 
-  /** Build the IR mutation. */
-  build(): UpdateQuery {
+  /** Discriminator for the free `lower()` function and dataset routing. */
+  readonly __queryKind = 'update' as const;
+
+  /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
+  get shape(): NodeShape {
+    return this._shape.shape;
+  }
+
+  /** @internal The IR-free lowering spec consumed by `lower()`. Validates inputs. */
+  _lowerSpec(): UpdateLowerSpec<S> {
     if (!this._data) {
       throw new Error(
-        'UpdateBuilder requires .set(data) before .build(). Specify what to update.',
+        'UpdateBuilder requires .set(data) before it can be lowered. Specify what to update.',
       );
     }
 
     const mode = this._mode || (this._targetId ? 'for' : undefined);
 
     if (mode === 'forAll') {
-      return this.buildUpdateWhere();
+      return {shapeClass: this._shape, data: this._data, mode: 'forAll'};
     }
 
     if (mode === 'where') {
-      if (!this._whereFn) {
-        throw new Error(
-          'UpdateBuilder.where() requires a condition callback.',
-        );
+      if (!this._whereFn && !this._where) {
+        throw new Error('UpdateBuilder.where() requires a condition callback.');
       }
-      return this.buildUpdateWhere();
+      const wherePath =
+        this._where ?? processWhereClause(this._whereFn!, this._shape);
+      return {shapeClass: this._shape, data: this._data, mode: 'where', wherePath};
     }
 
-    // Default: ID-based update
-    if (!this._targetId) {
+    // Default: ID-based update (target id may come from a query context)
+    const targetId = this._resolveTargetId();
+    if (!targetId) {
+      if (this._targetContextName) {
+        throw new UnresolvedContextError(this._targetContextName);
+      }
       throw new Error(
-        'UpdateBuilder requires .for(id), .forAll(), or .where() before .build().',
+        'UpdateBuilder requires .for(id), .forAll(), or .where() before it can be lowered.',
       );
     }
-    const factory = new UpdateQueryFactory<S, UpdatePartial<S>>(
-      this._shape,
-      this._targetId,
-      this._data,
-    );
-    return factory.build();
+    return {shapeClass: this._shape, data: this._data, mode: 'for', targetId};
   }
 
-  private buildUpdateWhere(): UpdateQuery {
-    const factory = new UpdateQueryFactory<S, UpdatePartial<S>>(
-      this._shape,
-      '__placeholder__', // not used for where/forAll
-      this._data!,
-    );
-    const description = factory.fields;
+  /** Resolve the target id from an explicit id or a query-context reference. */
+  private _resolveTargetId(): string | undefined {
+    if (this._targetId) return this._targetId;
+    if (this._targetContextName) return getQueryContext(this._targetContextName)?.id;
+    return undefined;
+  }
 
-    let where;
-    let wherePatterns;
-
-    if (this._whereFn) {
-      const wherePath = processWhereClause(this._whereFn, this._shape);
-      const desugared = toWhere(wherePath);
-      const canonical = canonicalizeWhere(desugared);
-      const lowered = lowerWhereToIR(canonical);
-      where = lowered.where;
-      wherePatterns = lowered.wherePatterns;
+  /**
+   * Serialize this update mutation to lightweight DSL-JSON. Normalizes the update
+   * data through the IR-free factory base (handles the expression-callback form
+   * of `.set()`), and serializes the where clause for `where`-mode updates.
+   */
+  toJSON(): UpdateMutationJSON {
+    if (!this._data) {
+      throw new Error('UpdateBuilder requires .set(data) before .toJSON().');
     }
-
-    return buildCanonicalUpdateWhereMutationIR({
-      shape: this._shape.shape,
-      updates: description,
-      where,
-      wherePatterns,
-    });
+    const mode = this._mode || (this._targetId ? 'for' : undefined);
+    if (!mode) {
+      throw new Error(
+        'UpdateBuilder requires .for(id), .forAll(), or .where() before .toJSON().',
+      );
+    }
+    const fields = new MutationQueryFactory().describe(
+      this._shape.shape,
+      this._data,
+    );
+    const json: UpdateMutationJSON = {
+      v: WIRE_VERSION,
+      op: 'update',
+      shape: this._shape.shape.id,
+      mode,
+      data: encodeNodeData(fields),
+    };
+    if (mode === 'for') {
+      if (this._targetContextName) json.targetId = encodeContextRef(this._targetContextName);
+      else json.targetId = this._targetId;
+    }
+    if (mode === 'where') {
+      const wherePath = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
+      if (!wherePath) {
+        throw new Error('UpdateBuilder.where() requires a condition callback.');
+      }
+      json.where = serializeWherePath(wherePath);
+    }
+    return json;
   }
 
   /** Execute the mutation. */
   exec(): Promise<R> {
     const mode = this._mode || (this._targetId ? 'for' : undefined);
     if (mode === 'forAll' || mode === 'where') {
-      return getQueryDispatch().updateQuery(this.build()).then(() => undefined) as Promise<R>;
+      return getQueryDispatch().updateQuery(this).then(() => undefined) as Promise<R>;
     }
-    return getQueryDispatch().updateQuery(this.build()) as Promise<R>;
+    return getQueryDispatch().updateQuery(this) as Promise<R>;
   }
 
   // ---------------------------------------------------------------------------

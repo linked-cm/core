@@ -2,8 +2,9 @@ import type {
   IRBinaryOperator,
   IRExpression,
 } from '../queries/IntermediateRepresentation.js';
+import {PendingQueryContext} from '../queries/QueryContext.js';
 
-export type ExpressionInput = ExpressionNode | string | number | boolean | Date;
+export type ExpressionInput = ExpressionNode | string | number | boolean | Date | PendingQueryContext;
 
 /**
  * Map from placeholder sourceAlias → PropertyShape ID segments.
@@ -35,6 +36,9 @@ export function toIRExpression(input: ExpressionInput): IRExpression {
     return {kind: 'literal_expr', value: input};
   if (input instanceof Date)
     return {kind: 'literal_expr', value: input.toISOString()};
+  // A live query-context reference → carry the name; `lower()` resolves it.
+  if (input instanceof PendingQueryContext)
+    return {kind: 'reference_expr', contextName: input.contextName};
   if (typeof input === 'object' && input !== null && 'id' in input)
     return {kind: 'reference_expr', value: (input as {id: string}).id};
   throw new Error(`Invalid expression input: ${input}`);

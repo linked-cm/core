@@ -163,19 +163,25 @@ describe('LinkedStorage extra behaviors', () => {
   test('selectQuery rejects invalid query payloads before store resolution', async () => {
     await expect(
       LinkedStorage.selectQuery({shape: null} as any),
-    ).rejects.toThrow('Invalid select query passed to LinkedStorage.selectQuery(): missing root');
+    ).rejects.toThrow('Invalid select query passed to LinkedStorage.selectQuery(): missing shape');
   });
 
   test('selectQuery still reports missing store for valid query shapes', async () => {
     await expect(
-      LinkedStorage.selectQuery({
-        kind: 'select',
-        root: {kind: 'shape_scan', shape: BaseShape.shape.id, alias: 'a0'},
-        patterns: [],
-        projection: [],
-        resultMap: [],
-      } as any),
+      LinkedStorage.selectQuery({shape: {id: BaseShape.shape.id}} as any),
     ).rejects.toThrow('No query dataset configured');
+  });
+
+  test('mutation queries reject a missing shape (parity with selectQuery)', async () => {
+    await expect(
+      LinkedStorage.updateQuery({shape: null} as any),
+    ).rejects.toThrow('Invalid update query passed to LinkedStorage.updateQuery(): missing shape');
+    await expect(
+      LinkedStorage.createQuery({shape: undefined} as any),
+    ).rejects.toThrow('Invalid create query passed to LinkedStorage.createQuery(): missing shape');
+    await expect(
+      LinkedStorage.deleteQuery({shape: null} as any),
+    ).rejects.toThrow('Invalid delete query passed to LinkedStorage.deleteQuery(): missing shape');
   });
 });
 
@@ -220,11 +226,10 @@ describe('Query dispatch delegation', () => {
 
     const dispatch = getQueryDispatch();
     const query = ContextPerson.select((p) => p.name);
-    const result = await dispatch.selectQuery(query.build());
+    const result = await dispatch.selectQuery(query as any);
 
     expect(store.selectQuery).toHaveBeenCalledTimes(1);
-    expect(store.selectQuery.mock.calls[0][0]?.kind).toBe('select');
-    expect(store.selectQuery.mock.calls[0][0]?.root?.kind).toBe('shape_scan');
+    expect(store.selectQuery.mock.calls[0][0]?.__queryKind).toBe('select');
     expect(result).toEqual([{id: 'r1'}]);
   });
 
@@ -239,7 +244,7 @@ describe('Query dispatch delegation', () => {
 
     await ContextPerson.select((p) => p.name);
     expect(store.selectQuery).toHaveBeenCalledTimes(1);
-    expect(store.selectQuery.mock.calls[0][0]?.kind).toBe('select');
+    expect(store.selectQuery.mock.calls[0][0]?.__queryKind).toBe('select');
   });
 });
 
@@ -257,6 +262,18 @@ describe('QueryContext edge cases', () => {
     expect(getQueryContext('invalid-context')).toBeInstanceOf(PendingQueryContext);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  test('setQueryContext accepts a Shape instance without a shapeType', () => {
+    // A Shape is already a shape, so no shapeType is needed (previously this
+    // silently no-op'd because the `{id}` guard intercepted it).
+    const s = new ContextPerson();
+    s.id = 'https://ex.org/ctx-shape';
+    setQueryContext('shape-ctx', s);
+    const ctx = getQueryContext('shape-ctx');
+    expect(ctx).not.toBeInstanceOf(PendingQueryContext);
+    expect(ctx.id).toBe('https://ex.org/ctx-shape');
+    setQueryContext('shape-ctx', null as any);
   });
 
   test('setQueryContext warns when QResult provided without shapeType', () => {
