@@ -1,6 +1,6 @@
 ---
 summary: Expand the hand-written linked-query E2E suite (queries + seed data) to cover features core supports but currently leaves untested, exercised through the live-query/store contract.
-status: Plan
+status: Tasks
 source: docs/linked-query-test-coverage.md
 ---
 
@@ -206,3 +206,78 @@ const r = await store.selectQuery(Person.select(p => p.name).where(p => p.bestFr
   pause-and-report rule).
 - Whether any new operator deserves a golden-SPARQL pin in addition to the
   result assertion (decide per-operator during implementation).
+
+## Phases / tasks
+
+Validation gates per phase:
+- **G-fast** (~1–2 min, no Docker): `npx jest --config jest.config.js --runInBand
+  --testPathPattern='ir-|sparql-.*-golden|serialization|field-set|query-builder|lower|mutation-serialization'`
+  — guards against fixture/golden regressions from `query-fixtures.ts` edits.
+- **G-e2e**: `npm run test:fuseki` — the new file's tests must **actually execute**
+  (Fuseki up) and pass exact-result assertions. (Local Fuseki is run from the
+  Apache Jena 5.5.0 standalone distribution; the docker image host is
+  egress-blocked.)
+
+Each phase = one commit (tests + updated plan doc).
+
+### Phase 1 — Scaffolding + §1 SOUND groups  *(blocks all later phases)*
+- New `src/tests/sparql-fuseki-coverage.test.ts`: extended seed (existing graph +
+  small additions) + `FusekiStore` harness (`selectQuery`/`createQuery`/
+  `updateQuery`/`deleteQuery`, skip-if-no-Fuseki).
+- Seed additions: a Person with a name > 5 chars (`whereExprStrlen`); a `Dog`
+  `d1` with `guardDogLevel` (`updateExprCallback`).
+- Wire SOUND fixtures with exact assertions: MINUS (7), bulk/conditional
+  mutations (6), expression WHERE (9), negation/quantifier (5), computed
+  projections (4), expression updates (4).
+- **Validation**: G-fast green; G-e2e green with the new tests executing.
+
+### Phase 2 — §1 deep-nesting RISKY group (spike → fix)
+- Run the 15 deep-nesting fixtures through the store; triage pass/fail.
+- Land passing ones as exact tests; **fix surfaced bugs immediately** (pause +
+  report only if a fix balloons — likely `resultMapping.ts` / `IRLower` /
+  `IRProjection`).
+- **Validation**: G-fast + G-e2e green.
+
+### Phase 3 — §3 datatypes (`Metric` shape)
+- Add `Metric` shape to `query-fixtures.ts` (single-valued `score:decimal,
+  rating:double, views:long, count:integer, joinedOn:date` + multi-valued
+  `scores:decimal[]`); add `Metric` seed block.
+- Tests: JS coercion per datatype, negative round-trip, multi-valued numeric
+  collection/dedup/ordering.
+- **Validation**: G-fast + G-e2e green.
+
+### Phase 4 — §2 operators  *(numeric/date depend on Phase 3)*
+- Fixtures + exact tests: string (`concat/contains/startsWith/endsWith/substr/
+  replace/matches/before/after`) on Person; numeric (`minus/times/divide/abs/
+  round/ceil/floor/power`) + date (`year/month/day/...`) on `Metric`/birthDate;
+  null/conditional (`isDefined/isNotDefined/defaultTo/ifThen`); comparison
+  (`gte/lte`); introspection (`str/datatype`); hash (`md5`,`sha256` — exact
+  digest computed in JS).
+- **Validation**: G-fast + G-e2e green.
+
+### Phase 5 — §4 DSL property paths E2E
+- Path shapes (`seq/inv/alt/oneOrMore/zeroOrMore/zeroOrOne`) used in
+  `Shape.select`; add seed edges (parent/manages chains) for transitive/inverse.
+- **Validation**: G-fast + G-e2e green.
+
+### Phase 6 — §5 builder features
+- Multi-key `orderBy`, mixed ASC/DESC, nested-path `orderBy`, top-level `offset`
+  windowing, `.as(Shape)` casting through a traversal.
+- **Validation**: G-fast + G-e2e green.
+
+### Phase 7 — §6 DSL-JSON round-trip E2E
+- `store.selectQuery(fromJSON(q.toJSON()))` equals `store.selectQuery(q)` for a
+  representative select + each mutation; assert envelope carries `v`/`op`.
+- **Validation**: G-fast + G-e2e green.
+
+### Phase 8 — §7 `{$ctx}` E2E
+- Context as select subject / update target / mutation field value / delete id /
+  where-arg; delete-by-context; `UnresolvedContextError` on unset mutation
+  context; select → `null` when unset.
+- **Validation**: G-fast + G-e2e green.
+
+### Dependency graph / parallelization
+- **Phase 1 blocks everything** (creates the file + harness + base seed).
+- **Phase 3 → Phase 4** (numeric/date operators need `Metric`).
+- Phases **2, 5, 6, 7, 8** depend only on Phase 1 and are mutually independent
+  (parallelizable in principle; executed sequentially here, each gated).
