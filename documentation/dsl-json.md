@@ -60,10 +60,10 @@ treating it as a select). Only `v` and `shape` are always present; everything el
   "fields": [ "name", "hobby" ],                    // projection (see Projection)
   "where":  { "name": "Alice" },                    // filter (see Conditions)
   "limit": 10, "offset": 0,
-  "sortBy": { "name": "ASC" },
+  "sortBy": [ { "name": "ASC" } ],                  // array — element order is sort precedence
   "subject": "https://ex.org/p1",                   // .for(id) — id, {$ctx}, or omitted
   "subjects": ["https://ex.org/p1"],                // .forAll([...])
-  "singleResult": true,                             // .one()
+  "one": true,                                      // .one()
   "minus": [ { "shape": "Employee" } ],             // .minus(...)
   "nullSubject": true                               // .for(null) — resolves to no results
 }
@@ -88,9 +88,16 @@ A path that crosses a **plural** relation in a condition is an **implicit `some`
 `{ "friends.name": "Moa" }` means *"has some friend named Moa"*. Use an explicit quantifier for
 compound predicates or for `every`/`none` (see Conditions).
 
+A path segment may also **narrow type** with `as(<ShapeLabel>)`, mirroring the DSL's `.as(Dog)`:
+`"pets.as(Dog).guardDogLevel"`. The shape is given by its short **label**, not its IRI, to keep
+the path readable. (This is the one place an argument-bearing call rides inside a path string;
+it is allowed because a cast is a path operation. In a *projection* the structured form
+`{ "pets": { "cast": "Dog", "fields": [ … ] } }` is preferred.)
+
 ## Projection (`fields`)
 
-`fields` is an array. Each entry is one of:
+`fields` is an array, or the string `"*"` for `selectAll()` (every property of the shape). An
+**omitted** `fields` is the `select()` default. Each array entry is one of:
 
 ```jsonc
 "name"                                   // a leaf path (string)
@@ -109,7 +116,10 @@ compound predicates or for `every`/`none` (see Conditions).
 ```
 
 Rule of thumb: **aliasing/optioning a real path** stays path-keyed (`{ "<path>": { "as": … } }`);
-a **computed expression** uses `{ "as": …, "value": <expr> }`.
+a **computed expression** uses `{ "as": …, "value": <expr> }`. An aggregate or function without
+an alias projects under its dotted call string as the key (`"friends.size()"`) — alias it for a
+clean result key. Because `fields` is an array, the **same relation may be projected more than
+once** (different filters/aliases) without a key collision.
 
 ## Conditions (`where`) — the path-keyed object tier
 
@@ -134,6 +144,8 @@ uses its **method name** (`equals`, quantifiers, functions, shape methods).
 { "or":  [ { "name": "Alice" }, { "name": "Moa" } ] }
 { "not": { "hobby": "Chess" } }
 { "and": [ { "age": { ">": 18 } }, { "age": { "<": 65 } } ] }   // explicit AND when keys would collide
+{ "and": [ { "friends.some": { "name": "A" } },                 // two `some` on one relation
+           { "friends.some": { "name": "B" } } ] }              //   → explicit AND (keys can't repeat)
 ```
 
 **Quantifiers** over a relation — the value is a sub-condition scoped to the related node:
@@ -153,10 +165,25 @@ uses its **method name** (`equals`, quantifiers, functions, shape methods).
 { "friends.size()": { ">=": 2 } }
 ```
 
+**List membership** (`in` / `nin`) takes a wrapped list — a bare array would be ambiguous with an
+S-expr:
+
+```jsonc
+{ "status": { "in":  { "list": ["draft", "sent"] } } }
+{ "status": { "nin": { "list": ["archived"] } } }
+```
+
 A condition **value** is: a bare scalar (literal), a recognized value-object (`{id}`, `{$ctx}`),
-an **operator/method map** (`{ ">": 18 }`), or an **S-expr array** (a computed expression — next
-section). A value-object with reserved value-keys (`id`, `$ctx`, `path`) is an implicit-equals
-**target**; an object of operator/method keys is the operation to apply.
+an **operator/method map** (`{ ">": 18 }`), a **`{list}`** (only as an `in`/`nin` operand), or an
+**S-expr array** (a computed expression — next section). A value-object with reserved value-keys
+(`id`, `$ctx`, `path`) is an implicit-equals **target**; an object of operator/method keys is the
+operation to apply. **A bare array as an operator/method value is illegal** — lists are `{list}`,
+expressions are head-symbol arrays.
+
+The elements of an `and`/`or` list may each be a path-keyed object **or** an S-expr array (an
+S-expr evaluates to a boolean and is a valid condition). Conditions on the **same path** can't
+repeat as keys (JSON keys are unique) — combine them under one operator map (`{ ">":18, "<":65 }`)
+or an explicit `and`.
 
 ## Expressions — the S-expr array tier
 
@@ -293,11 +320,16 @@ or `"where"` (a `where` condition, same as select's).
 
 ## Reserved words
 
-These keys are reserved and may not be used as bare property labels: `and`, `or`, `not`, `as`,
-`value`, `where`, `fields`, `cast`, `one`, `call`, `args`, `path`, `id`, `date`, `list`, `add`,
-`remove`, `unset`, `some`, `every`, `none`, `minus`, `sortBy`, `subject`, `subjects`, `op`,
-`shape`, `data`, `mode`, `targetId`, `ids`, `v`, `$ctx`, and the operator symbols. A property
-whose label collides with one of these is referenced via the escape `{ "path": "<label>" }`.
+These keys are reserved: `and`, `or`, `not`, `as`, `value`, `where`, `fields`, `cast`, `one`,
+`call`, `args`, `path`, `id`, `date`, `list`, `add`, `remove`, `unset`, `some`, `every`, `none`,
+`minus`, `sortBy`, `subject`, `subjects`, `op`, `shape`, `data`, `mode`, `targetId`, `ids`, `v`,
+`$ctx`, and the operator symbols.
+
+In **value / operand** position a property whose label collides is escaped with
+`{ "path": "<label>" }`. **Key** position (a condition key) has no wrapper, so the three boolean
+**combinators `and` / `or` / `not` are globally reserved** — a NodeShape may not declare a property
+with one of those labels (enforced at shape registration). The other reserved words only matter as
+path suffixes or option keys and do not collide with bare property labels.
 
 ## Producing and consuming DSL-JSON
 
