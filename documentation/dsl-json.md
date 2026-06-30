@@ -6,6 +6,11 @@ or JavaScript to any other language. If you are building an endpoint, a cache, a
 non-JS backend, or anything that needs to send, store, or inspect a Linked query, this is
 the structure you target.
 
+> **Status.** This document specifies the **Z-c** grammar — the compact, DSL-shaped wire
+> format. It is the design of record for `v:"1.0"`. The JavaScript serializer is being
+> migrated onto it; until that migration lands, `query.toJSON()` may still emit the older
+> IR-embedding form. Where the two differ, **this document is the contract**.
+
 A Linked query exists in three tiers:
 
 | Tier | What it is | Role |
@@ -15,8 +20,9 @@ A Linked query exists in three tiers:
 | **IR** | a shape-resolved algebra | an *internal* lowering target some stores use (e.g. the built-in SPARQL store). See [intermediate-representation.md](./intermediate-representation.md). |
 
 The builder and the IR are implementation details of the JavaScript runtime. **DSL-JSON is
-the contract.** It is deliberately compact (property *labels*, not full IRIs, where the
-shape can recover them) and round-trips losslessly back into a builder.
+the contract.** It mirrors the DSL as closely as JSON allows: property *labels* (not IRIs),
+filters that read like the `.where(...)` you wrote, and lossless round-tripping back into a
+builder.
 
 ```ts
 import {fromJSON} from '@_linked/core';
@@ -34,179 +40,264 @@ Every envelope carries a wire-format version under `v`:
 { "v": "1.0", ... }
 ```
 
-`fromJSON` (and every per-builder `fromJSON`) checks it with `assertWireVersion`: a mismatched
-**major** version is rejected; a missing `v` is tolerated (treated as the current major). Bump
-the major only for breaking wire changes.
+`fromJSON` checks it with `assertWireVersion`: a mismatched **major** is rejected; a missing
+`v` is tolerated (treated as the current major). Bump the major only for breaking wire changes.
 
 ## Envelopes
 
-There are two envelope families, distinguished structurally:
+Two families, distinguished structurally:
 
 - **Mutations** carry an `op` discriminator: `"create"`, `"update"`, or `"delete"`.
 - **Selects** carry no `op`.
 
 `fromJSON(json)` routes on `op` (and throws on an unrecognized `op` rather than silently
-treating it as a select).
-
-### Select
+treating it as a select). Only `v` and `shape` are always present; everything else is optional.
 
 ```jsonc
 {
   "v": "1.0",
-  "shape": "https://linked.cm/shape/core/Person",  // target shape IRI (the routing key)
-  "fields": [ { "path": "name" }, { "path": "hobby" } ],
-  "limit": 10,
-  "offset": 0,
-  "subject": "https://ex.org/p1",     // single-subject id, OR a {$ctx} ref (see below), OR omitted
-  "subjects": ["https://ex.org/p1"],   // multi-subject ids (forAll)
-  "singleResult": true,
-  "orderDirection": "ASC",
-  "where": { /* WherePath JSON, see below */ },
-  "sortBy": { "paths": ["name"], "direction": "ASC" },
-  "minusEntries": [ /* exclusions */ ],
-  "nullSubject": true                  // .for(null) — resolves to no results
+  "shape": "https://linked.cm/shape/core/Person",  // target shape IRI — the routing key
+  "fields": [ "name", "hobby" ],                    // projection (see Projection)
+  "where":  { "name": "Alice" },                    // filter (see Conditions)
+  "limit": 10, "offset": 0,
+  "sortBy": { "name": "ASC" },
+  "subject": "https://ex.org/p1",                   // .for(id) — id, {$ctx}, or omitted
+  "subjects": ["https://ex.org/p1"],                // .forAll([...])
+  "singleResult": true,                             // .one()
+  "minus": [ { "shape": "Employee" } ],             // .minus(...)
+  "nullSubject": true                               // .for(null) — resolves to no results
 }
 ```
 
-Only `v` and `shape` are always present; everything else is optional.
+## Paths
 
-A real example — `Person.select(p => [p.name, p.hobby]).where(p => p.name.equals('Alice')).limit(10)`:
+A **path** is a dotted string of property labels: `"name"`, `"bestFriend.name"`,
+`"friends.friends.name"`. A path segment may end in a no-arg call: `"name.strlen()"`,
+`"friends.size()"`.
+
+A path is written **bare** wherever its slot can only be a path:
+
+- a **condition key** — `{ "name": "Alice" }`
+- a **projection field** — `"friends.friends.name"`
+
+A path is **wrapped** as `{ "path": "a.b.c" }` only in **operand / value** slots, where a bare
+string would otherwise be a **literal** (see Values). `{ "path": "…" }` also serves as the
+**escape** for a property whose label collides with a reserved word (see Reserved words).
+
+A path that crosses a **plural** relation in a condition is an **implicit `some`** (existential):
+`{ "friends.name": "Moa" }` means *"has some friend named Moa"*. Use an explicit quantifier for
+compound predicates or for `every`/`none` (see Conditions).
+
+## Projection (`fields`)
+
+`fields` is an array. Each entry is one of:
+
+```jsonc
+"name"                                   // a leaf path (string)
+"friends.friends.name"                   // a deep linear path — one chain, dotted
+{ "friends": ["name", "hobby"] }         // a relation with sub-fields (array = its fields)
+{ "friends": {                           // a relation with options
+    "as": "buddies",                     //   alias the result key
+    "where": { "hobby": "Chess" },       //   filter the related set
+    "one": true,                         //   .one() — unwrap a single
+    "fields": ["name"] } }               //   sub-projection
+{ "pets": { "cast": "Dog",               // .as(Dog) — type narrowing (NOT alias)
+            "fields": ["guardDogLevel"] } }
+{ "as": "isBestie",                      // a COMPUTED field — no single underlying property
+  "value": { "bestFriend": { "id": "…/p3" } } }   // value is an expression (see Values)
+{ "as": "numFriends", "value": { "path": "friends.size()" } }   // aggregate as a value
+```
+
+Rule of thumb: **aliasing/optioning a real path** stays path-keyed (`{ "<path>": { "as": … } }`);
+a **computed expression** uses `{ "as": …, "value": <expr> }`.
+
+## Conditions (`where`) — the path-keyed object tier
+
+A condition is an object. Its keys are **paths** (or the combinators `and`/`or`/`not`); its
+values say what to test.
+
+```jsonc
+{ "name": "Alice" }                      // implicit equals
+{ "name": { "equals": "Alice" } }        // explicit, same thing
+{ "age":  { ">": 18 } }                  // comparison operator
+{ "age":  { ">": 18, "<": 65 } }         // multiple ops on ONE path = AND (range)
+{ "name": "Alice", "age": { ">": 18 } }  // multiple keys = implicit AND
+{ "name": { "!=": "Bob" } }
+```
+
+Comparison keys use **symbols** (`=`, `!=`, `>`, `>=`, `<`, `<=`); everything without a symbol
+uses its **method name** (`equals`, quantifiers, functions, shape methods).
+
+**Combinators** are reserved keys:
+
+```jsonc
+{ "or":  [ { "name": "Alice" }, { "name": "Moa" } ] }
+{ "not": { "hobby": "Chess" } }
+{ "and": [ { "age": { ">": 18 } }, { "age": { "<": 65 } } ] }   // explicit AND when keys would collide
+```
+
+**Quantifiers** over a relation — the value is a sub-condition scoped to the related node:
+
+```jsonc
+{ "friends.some":  { "name": "Moa" } }
+{ "friends.every": { "name": { "!=": "Bob" } } }
+{ "friends.none":  { "hobby": "Chess" } }
+{ "friends.some":  { "name": "Moa", "hobby": "Chess" } }        // compound predicate
+{ "friends.some":  { "friends.some": { "name": "Moa" } } }      // nested
+```
+
+**Functions / aggregates in the key** (no-arg, trailing the path):
+
+```jsonc
+{ "name.strlen()": { ">": 5 } }
+{ "friends.size()": { ">=": 2 } }
+```
+
+A condition **value** is: a bare scalar (literal), a recognized value-object (`{id}`, `{$ctx}`),
+an **operator/method map** (`{ ">": 18 }`), or an **S-expr array** (a computed expression — next
+section). A value-object with reserved value-keys (`id`, `$ctx`, `path`) is an implicit-equals
+**target**; an object of operator/method keys is the operation to apply.
+
+## Expressions — the S-expr array tier
+
+Anything that isn't a single-step condition — chained calls, arithmetic, functions-of-functions,
+nullary functions — is an **array headed by an operator symbol or function name**, with operands
+following. The array shape never collides with the path-keyed object tier.
+
+```jsonc
+["now"]                                   // Expr.now()  (nullary function)
+["strlen", {"path":"name"}]               // strlen(name)
+["+", {"path":"count"}, 1]                // count + 1
+["<", ["+", ["strlen", {"path":"name"}], 10], 100]   // strlen(name) + 10 < 100
+{ "birthDate": { "<": ["now"] } }         // an S-expr as a condition value
+```
+
+**Operands** are: a bare scalar (**literal**), `{ "path": "…" }` (a **property**), a nested
+`[…]` (sub-expression), or `{id}` / `{$ctx}` (refs). The "bare = literal, `{path}` = property"
+rule is the same as everywhere; it just appears in array form here.
+
+Use this tier when the path-keyed tier can't express the shape (a receiver that is itself an
+expression, or a chain whose intermediate steps take arguments). For the common single-step
+case, prefer the path-keyed object — it reads like the DSL.
+
+## Values
+
+`JSON.stringify` is lossy for some values, so value slots use these forms. In **value position**
+a bare scalar is always a **literal** (there is no property-vs-literal ambiguity — a property is
+marked `{path}`):
+
+| Form | Meaning |
+|---|---|
+| `"Alice"`, `42`, `true` | a literal string / number / boolean |
+| `{ "path": "a.b.c" }` | a property / computed-path value |
+| `[ "op", … ]` | a computed expression (S-expr tier) |
+| `{ "id": "<iri>" }` | a node reference |
+| `{ "$ctx": "user" }` / `{ "$ctx": "user", "path": "name" }` | a context reference (see below) |
+| `{ "date": "<ISO-8601>" }` | a `Date` (marked — an ISO string ≈ a literal string) |
+| `{ "list": [ <value>, … ] }` | a list (marked — a bare array ≈ an S-expr) |
+| `{ "add"?: [<value>], "remove"?: ["<iri>"] }` | add/remove on a set relation |
+| `{ "unset": true }` | clear the property (`undefined`/`null`) |
+| `{ "name": "…", … }` | a nested node description (a create) |
+
+### Computed values (mutation fields, projected `value`)
+
+Because a mutation field is written `{ propBeingSet: value }`, the **key is the property being
+written**, so a computed value must be a **self-contained expression** with its own explicit
+receiver. Use a literal, `{path}`, or an S-expr — **not** the path-keyed condition form:
+
+```jsonc
+{ "guardDogLevel": ["+", {"path":"guardDogLevel"}, 1] }   // count = count + 1
+{ "hobby":        { "path": "bestFriend.name.ucase()" } } // pure-path value
+{ "birthDate":    ["now"] }                               // Expr.now()
+```
+
+## Context references (`{$ctx}`)
+
+A query may refer to a value not known when it is authored — most commonly "the current user".
+Instead of resolving it eagerly, the reference travels as a marker and is resolved **at lowering
+time** against the resolving process's context map. `$ctx` carries *only* the context name; an
+access on it uses `path` (the same dotted-path syntax):
 
 ```json
-{
-  "v": "1.0",
-  "shape": "https://linked.cm/shape/core/Person",
-  "fields": [{ "path": "name" }, { "path": "hobby" }],
-  "limit": 10,
-  "where": {
-    "kind": "expression",
-    "ir": {
-      "kind": "binary_expr", "operator": "=",
-      "left": { "kind": "property_expr", "sourceAlias": "__ref_0__", "property": "https://linked.cm/shape/core/Person/name" },
-      "right": { "kind": "literal_expr", "value": "Alice" }
-    },
-    "refs": { "__ref_0__": ["https://linked.cm/shape/core/Person/name"] }
-  }
-}
+{ "$ctx": "user" }                       // the user entity
+{ "$ctx": "user", "path": "name" }       // getQueryContext('user').name
 ```
 
-**Field entries** (`fields[]`) are shape-relative labels, optionally aliased, aggregated, or
-nested:
+The marker appears anywhere a node id can: the select `subject`, the update `targetId`, a delete
+`id`, a mutation field value, and as a condition value or expression operand.
+
+Resolution at lowering:
+
+- **Mutations** must hit a concrete node — an unresolved context throws `UnresolvedContextError`.
+- **Selects** never throw — an unresolved context makes `exec()` resolve to `null` (a reactive
+  layer re-runs once the context lands via `subscribeQueryContext`).
+
+## Calls (shape methods)
+
+Pure, value-producing shape methods (computed getters / helpers) are usable in conditions,
+projections, and values. A **no-arg** call rides in the path (`"fullName()"`,
+`"name.strlen()"`). A call **with arguments** uses the explicit node:
 
 ```jsonc
-{ "path": "name", "as": "fullName", "aggregation": "count",
-  "subSelect": { "shape": "...", "fields": [ ... ] } }   // nested select for a relation
+{ "fullName()": "Alice Smith" }                          // no-arg, in the key
+{ "as": "len", "value": { "path": "name.strlen()" } }    // no-arg, as a value
+{ "call": "distanceTo", "args": [ { "id": "…/office" } ] }   // with args
 ```
 
-**Where clauses** (`where`) are one of four shapes:
+Only **value-producing** methods are legal in these positions. **Side-effecting** methods
+(actions / commands like `sendEmail`) are **not** valid in a filter or value; they are reserved
+for a future top-level action envelope (`{ "op": "call", … }`) that reuses the same call node.
+Position — not syntax — decides intent.
 
-- `{ "kind": "expression", "ir": <expression IR>, "refs": { ... } }` — a comparison/boolean
-  expression (`.equals`, `.gt`, `.and`, …). The `ir` is the expression sub-tree; `refs` maps
-  placeholder aliases back to property paths.
-- `{ "kind": "andOr", "firstPath": <where>, "andOr": [ { "and": <where> }, { "or": <where> } ] }`
-- `{ "kind": "exists", ... }` — an EXISTS/NOT-EXISTS over a relation (`.some()/.every()/.none()`).
-- `{ "kind": "evaluation", "path": [...], "method": "...", "args": [...] }` — method-style condition.
+## Mutations
 
 ### Create
 
 ```json
 {
-  "v": "1.0",
-  "op": "create",
-  "shape": "https://linked.cm/shape/core/Person",
+  "v": "1.0", "op": "create", "shape": "https://linked.cm/shape/core/Person",
   "data": {
-    "shape": "https://linked.cm/shape/core/Person",
-    "fields": [
-      { "prop": "name",  "value": { "kind": "lit", "value": "Alice" } },
-      { "prop": "hobby", "value": { "kind": "lit", "value": "Chess" } }
-    ]
+    "name": "Alice",
+    "hobby": "Chess",
+    "bestFriend": { "name": "Bestie" },
+    "friends": [ { "id": "https://ex.org/p2" } ]
   }
 }
 ```
 
-`data` is a **node description**: a `shape`, optional `id` (predefined/fixed id), and `fields[]`
-of `{ prop: <label>, value: <value> }`. Property keys are labels; the receiver resolves them
-against the registered shape.
+`data` is a **node description**: property keys are labels (resolved against the shape), values
+use the Value forms above. A nested object is a nested create; `{ "id": … }` is a reference; an
+optional `"id"` on `data` fixes a predefined id.
 
 ### Update
 
 ```json
 {
-  "v": "1.0",
-  "op": "update",
-  "shape": "https://linked.cm/shape/core/Person",
-  "mode": "for",
-  "targetId": "https://ex.org/p1",
-  "data": { "shape": "...", "fields": [ { "prop": "hobby", "value": { "kind": "lit", "value": "Go" } } ] }
+  "v": "1.0", "op": "update", "shape": "…/Person",
+  "mode": "for", "targetId": "https://ex.org/p1",
+  "data": { "hobby": "Go", "guardDogLevel": ["+", {"path":"guardDogLevel"}, 1] }
 }
 ```
 
-`mode` is `"for"` (single target — `targetId` is an id or a `{$ctx}` ref), `"forAll"` (every
-instance of the shape), or `"where"` (a `where` clause, same shape as select's).
+`mode` is `"for"` (single target — `targetId` is an id or `{$ctx}`), `"forAll"` (every instance),
+or `"where"` (a `where` condition, same as select's).
 
 ### Delete
 
 ```jsonc
-// by id(s)
-{ "v": "1.0", "op": "delete", "shape": "...", "mode": "ids",
-  "ids": ["https://ex.org/p1", "https://ex.org/p2"] }   // each id may also be a {$ctx} ref
-
-// all instances
-{ "v": "1.0", "op": "delete", "shape": "...", "mode": "all" }
-
-// by condition
-{ "v": "1.0", "op": "delete", "shape": "...", "mode": "where", "where": { /* WherePath JSON */ } }
+{ "v":"1.0", "op":"delete", "shape":"…", "mode":"ids",
+  "ids": [ "https://ex.org/p1", { "$ctx": "user" } ] }   // ids and/or {$ctx}
+{ "v":"1.0", "op":"delete", "shape":"…", "mode":"all" }
+{ "v":"1.0", "op":"delete", "shape":"…", "mode":"where", "where": { "hobby": "Chess" } }
 ```
 
-## Value encodings
+## Reserved words
 
-`JSON.stringify` is lossy for some values (a `Date` collapses to a string, an expression is a
-live object, `undefined` disappears), so each node-field value is a **tagged** object:
-
-| `kind` | Shape | Meaning |
-|---|---|---|
-| `lit` | `{ "kind": "lit", "value": string \| number \| boolean }` | a literal |
-| `date` | `{ "kind": "date", "value": "<ISO-8601>" }` | a `Date` |
-| `ref` | `{ "kind": "ref", "id": "<iri>" }` | a node reference |
-| `ctxRef` | `{ "kind": "ctxRef", "name": "<context>" }` | a query-context reference (see below) |
-| `node` | `{ "kind": "node", "data": <node description> }` | a nested create |
-| `array` | `{ "kind": "array", "items": [ <value>, ... ] }` | a list |
-| `setMod` | `{ "kind": "setMod", "add"?: [<value>], "remove"?: ["<iri>"] }` | add/remove on a set relation |
-| `expr` | `{ "kind": "expr", "ir": <expression IR>, "refs"?: {...} }` | a computed update (e.g. `p => p.count.plus(1)`) |
-| `unset` | `{ "kind": "unset" }` | clear the property (`undefined`/`null`) |
-
-## Context references (`{$ctx}`)
-
-A query may refer to a value that isn't known when it is authored — most commonly "the current
-user". Instead of resolving it eagerly (which would bake in a stale id, or fail before login),
-the reference travels on the wire as a marker and is resolved **at lowering time** against
-whatever context map the resolving process has:
-
-```json
-{ "$ctx": "user" }
-```
-
-The marker appears anywhere a node id can: the select `subject`, the update `targetId`, a delete
-`id`, and mutation field values (as the `ctxRef` value kind). Inside a where-clause expression it
-appears as a `contextName` on the reference node (`{ "kind": "reference_expr", "contextName": "user" }`).
-
-Resolution rules at lowering:
-
-- **Mutations** must hit a concrete node — an unresolved context throws `UnresolvedContextError`.
-- **Selects** never throw — an unresolved context makes `exec()` resolve to `null` (a reactive
-  layer re-runs the query once the context lands via `subscribeQueryContext`).
-
-Example — `Person.select(p => p.name).for(getQueryContext('user'))`:
-
-```json
-{
-  "v": "1.0",
-  "shape": "https://linked.cm/shape/core/Person",
-  "fields": [{ "path": "name" }],
-  "subject": { "$ctx": "user" },
-  "singleResult": true
-}
-```
+These keys are reserved and may not be used as bare property labels: `and`, `or`, `not`, `as`,
+`value`, `where`, `fields`, `cast`, `one`, `call`, `args`, `path`, `id`, `date`, `list`, `add`,
+`remove`, `unset`, `some`, `every`, `none`, `minus`, `sortBy`, `subject`, `subjects`, `op`,
+`shape`, `data`, `mode`, `targetId`, `ids`, `v`, `$ctx`, and the operator symbols. A property
+whose label collides with one of these is referenced via the escape `{ "path": "<label>" }`.
 
 ## Producing and consuming DSL-JSON
 
