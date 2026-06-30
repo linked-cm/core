@@ -200,7 +200,8 @@ Write `src/tests/dsl-json-roundtrip.test.ts`: for every select fixture assert
 equivalence, so it passes on the **current** code and guards every later phase.
 - **Validation:** suite passes on the current (pre-migration) code.
 
-### Phase 2 — `ZcExpression.ts` codec — status: pending
+### Phase 2 — `ZcExpression.ts` codec — status: done
+_Validated: tsc cjs+esm clean; zc-expression.test.ts 12/12 pass; full suite 1320 passed (no regressions); codec not yet wired._
 Implement the module per the Contracts section: `encodeValueExpr`/`decodeValueExpr`,
 `encodeCondition`/`decodeCondition`, `segmentsToPath`/`pathToSegments`, the name maps (P3), the
 `alias_expr` vs `property_expr` decode dispatch (P2), context refs carry the name (P5). First read
