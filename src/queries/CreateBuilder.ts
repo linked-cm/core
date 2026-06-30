@@ -1,8 +1,13 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import type {UpdatePartial} from './QueryFactory.js';
-import {CreateQueryFactory, type CreateQuery, type CreateResponse} from './CreateQuery.js';
+import type {CreateResponse} from './CreateQuery.js';
+import {MutationQueryFactory} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
+import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
+import type {NodeShape} from '../shapes/SHACL.js';
+import {encodeNodeData, decodeNodeDataToRaw, type CreateMutationJSON} from './MutationSerialization.js';
+import type {CreateLowerSpec} from './mutationLowerSpec.js';
 
 /**
  * Internal state bag for CreateBuilder.
@@ -23,7 +28,8 @@ interface CreateBuilderInit<S extends Shape> {
  * const result = await CreateBuilder.from(Person).set({name: 'Alice'});
  * ```
  *
- * Internally delegates to CreateQueryFactory for IR generation.
+ * Serialization normalizes through the IR-free factory base; IR is produced by
+ * the free `lower()` function (the builder itself imports no IR).
  */
 export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> = UpdatePartial<S>>
   implements PromiseLike<CreateResponse<U>>, Promise<CreateResponse<U>>
@@ -59,6 +65,12 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     return new CreateBuilder<S>({shape: resolved});
   }
 
+  /** Reconstruct a CreateBuilder from its DSL-JSON (inverse of `toJSON`). */
+  static fromJSON(json: CreateMutationJSON): CreateBuilder {
+    assertWireVersion(json.v);
+    return CreateBuilder.from(json.shape).set(decodeNodeDataToRaw(json.data) as any);
+  }
+
   // ---------------------------------------------------------------------------
   // Fluent API
   // ---------------------------------------------------------------------------
@@ -77,11 +89,19 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   // Build & execute
   // ---------------------------------------------------------------------------
 
-  /** Build the IR mutation. Throws if no data was set via .set(). */
-  build(): CreateQuery {
+  /** Discriminator for the free `lower()` function and dataset routing. */
+  readonly __queryKind = 'create' as const;
+
+  /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
+  get shape(): NodeShape {
+    return this._shape.shape;
+  }
+
+  /** @internal The IR-free lowering spec consumed by `lower()`. Validates inputs. */
+  _lowerSpec(): CreateLowerSpec<S> {
     if (!this._data) {
       throw new Error(
-        'CreateBuilder requires .set(data) before .build(). Specify what to create.',
+        'CreateBuilder requires .set(data) before it can be lowered. Specify what to create.',
       );
     }
     const data = this._data;
@@ -108,16 +128,37 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     const dataWithId = this._fixedId
       ? {...(data as any), __id: this._fixedId}
       : data;
-    const factory = new CreateQueryFactory<S, UpdatePartial<S>>(
-      this._shape,
-      dataWithId as UpdatePartial<S>,
+    return {shapeClass: this._shape, data: dataWithId as UpdatePartial<S>};
+  }
+
+  /**
+   * Serialize this create mutation to lightweight DSL-JSON. Normalizes the create
+   * data through the IR-free factory base (the same normalization `lower()` runs)
+   * so the result is concrete and JSON-safe, then encodes the node description.
+   */
+  toJSON(): CreateMutationJSON {
+    if (!this._data) {
+      throw new Error('CreateBuilder requires .set(data) before .toJSON().');
+    }
+    const dataWithId = this._fixedId
+      ? {...(this._data as any), __id: this._fixedId}
+      : this._data;
+    const description = new MutationQueryFactory().describe(
+      this._shape.shape,
+      dataWithId,
+      true,
     );
-    return factory.build();
+    return {
+      v: WIRE_VERSION,
+      op: 'create',
+      shape: this._shape.shape.id,
+      data: encodeNodeData(description),
+    };
   }
 
   /** Execute the mutation. */
   exec(): Promise<CreateResponse<U>> {
-    return getQueryDispatch().createQuery(this.build()) as Promise<CreateResponse<U>>;
+    return getQueryDispatch().createQuery(this) as Promise<CreateResponse<U>>;
   }
 
   // ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ import type {IRDeleteMutation, IRUpdateMutation} from '../queries/IntermediateRe
 // Ensure List/PathNode (dependent shapes) are registered so the cascade has targets.
 import '../shapes/List';
 import '../shapes/PathNode';
+import {lower} from '../queries/lower';
 
 const {linkedShape} = linkedPackage('cascade-test');
 const ex = (n: string) => ({id: `http://example.org/c#${n}`});
@@ -52,7 +53,7 @@ class TBag extends Shape {
 describe('owned-subtree cascade', () => {
   test('delete cascades via contains edges to dependent-typed nodes', () => {
     const sparql = deleteToSparql(
-      DeleteBuilder.from(TBox, {id: 'http://example.org/c#b1'}).build() as IRDeleteMutation,
+      lower(DeleteBuilder.from(TBox, {id: 'http://example.org/c#b1'})) as IRDeleteMutation,
     );
     // follows contains edges as a one-or-more property path
     expect(sparql).toContain('owns');
@@ -64,7 +65,7 @@ describe('owned-subtree cascade', () => {
 
   test('safety: non-contains predicate (ref) is NOT followed by the cascade', () => {
     const sparql = deleteToSparql(
-      DeleteBuilder.from(TBox, {id: 'http://example.org/c#b1'}).build() as IRDeleteMutation,
+      lower(DeleteBuilder.from(TBox, {id: 'http://example.org/c#b1'})) as IRDeleteMutation,
     );
     expect(sparql).not.toContain('#ref');
   });
@@ -94,10 +95,10 @@ describe('owned-subtree cascade', () => {
 
   test('update set-modification remove on a contains property cascades the removed subtree', () => {
     const sparql = updateToSparql(
-      UpdateBuilder.from(TBag)
+      lower(UpdateBuilder.from(TBag)
         .for('http://example.org/c#bag1')
         .set({items: {remove: [{id: 'http://example.org/c#oldcell'}]}} as any)
-        .build() as IRUpdateMutation,
+        ) as IRUpdateMutation,
     );
     // the removed value is a cascade root, followed by the contains property path
     expect(sparql).toContain('http://example.org/c#oldcell');
@@ -107,10 +108,10 @@ describe('owned-subtree cascade', () => {
 
   test('update replacing a contains property cascades the old value subtree', () => {
     const sparql = updateToSparql(
-      UpdateBuilder.from(TBox)
+      lower(UpdateBuilder.from(TBox)
         .for('http://example.org/c#b1')
         .set({owns: {id: 'http://example.org/c#newcell'}})
-        .build() as IRUpdateMutation,
+        ) as IRUpdateMutation,
     );
     // DELETE removes the old owns edge AND the old owned subtree (cascade path present)
     expect(sparql).toContain('owns');

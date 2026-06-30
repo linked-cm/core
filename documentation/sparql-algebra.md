@@ -583,7 +583,7 @@ export class MyEndpointStore extends SparqlStore {
 }
 ```
 
-The base class implements all four `IQuadStore` methods (`selectQuery`, `createQuery`, `updateQuery`, `deleteQuery`) by orchestrating the conversion layers:
+The base class implements all four `IDataset` methods (`selectQuery`, `createQuery`, `updateQuery`, `deleteQuery`) — each calls `lower(query)` internally to obtain the IR, then orchestrates the conversion layers:
 
 1. Convert IR to SPARQL algebra plan (`irToAlgebra`)
 2. Serialize the algebra plan to a SPARQL string (`algebraToString`)

@@ -11,6 +11,7 @@ import {serializePathToNodeData} from '../shapes/serializePathToNodeData';
 import {createToSparql} from '../sparql/irToAlgebra';
 import '../ontologies/rdf';
 import '../ontologies/shacl';
+import {lower} from '../queries/lower';
 
 const {linkedShape} = linkedPackage('path-translator-test');
 const B = 'https://example.org/ps';
@@ -26,9 +27,9 @@ class PHolder extends Shape {
 
 const sparql = (path: any) =>
   createToSparql(
-    (PHolder.create({p: serializePathToNodeData(path, B)}) as any)
+    lower((PHolder.create({p: serializePathToNodeData(path, B)}) as any)
       .withId('https://example.org/h')
-      .build(),
+      ) as any,
   );
 
 describe('serializePathToNodeData', () => {

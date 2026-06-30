@@ -1,6 +1,12 @@
 import {jest} from '@jest/globals';
 import {setQueryDispatch} from '../queries/queryDispatch';
 import * as IRPipeline from '../queries/IRPipeline';
+import {lower} from '../queries/lower';
+
+// Datasets now receive the live (closed) query; tests expect the lowered IR, so
+// lower() what we capture. Passing an already-IR object through is tolerated.
+const toIR = (query: any) =>
+  query && typeof query.__queryKind === 'string' ? lower(query) : query;
 
 /**
  * Test utility that intercepts the query dispatch and captures
@@ -23,19 +29,19 @@ jest.spyOn(IRPipeline, 'buildSelectQuery').mockImplementation((raw: any) => {
 
 setQueryDispatch({
   selectQuery: async (query) => {
-    _lastQuery = query;
+    _lastQuery = toIR(query);
     return [] as any;
   },
   createQuery: async (query) => {
-    _lastQuery = query;
+    _lastQuery = toIR(query);
     return {} as any;
   },
   updateQuery: async (query) => {
-    _lastQuery = query;
+    _lastQuery = toIR(query);
     return {} as any;
   },
   deleteQuery: async (query) => {
-    _lastQuery = query;
+    _lastQuery = toIR(query);
     return {deleted: [], count: 0};
   },
 });

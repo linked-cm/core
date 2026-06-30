@@ -1,27 +1,32 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
-import {DeleteQueryFactory, type DeleteQuery, type DeleteResponse} from './DeleteQuery.js';
+import type {DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
 import {getQueryDispatch} from './queryDispatch.js';
-import {type WhereClause, processWhereClause} from './SelectQuery.js';
-import {
-  buildCanonicalDeleteAllMutationIR,
-  buildCanonicalDeleteWhereMutationIR,
-} from './IRMutation.js';
-import {toWhere} from './IRDesugar.js';
-import {canonicalizeWhere} from './IRCanonicalize.js';
-import {lowerWhereToIR} from './IRLower.js';
+import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
+import type {NodeShape} from '../shapes/SHACL.js';
+import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
+import {type DeleteMutationJSON} from './MutationSerialization.js';
+import {serializeWherePath, deserializeWherePath} from './QueryBuilderSerialization.js';
+import type {DeleteLowerSpec} from './mutationLowerSpec.js';
+import {PendingQueryContext, asContextRef} from './QueryContext.js';
+import {encodeContextRef, isContextRefJSON} from './ContextRef.js';
 
 type DeleteMode = 'ids' | 'all' | 'where';
+
+/** A node to delete: a concrete id, a `{id}` ref, or a live query-context reference. */
+export type DeleteId = NodeId | PendingQueryContext;
 
 /**
  * Internal state bag for DeleteBuilder.
  */
 interface DeleteBuilderInit<S extends Shape> {
   shape: ShapeConstructor<S>;
-  ids?: NodeId[];
+  ids?: DeleteId[];
   mode?: DeleteMode;
   whereFn?: WhereClause<S>;
+  /** A pre-resolved where path (used by fromJSON; no live callback). */
+  where?: WherePath;
 }
 
 /**
@@ -39,15 +44,17 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   implements PromiseLike<R>, Promise<R>
 {
   private readonly _shape: ShapeConstructor<S>;
-  private readonly _ids?: NodeId[];
+  private readonly _ids?: DeleteId[];
   private readonly _mode?: DeleteMode;
   private readonly _whereFn?: WhereClause<S>;
+  private readonly _where?: WherePath;
 
   private constructor(init: DeleteBuilderInit<S>) {
     this._shape = init.shape;
     this._ids = init.ids;
     this._mode = init.mode;
     this._whereFn = init.whereFn;
+    this._where = init.where;
   }
 
   private clone(overrides: Partial<DeleteBuilderInit<S>> = {}): DeleteBuilder<S, any> {
@@ -56,6 +63,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       ids: this._ids,
       mode: this._mode,
       whereFn: this._whereFn,
+      where: this._where,
       ...overrides,
     });
   }
@@ -66,14 +74,36 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
 
   static from<S extends Shape>(
     shape: ShapeConstructor<S> | string,
-    ids?: NodeId | NodeId[],
+    ids?: DeleteId | DeleteId[],
   ): DeleteBuilder<S, DeleteResponse> {
     const resolved = resolveShape<S>(shape);
     if (ids !== undefined) {
-      const idsArray = Array.isArray(ids) ? ids : [ids];
+      // Normalize any context reference (unset PendingQueryContext or a resolved
+      // context shape) to a {$ctx} marker so set/unset behave identically.
+      const idsArray = (Array.isArray(ids) ? ids : [ids]).map(
+        (id) => asContextRef(id) ?? id,
+      );
       return new DeleteBuilder<S>({shape: resolved, ids: idsArray, mode: 'ids'});
     }
     return new DeleteBuilder<S>({shape: resolved});
+  }
+
+  /** Reconstruct a DeleteBuilder from its DSL-JSON (inverse of `toJSON`). */
+  static fromJSON(json: DeleteMutationJSON): DeleteBuilder {
+    assertWireVersion(json.v);
+    const resolved = resolveShape(json.shape);
+    if (json.mode === 'ids') {
+      // A `{$ctx}` id rehydrates as a live context ref (resolved at lower).
+      const ids: DeleteId[] = json.ids.map((id) =>
+        isContextRefJSON(id) ? new PendingQueryContext(id.$ctx) : {id},
+      );
+      return new DeleteBuilder({shape: resolved, ids, mode: 'ids'});
+    }
+    if (json.mode === 'all') {
+      return new DeleteBuilder({shape: resolved, mode: 'all'});
+    }
+    const where = deserializeWherePath(resolved.shape, json.where);
+    return new DeleteBuilder({shape: resolved, mode: 'where', where});
   }
 
   // ---------------------------------------------------------------------------
@@ -94,31 +124,29 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   // Build & execute
   // ---------------------------------------------------------------------------
 
-  /** Build the IR mutation. */
-  build(): DeleteQuery {
+  /** Discriminator for the free `lower()` function and dataset routing. */
+  readonly __queryKind = 'delete' as const;
+
+  /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
+  get shape(): NodeShape {
+    return this._shape.shape;
+  }
+
+  /** @internal The IR-free lowering spec consumed by `lower()`. Validates inputs. */
+  _lowerSpec(): DeleteLowerSpec<S> {
     const mode = this._mode || (this._ids ? 'ids' : undefined);
 
     if (mode === 'all') {
-      return buildCanonicalDeleteAllMutationIR({
-        shape: this._shape.shape,
-      });
+      return {shapeClass: this._shape, mode: 'all'};
     }
 
     if (mode === 'where') {
-      if (!this._whereFn) {
-        throw new Error(
-          'DeleteBuilder.where() requires a condition callback.',
-        );
+      const wherePath =
+        this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
+      if (!wherePath) {
+        throw new Error('DeleteBuilder.where() requires a condition callback.');
       }
-      const wherePath = processWhereClause(this._whereFn, this._shape);
-      const desugared = toWhere(wherePath);
-      const canonical = canonicalizeWhere(desugared);
-      const {where, wherePatterns} = lowerWhereToIR(canonical);
-      return buildCanonicalDeleteWhereMutationIR({
-        shape: this._shape.shape,
-        where,
-        wherePatterns,
-      });
+      return {shapeClass: this._shape, mode: 'where', wherePath};
     }
 
     // Default: ID-based delete
@@ -127,20 +155,58 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
         'DeleteBuilder requires at least one ID to delete. Use DeleteBuilder.from(shape, ids), .all(), or .where().',
       );
     }
-    const factory = new DeleteQueryFactory<S, {}>(
-      this._shape,
-      this._ids,
-    );
-    return factory.build();
+    return {shapeClass: this._shape, mode: 'ids', ids: this._ids};
+  }
+
+  /** Serialize this delete mutation to lightweight DSL-JSON. */
+  toJSON(): DeleteMutationJSON {
+    const shape = this._shape.shape.id;
+    const mode = this._mode || (this._ids ? 'ids' : undefined);
+    if (mode === 'all') {
+      return {v: WIRE_VERSION, op: 'delete', shape, mode: 'all'};
+    }
+    if (mode === 'where') {
+      const wherePath = this._where ?? (this._whereFn ? processWhereClause(this._whereFn, this._shape) : undefined);
+      if (!wherePath) {
+        throw new Error('DeleteBuilder.where() requires a condition callback.');
+      }
+      return {
+        v: WIRE_VERSION,
+        op: 'delete',
+        shape,
+        mode: 'where',
+        where: serializeWherePath(wherePath),
+      };
+    }
+    if (!this._ids || this._ids.length === 0) {
+      throw new Error(
+        'DeleteBuilder requires at least one ID, .all(), or .where() before .toJSON().',
+      );
+    }
+    return {
+      v: WIRE_VERSION,
+      op: 'delete',
+      shape,
+      mode: 'ids',
+      ids: this._ids.map((id) =>
+        // An unresolved context ref travels as a `{$ctx}` marker; a concrete id
+        // (string or `{id}`, incl. a resolved context shape) as a plain string.
+        id instanceof PendingQueryContext
+          ? encodeContextRef(id.contextName)
+          : typeof id === 'string'
+            ? id
+            : id.id,
+      ),
+    };
   }
 
   /** Execute the mutation. */
   exec(): Promise<R> {
     const mode = this._mode || (this._ids ? 'ids' : undefined);
     if (mode === 'all' || mode === 'where') {
-      return getQueryDispatch().deleteQuery(this.build()).then(() => undefined) as Promise<R>;
+      return getQueryDispatch().deleteQuery(this).then(() => undefined) as Promise<R>;
     }
-    return getQueryDispatch().deleteQuery(this.build()) as Promise<R>;
+    return getQueryDispatch().deleteQuery(this) as Promise<R>;
   }
 
   // ---------------------------------------------------------------------------

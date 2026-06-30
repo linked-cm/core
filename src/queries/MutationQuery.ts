@@ -15,10 +15,30 @@ import {Shape} from '../shapes/Shape.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
+import {asContextRef} from './QueryContext.js';
 
 export type NodeId = {id: string} | string;
 
 export class MutationQueryFactory extends QueryFactory {
+  /**
+   * Normalize raw create/update data into a {@link NodeDescriptionValue} — the
+   * IR-free step shared by `toJSON()` and `lower()`. Kept on this base (which
+   * imports no IR) so the builders can normalize for serialization without
+   * pulling the canonical-IR pipeline.
+   */
+  describe(
+    shape: NodeShape,
+    data: unknown,
+    allowTopLevelId: boolean = false,
+  ): NodeDescriptionValue {
+    return this.convertUpdateObject(data as any, shape, allowTopLevelId);
+  }
+
+  /** Normalize delete ids (strings / `{id}`) to `NodeReferenceValue[]` (IR-free). */
+  normalizeNodeRefs(ids: NodeId[] | NodeId): NodeReferenceValue[] {
+    return this.convertNodeReferences(ids);
+  }
+
   protected convertUpdateObject(
     obj,
     shape: NodeShape,
@@ -100,6 +120,10 @@ export class MutationQueryFactory extends QueryFactory {
     value,
     shape: PropertyShape,
   ): NodeReferenceValue {
+    const ctx = asContextRef(value);
+    if (ctx) {
+      return ctx as unknown as NodeReferenceValue;
+    }
     if (this.isNodeReference(value)) {
       return this.convertNodeReference(value);
     } else {
@@ -169,6 +193,15 @@ export class MutationQueryFactory extends QueryFactory {
     // ExpressionNode → pass through as-is (will be converted to IRExpression by IRMutation)
     if (isExpressionNode(value)) {
       return value as unknown as PropUpdateValue;
+    }
+
+    // Query-context reference → preserve the live ref (do NOT collapse to {id},
+    // which would read an unresolved `.id` as undefined). Handles both an unset
+    // PendingQueryContext and a resolved context shape; both serialize as a {$ctx}
+    // marker and are resolved — or throw — at lowering time.
+    {
+      const ctx = asContextRef(value);
+      if (ctx) return ctx as unknown as PropUpdateValue;
     }
 
     //single value which will

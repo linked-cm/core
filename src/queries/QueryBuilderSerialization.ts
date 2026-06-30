@@ -150,12 +150,27 @@ export function serializeWherePath(where: WherePath): WherePathJSON {
       pathSegmentIds: [...ec.pathSegmentIds],
       predicate: {ir: ec.predicate.ir, refs: serializePropertyRefMap(ec.predicate._refs)},
       negated: ec.negated ?? false,
-      chain: (ec.chain ?? []).map((c: any) => ({
-        op: c.op,
-        condition: 'pathSegmentIds' in c.condition
-          ? {kind: 'exists' as const, pathSegmentIds: [...c.condition.pathSegmentIds], predicate: {ir: c.condition.predicate.ir, refs: serializePropertyRefMap(c.condition.predicate._refs)}, negated: c.condition.negated ?? false, chain: []}
-          : {kind: 'expression' as const, ir: c.condition.ir, refs: serializePropertyRefMap(c.condition._refs)},
-      })),
+      chain: (ec.chain ?? []).map((c: any) => {
+        if ('pathSegmentIds' in c.condition) {
+          // A nested exists inside a chain. We serialize one level of nesting;
+          // a nested exists carrying its OWN chain would be silently truncated,
+          // so fail loud rather than drop data. (Deeper nesting can be made fully
+          // recursive if a real case needs it.)
+          if (c.condition.chain && c.condition.chain.length > 0) {
+            throw new Error(
+              'Cannot serialize a nested exists() that itself carries a chained and()/or() condition — DSL-JSON supports one level of exists nesting.',
+            );
+          }
+          return {
+            op: c.op,
+            condition: {kind: 'exists' as const, pathSegmentIds: [...c.condition.pathSegmentIds], predicate: {ir: c.condition.predicate.ir, refs: serializePropertyRefMap(c.condition.predicate._refs)}, negated: c.condition.negated ?? false, chain: []},
+          };
+        }
+        return {
+          op: c.op,
+          condition: {kind: 'expression' as const, ir: c.condition.ir, refs: serializePropertyRefMap(c.condition._refs)},
+        };
+      }),
     };
   }
   throw new Error(`Cannot serialize WherePath: ${JSON.stringify(Object.keys(where))}`);
