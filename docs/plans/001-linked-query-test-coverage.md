@@ -84,3 +84,14 @@ turns that analysis into an implemented, committed test expansion.
   currently tested only at unit/round-trip level (`lower.test.ts`,
   `mutation-serialization.test.ts`, `query-builder.test.ts`) and **never
   executed against Fuseki**, so they need result-asserting E2E tests.
+- **Aggregates `sum/avg/min/max`: deferred to backlog** (Decision 1B) →
+  `docs/backlog/002-dsl-aggregates-sum-avg-min-max.md`. Only `count` is tested
+  in this effort.
+- **Deep-nesting RISKY group (15 fixtures): investigate-first, then fix**
+  (Decision 2A). Spike the 15 through the store against the seed graph, land the
+  passing ones as exact tests, and **fix surfaced bugs immediately** — pausing
+  only if a fix is truly ballooning, in which case report back before continuing.
+- **Datatype shape `Metric`** (Decision 3B): separate from `Person`; single-
+  valued `score:decimal, rating:double, views:long, count:integer, joinedOn:date`
+  **plus one multi-valued numeric field** (e.g. `scores: decimal[]`) to cover
+  multi-valued numeric literal coercion/dedup/ordering.
