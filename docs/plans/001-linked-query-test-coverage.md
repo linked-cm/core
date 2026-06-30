@@ -17,9 +17,26 @@ turns that analysis into an implemented, committed test expansion.
 
 1. Wire the 55 already-written-but-unexecuted fixtures into the Fuseki suite.
 2. Add fixtures + tests for the ~50 untested expression/filter operators.
-3. Extend the seed graph for datatype coverage (decimal/double/float/long/date/langString).
+3. Extend the seed graph for datatype coverage (decimal/double/float/long/date).
+   Language tags are out of scope (single language assumed; not in core).
 4. Property paths through the DSL (not just raw SPARQL).
-5. Builder features untested E2E (multi-key orderBy, top-level offset, JSON round-trip, context).
+5. Builder features untested E2E (multi-key orderBy, top-level offset, casting).
+6. **DSL-JSON round-trip E2E** — `fromJSON(query.toJSON()).exec()` for select +
+   each mutation, asserting identical results against the seed graph.
+7. **`{$ctx}` context references E2E** — subject / update target / mutation field
+   values / delete ids / where-clause args, delete-by-context, and
+   `UnresolvedContextError` on unresolved mutations.
+
+## Test style (post dev-merge contract)
+
+- **Result assertions go through the store / `IDataset` contract**: build a DSL
+  query and run it via `FusekiStore.selectQuery(query)` / `createQuery` /
+  `updateQuery` / `deleteQuery`; the store lowers internally via `lower()`. This
+  matches how consumers use the library now that **IR is an internal detail**.
+- **Golden / IR-string checks** (`captureQuery` → `lower` → `selectToSparql`)
+  are used only where pinning exact SPARQL is the point.
+- New code references `SelectBuilder` (not `QueryBuilder`), `lower()` (not the
+  removed `build()`), and the `IR*` type names.
 
 ## Test surfaces (discovered)
 
@@ -61,3 +78,9 @@ turns that analysis into an implemented, committed test expansion.
 - Mutations tested against the throwaway test graph (no separate dataset needed).
 - **Language-tagged strings are out of scope** — single language assumed; lang
   behavior is not in core, so no lang tests.
+- **Test style**: store/`IDataset` contract for result assertions; golden only
+  where pinning exact SPARQL fits. (Post dev-merge: IR is internal.)
+- **Add DSL-JSON round-trip + `{$ctx}` E2E coverage** to scope — both are
+  currently tested only at unit/round-trip level (`lower.test.ts`,
+  `mutation-serialization.test.ts`, `query-builder.test.ts`) and **never
+  executed against Fuseki**, so they need result-asserting E2E tests.
