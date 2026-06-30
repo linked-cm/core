@@ -225,7 +225,8 @@ selectAll, drop `orderDirection`. Update projection/sort assertions in `serializ
 - **Validation:** round-trip suite green; full suite green; `tsc` green.
 - **Depends on:** Phase 2 (computed-field values use the codec).
 
-### Phase 5 — Mutation value grammar — status: pending
+### Phase 5 — Mutation value grammar — status: done
+_Validated: gate green (110); full suite 1321 passed; tsc cjs+esm clean. Mutation values now use the Z-c grammar (bare/{id}/{date}/{$ctx}/{list}/{node}/setMod/S-expr); the `expr` IR leak is gone (computed values are S-exprs via the codec). The {shape,fields} node envelope is kept (decodable, non-leaking); path-keyed node reshape deferred (cosmetic). ctxRef assertions updated to {$ctx}._
 Rewrite `encodeValue`/`encodeSingleValue`/`decodeValueToRaw` + `MutationValueJSON`
 (`MutationSerialization.ts`) and `decodeValue` (`lowerMutationJSON.ts`) to the Z-c value grammar;
 computed (`expr`) → S-expr via the codec. Rewrite `mutation-serialization.test.ts` assertions.

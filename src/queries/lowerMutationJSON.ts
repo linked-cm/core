@@ -45,11 +45,11 @@ import type {IRDeleteQuery} from './DeleteQuery.js';
 import {isContextRefJSON, resolveContextId} from './ContextRef.js';
 import {assertWireVersion} from './wireVersion.js';
 import {
-  recordToRefs,
   type MutationJSON,
   type MutationNodeDataJSON,
   type MutationValueJSON,
 } from './MutationSerialization.js';
+import {decodeValueExpr, type ZcValue} from './ZcExpression.js';
 
 function requireShape(shapeId: string): NodeShape {
   const shape = getShapeClass(shapeId)?.shape;
@@ -61,43 +61,48 @@ function requireShape(shapeId: string): NodeShape {
   return shape;
 }
 
-/** Decode a tagged value to the normalized form the canonical-IR builders consume. */
-function decodeValue(json: MutationValueJSON): PropUpdateValue {
-  switch (json.kind) {
-    case 'unset':
-      return undefined;
-    case 'lit':
-      return json.value;
-    case 'date':
-      return new Date(json.value);
-    case 'ref':
-      return {id: json.id};
-    case 'ctxRef': {
-      // Lowering path: a mutation must hit a concrete node, so resolve the
-      // context now and throw if it isn't set.
-      const id = resolveContextId(json.name, true)!;
-      return {id} as PropUpdateValue;
-    }
-    case 'node':
-      return decodeNodeData(json.data) as unknown as PropUpdateValue;
-    case 'array':
-      return json.items.map(
-        (item) => decodeValue(item) as SinglePropertyUpdateValue,
-      );
-    case 'setMod': {
-      const mod: SetModificationValue = {};
-      if (json.add) {
-        mod.$add = json.add.map((v) => decodeValue(v)) as SetModificationValue['$add'];
-      }
-      if (json.remove) mod.$remove = json.remove.map((id) => ({id}));
-      return mod as PropUpdateValue;
-    }
-    case 'expr':
-      return new ExpressionNode(
-        json.ir,
-        recordToRefs(json.refs),
-      ) as unknown as PropUpdateValue;
+/** Decode a Z-c value to the normalized form the canonical-IR builders consume. */
+function decodeValue(json: MutationValueJSON, shape: NodeShape): PropUpdateValue {
+  // S-expr computed value (no IR on the wire)
+  if (Array.isArray(json)) {
+    const {ir, refs} = decodeValueExpr(json as ZcValue, shape);
+    return new ExpressionNode(ir, refs) as unknown as PropUpdateValue;
   }
+  if (json === null) return null as unknown as PropUpdateValue;
+  if (typeof json !== 'object') return json as PropUpdateValue; // bare scalar literal
+  const o = json as Record<string, unknown>;
+  if ('unset' in o) return undefined;
+  if ('date' in o) return new Date(o.date as string) as unknown as PropUpdateValue;
+  if ('node' in o) {
+    return decodeNodeData(o.node as MutationNodeDataJSON) as unknown as PropUpdateValue;
+  }
+  if ('$ctx' in o) {
+    // Lowering path: a mutation must hit a concrete node, so resolve the
+    // context now and throw if it isn't set.
+    const id = resolveContextId(o.$ctx as string, true)!;
+    return {id} as PropUpdateValue;
+  }
+  if ('id' in o) return {id: o.id} as PropUpdateValue;
+  if ('list' in o) {
+    return (o.list as MutationValueJSON[]).map(
+      (item) => decodeValue(item, shape) as SinglePropertyUpdateValue,
+    );
+  }
+  if ('add' in o || 'remove' in o) {
+    const mod: SetModificationValue = {};
+    if (o.add) {
+      mod.$add = (o.add as MutationValueJSON[]).map((v) =>
+        decodeValue(v, shape),
+      ) as SetModificationValue['$add'];
+    }
+    if (o.remove) mod.$remove = (o.remove as string[]).map((id) => ({id}));
+    return mod as PropUpdateValue;
+  }
+  if ('path' in o) {
+    const {ir, refs} = decodeValueExpr(json as ZcValue, shape);
+    return new ExpressionNode(ir, refs) as unknown as PropUpdateValue;
+  }
+  throw new Error(`Cannot decode mutation value: ${JSON.stringify(json)}`);
 }
 
 /** Rebuild a normalized node description from JSON, resolving labels via the shape. */
@@ -110,7 +115,7 @@ export function decodeNodeData(json: MutationNodeDataJSON): NodeDescriptionValue
         `Property '${f.prop}' not found on shape '${shape.label || shape.id}'`,
       );
     }
-    return {prop, val: decodeValue(f.value)} as UpdateNodePropertyValue;
+    return {prop, val: decodeValue(f.value, shape)} as UpdateNodePropertyValue;
   });
   const desc: NodeDescriptionValue = {shape, fields};
   if (json.id) desc.__id = json.id;

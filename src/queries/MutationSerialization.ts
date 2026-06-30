@@ -28,25 +28,39 @@ import {
   isSetModificationValue,
 } from './QueryFactory.js';
 import {ExpressionNode, isExpressionNode} from '../expressions/ExpressionNode.js';
-import type {IRExpression} from './IntermediateRepresentation.js';
 import type {WherePathJSON} from './QueryBuilderSerialization.js';
 import type {ContextRefJSON} from './ContextRef.js';
 import {PendingQueryContext} from './QueryContext.js';
+import {getShapeClass} from '../utils/ShapeClass.js';
+import type {NodeShape} from '../shapes/SHACL.js';
+import {
+  encodeValueExpr,
+  decodeValueExpr,
+  type ZcValue,
+} from './ZcExpression.js';
 
 // =============================================================================
 // JSON types
 // =============================================================================
 
+/**
+ * A mutation field value in the Z-c grammar. A bare scalar is a literal; objects
+ * tag the non-JSON-native kinds; a computed value is an S-expr array (no IR). The
+ * `{shape, fields}` node envelope is kept so nested nodes stay self-describing.
+ */
 export type MutationValueJSON =
-  | {kind: 'lit'; value: string | number | boolean}
-  | {kind: 'date'; value: string}
-  | {kind: 'ref'; id: string}
-  | {kind: 'ctxRef'; name: string}
-  | {kind: 'node'; data: MutationNodeDataJSON}
-  | {kind: 'array'; items: MutationValueJSON[]}
-  | {kind: 'setMod'; add?: MutationValueJSON[]; remove?: string[]}
-  | {kind: 'expr'; ir: IRExpression; refs?: Record<string, string[]>}
-  | {kind: 'unset'};
+  | string
+  | number
+  | boolean
+  | null
+  | {date: string}
+  | {id: string}
+  | {$ctx: string}
+  | {list: MutationValueJSON[]}
+  | {add?: MutationValueJSON[]; remove?: string[]}
+  | {node: MutationNodeDataJSON}
+  | {unset: true}
+  | ZcValue; // computed expression (S-expr) / {path}
 
 export type MutationFieldJSON = {prop: string; value: MutationValueJSON};
 
@@ -107,46 +121,42 @@ export function recordToRefs(
 
 /** Encode a single (non-array, non-setMod) property value. */
 function encodeSingleValue(value: SinglePropertyUpdateValue): MutationValueJSON {
-  if (value === undefined) return {kind: 'unset'};
+  if (value === undefined) return {unset: true};
   if (isExpressionNode(value)) {
-    const json: MutationValueJSON = {kind: 'expr', ir: value.ir};
-    const refs = refsToRecord(value._refs);
-    if (refs) (json as {refs?: Record<string, string[]>}).refs = refs;
-    return json;
+    // A computed value is an S-expr (or {path}) via the shared codec — no IR.
+    return encodeValueExpr(value.ir, value._refs) as MutationValueJSON;
   }
-  if (value instanceof Date) return {kind: 'date', value: value.toISOString()};
+  if (value instanceof Date) return {date: value.toISOString()};
   if (
     typeof value === 'string' ||
     typeof value === 'number' ||
     typeof value === 'boolean'
   ) {
-    return {kind: 'lit', value};
+    return value;
   }
   if (value && typeof value === 'object') {
     // Query-context reference — carry the name, resolve at lowering (checked
     // before the generic `.id` branch since a PendingQueryContext has an `.id` getter).
     if (value instanceof PendingQueryContext) {
-      return {kind: 'ctxRef', name: value.contextName};
+      return {$ctx: value.contextName};
     }
     if ('fields' in value) {
-      return {kind: 'node', data: encodeNodeData(value as NodeDescriptionValue)};
+      return {node: encodeNodeData(value as NodeDescriptionValue)};
     }
-    if ('id' in value) return {kind: 'ref', id: (value as NodeReferenceValue).id};
+    if ('id' in value) return {id: (value as NodeReferenceValue).id};
   }
   throw new Error(`Cannot serialize mutation value: ${JSON.stringify(value)}`);
 }
 
 /** Encode any property value, including arrays and set modifications. */
 export function encodeValue(value: PropUpdateValue): MutationValueJSON {
-  if (value === undefined) return {kind: 'unset'};
+  if (value === undefined) return {unset: true};
   if (Array.isArray(value)) {
-    return {kind: 'array', items: value.map(encodeSingleValue)};
+    return {list: value.map(encodeSingleValue)};
   }
   if (isSetModificationValue(value)) {
     const mod = value as SetModificationValue;
-    const json: {kind: 'setMod'; add?: MutationValueJSON[]; remove?: string[]} = {
-      kind: 'setMod',
-    };
+    const json: {add?: MutationValueJSON[]; remove?: string[]} = {};
     if (mod.$add) json.add = mod.$add.map((v) => encodeValue(v as PropUpdateValue));
     if (mod.$remove) json.remove = mod.$remove.map((r) => r.id);
     return json;
@@ -171,35 +181,46 @@ export function encodeNodeData(desc: NodeDescriptionValue): MutationNodeDataJSON
 // JSON → raw UpdatePartial (for builder rehydration / fromJSON)
 // =============================================================================
 
-/** Decode a tagged value back to a raw DSL value (the form `.set()` accepts). */
-function decodeValueToRaw(json: MutationValueJSON): unknown {
-  switch (json.kind) {
-    case 'unset':
-      return undefined;
-    case 'lit':
-      return json.value;
-    case 'date':
-      return new Date(json.value);
-    case 'ref':
-      return {id: json.id};
-    case 'ctxRef':
-      // Rehydration path: preserve the live reference so it re-serializes as a
-      // `{$ctx}` marker and resolves at the rebuilt builder's own lowering.
-      return new PendingQueryContext(json.name);
-    case 'node':
-      return decodeNodeDataToRaw(json.data);
-    case 'array':
-      return json.items.map(decodeValueToRaw);
-    case 'setMod': {
-      // Raw DSL set-modifications use `add`/`remove` (the normalized form uses $add/$remove).
-      const mod: {add?: unknown[]; remove?: {id: string}[]} = {};
-      if (json.add) mod.add = json.add.map(decodeValueToRaw);
-      if (json.remove) mod.remove = json.remove.map((id) => ({id}));
-      return mod;
-    }
-    case 'expr':
-      return new ExpressionNode(json.ir, recordToRefs(json.refs));
+/** Decode a Z-c value back to a raw DSL value (the form `.set()` accepts). */
+function decodeValueToRaw(json: MutationValueJSON, shape: NodeShape | undefined): unknown {
+  // S-expr computed value
+  if (Array.isArray(json)) {
+    const {ir, refs} = decodeValueExpr(json as ZcValue, requireShapeForExpr(shape));
+    return new ExpressionNode(ir, refs);
   }
+  if (json === null) return null;
+  if (typeof json !== 'object') return json; // bare scalar literal
+  const o = json as Record<string, unknown>;
+  if ('unset' in o) return undefined;
+  if ('date' in o) return new Date(o.date as string);
+  if ('node' in o) return decodeNodeDataToRaw(o.node as MutationNodeDataJSON);
+  // Rehydration path: preserve the live reference so it re-serializes as a
+  // `{$ctx}` marker and resolves at the rebuilt builder's own lowering.
+  if ('$ctx' in o) return new PendingQueryContext(o.$ctx as string);
+  if ('id' in o) return {id: o.id};
+  if ('list' in o) {
+    return (o.list as MutationValueJSON[]).map((i) => decodeValueToRaw(i, shape));
+  }
+  if ('add' in o || 'remove' in o) {
+    // Raw DSL set-modifications use `add`/`remove` (the normalized form uses $add/$remove).
+    const mod: {add?: unknown[]; remove?: {id: string}[]} = {};
+    if (o.add) mod.add = (o.add as MutationValueJSON[]).map((i) => decodeValueToRaw(i, shape));
+    if (o.remove) mod.remove = (o.remove as string[]).map((id) => ({id}));
+    return mod;
+  }
+  // A computed-path value (`{path}`) used as a value.
+  if ('path' in o) {
+    const {ir, refs} = decodeValueExpr(json as ZcValue, requireShapeForExpr(shape));
+    return new ExpressionNode(ir, refs);
+  }
+  throw new Error(`Cannot decode mutation value: ${JSON.stringify(json)}`);
+}
+
+function requireShapeForExpr(shape: NodeShape | undefined): NodeShape {
+  if (!shape) {
+    throw new Error('A shape is required to decode a computed mutation value');
+  }
+  return shape;
 }
 
 /**
@@ -212,6 +233,7 @@ export function decodeNodeDataToRaw(
 ): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
   if (json.id) obj.id = json.id;
-  for (const f of json.fields) obj[f.prop] = decodeValueToRaw(f.value);
+  const shape = getShapeClass(json.shape)?.shape;
+  for (const f of json.fields) obj[f.prop] = decodeValueToRaw(f.value, shape);
   return obj;
 }
