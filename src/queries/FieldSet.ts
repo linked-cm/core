@@ -4,8 +4,13 @@ import {PropertyPath, walkPropertyPath} from './PropertyPath.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import type {WherePath} from './SelectQuery.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
-import {isExpressionNode} from '../expressions/ExpressionNode.js';
-import type {ExpressionNode} from '../expressions/ExpressionNode.js';
+import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
+import {encodeValueExpr, decodeValueExpr, type ZcValue} from './ZcExpression.js';
+import {
+  serializeWherePath,
+  deserializeWherePath,
+  type WherePathJSON,
+} from './QueryBuilderSerialization.js';
 
 // Duck-type helpers for runtime detection.
 // These check structural shape since the classes live in SelectQuery.ts (runtime circular dep).
@@ -95,6 +100,12 @@ export type FieldSetFieldJSON = {
   subSelect?: FieldSetJSON;
   aggregation?: string;
   customKey?: string;
+  /** A computed projection (e.g. `{k: p.x.strlen()}`) — a Z-c value; path is empty. */
+  value?: ZcValue;
+  /** A scoped filter on a relation segment (`p.friends.where(...)`). */
+  where?: WherePathJSON;
+  /** Which path segment the scoped `where` applies to (defaults to the last). */
+  whereIndex?: number;
 };
 
 /** JSON representation of a FieldSet. */
@@ -474,9 +485,33 @@ export class FieldSet<R = any, Source = any> {
         if (entry.customKey) {
           field.customKey = entry.customKey;
         }
+        if (entry.expressionNode) {
+          // Computed projection — the path is empty; carry the Z-c value.
+          field.value = encodeValueExpr(
+            entry.expressionNode.ir,
+            entry.expressionNode._refs,
+          );
+        }
+        if (entry.scopedFilter) {
+          const idx =
+            entry.scopedFilterIndex ?? entry.path.segments.length - 1;
+          field.where = serializeWherePath(
+            entry.scopedFilter,
+            this.scopedShapeAt(entry, idx),
+          );
+          field.whereIndex = idx;
+        }
         return field;
       }),
     };
+  }
+
+  /** The shape a scoped filter at segment `idx` is evaluated against (the segment's value shape). */
+  private scopedShapeAt(entry: FieldSetEntry, idx: number): NodeShape {
+    const seg = entry.path.segments[idx] as PropertyShape | undefined;
+    const valueShapeId = (seg as unknown as {valueShape?: {id: string}})
+      ?.valueShape?.id;
+    return (valueShapeId && getShapeClass(valueShapeId)?.shape) || this.shape;
   }
 
   /**
@@ -486,19 +521,35 @@ export class FieldSet<R = any, Source = any> {
   static fromJSON(json: FieldSetJSON): FieldSet {
     const resolvedShape = FieldSet.resolveShape(json.shape);
     const entries: FieldSetEntry[] = json.fields.map((field) => {
-      const entry: FieldSetEntry = {
-        path: walkPropertyPath(resolvedShape, field.path),
-        alias: field.as,
-      };
-      if (field.subSelect) {
-        entry.subSelect = FieldSet.fromJSON(field.subSelect);
+      let entry: FieldSetEntry;
+      if (field.value !== undefined) {
+        // Computed projection — empty path + the expression rebuilt from the value.
+        const {ir, refs} = decodeValueExpr(field.value, resolvedShape);
+        entry = {
+          path: new PropertyPath(resolvedShape, []),
+          expressionNode: new ExpressionNode(ir, refs),
+        };
+      } else {
+        entry = {path: walkPropertyPath(resolvedShape, field.path)};
+        if (field.subSelect) {
+          entry.subSelect = FieldSet.fromJSON(field.subSelect);
+        }
+        if (field.aggregation) {
+          entry.aggregation = field.aggregation as 'count';
+        }
+        if (field.where) {
+          const idx = field.whereIndex ?? entry.path.segments.length - 1;
+          const seg = entry.path.segments[idx] as PropertyShape | undefined;
+          const valueShapeId = (seg as unknown as {valueShape?: {id: string}})
+            ?.valueShape?.id;
+          const scopedShape =
+            (valueShapeId && getShapeClass(valueShapeId)?.shape) || resolvedShape;
+          entry.scopedFilter = deserializeWherePath(scopedShape, field.where);
+          entry.scopedFilterIndex = idx;
+        }
       }
-      if (field.aggregation) {
-        entry.aggregation = field.aggregation as 'count';
-      }
-      if (field.customKey) {
-        entry.customKey = field.customKey;
-      }
+      if (field.as) entry.alias = field.as;
+      if (field.customKey) entry.customKey = field.customKey;
       return entry;
     });
     return new FieldSet(resolvedShape, entries);

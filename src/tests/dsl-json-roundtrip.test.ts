@@ -42,24 +42,9 @@ const EXCLUDED = new Set<string>([
   'preloadBestFriend',
   'preloadBestFriendWithFieldSet',
   'queryBuilderPreload',
-  // scoped-filter relation projections — re-include in Phase 4
-  'whereFriendsNameEquals',
-  'whereFriendsNameEqualsChained',
-  'whereHobbyEquals',
-  'whereAnd',
-  'whereOr',
-  'whereAndOrAnd',
-  'whereAndOrAndNested',
-  // `.as(Shape)` casts — re-include in Phase 4
+  // `.as(Shape)` projection casts — deferred (backlog 002 G5; needs cast wire form)
   'selectShapeAs',
   'selectShapeSetAs',
-  // computed / custom-key projections — re-include in Phase 4
-  'exprStrlen',
-  'exprCustomKey',
-  'exprNestedPath',
-  'exprMultiple',
-  'customResultEqualsBoolean',
-  'whereExprWithProjection',
 ]);
 
 const factoryNames = Object.keys(queryFactories) as (keyof typeof queryFactories)[];

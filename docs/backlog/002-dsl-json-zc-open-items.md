@@ -51,3 +51,27 @@ each method's purity.
   resolves a `{call}` in expression position only when the method is registered pure.
 - **Open:** where method purity is declared (decorator metadata?) and how it travels (it doesn't need
   to be on the wire — it's resolved against the registered shape on the receiving side).
+
+## G5 — `.as(Shape)` projection casts
+
+`Person.select(p => p.pets.as(Dog).guardDogLevel)` does not round-trip: the cast (a mid-path type
+narrowing) is not yet carried on the wire, so the dotted path `pets.guardDogLevel` can't be
+re-walked (the leaf is on the subclass). Needs a cast segment on the projection field (e.g.
+`{ "path": "pets", "cast": "Dog", "fields": [...] }` per the spec) and the matching FieldSet
+(de)serialization. Two fixtures excluded from the round-trip gate: `selectShapeAs`,
+`selectShapeSetAs`.
+
+## G6 — Cosmetic wire reshape (non-functional)
+
+The migration eliminated the IR leak (where-clauses + mutation values). These remaining items are
+**cosmetic** — they change the wire's shape, not its IR-freeness, and are deferred:
+
+- **Projection shorthand:** bare-string leaves (`"name"`) and `{as, value}` computed fields, vs the
+  current explicit `{path, as, value, where, ...}` object form (which round-trips correctly).
+- **Envelope:** `sortBy` as an ordered array of `{path: dir}`, `singleResult` → `one`, `fields: "*"`
+  for `selectAll()`, dropping the deprecated `orderDirection`.
+- **Mutation node shorthand:** path-keyed `data: {name: "Alice"}` vs the current `{shape, fields:[…]}`
+  envelope (which is self-describing and round-trips correctly).
+
+Each is a wire-shape change with test churn and consumer impact, with no IR-leak benefit; sequence
+them as a focused follow-up if the prettier wire is wanted.

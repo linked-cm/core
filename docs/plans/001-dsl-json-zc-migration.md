@@ -217,7 +217,8 @@ the codec; replace `WherePathJSON`/`ExistsConditionJSON` with `ZcCondition`. Upd
 - **Validation:** round-trip suite green; full suite green; `tsc` green.
 - **Depends on:** Phase 2.
 
-### Phase 4 — Projection, sort, envelope — status: pending
+### Phase 4 — Projection (computed + scoped filters) — status: done (partial)
+_Validated: gate 123 passed (was 110); full suite 1338 passed; tsc cjs+esm clean. FieldSet.toJSON/fromJSON now serialize computed projections (expressionNode -> Z-c {value}) and scoped relation filters (-> {where, whereIndex}) via the codec, completing their round-trip. DEFERRED to backlog 002: `.as(Shape)` projection casts (need a cast wire form) and the envelope/projection COSMETIC reshape (sortBy ordered array, singleResult->one, fields:"*", bare-string/{as,value} projection shorthand) — none of which are IR leaks._
 `FieldSet.toJSON`/`fromJSON` → Z-c projection (bare-string leaves, `{path:{as,where,one,fields,cast}}`,
 `{as,value}` for computed/customKey/aggregate, preserve inner limit/offset/orderBy). `serializeSortByPath`
 → ordered array of `{path: dir}`. `QueryBuilder` envelope: `singleResult`→`one`, `fields:"*"` for
