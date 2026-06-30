@@ -19,7 +19,6 @@ Flip the query contract: datasets receive the live query, DSL-JSON is the wire f
   ```
 - **`SelectQuery`/`CreateQuery`/`UpdateQuery`/`DeleteQuery` are now closed read-only interfaces** (the live query), not aliases of the IR. The IR types are `IRSelectQuery` / `IRCreateMutation` / `IRUpdateMutation` / `IRDeleteMutation`.
 - **`QueryBuilder` is renamed to `SelectBuilder`** (a deprecated `QueryBuilder` alias is still exported).
-- **`RemoteDataset` (and `RemoteClient`/`RemoteProtocol`) are removed.** Forwarding is now just an `IDataset` that ships `query.toJSON()` over your transport and rehydrates with `fromJSON(json)` on the other side.
 
 **New: DSL-JSON, the standardized wire format**
 
