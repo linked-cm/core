@@ -114,6 +114,53 @@ export class Person extends Shape {
   }
 }
 
+export const metricClass = type('Metric');
+export const metricScore = prop('metricScore');
+export const metricRating = prop('metricRating');
+export const metricViews = prop('metricViews');
+export const metricCount = prop('metricCount');
+export const metricJoinedOn = prop('metricJoinedOn');
+export const metricScores = prop('metricScores');
+
+/**
+ * Datatype-coverage shape: one single-valued field per numeric/date xsd type,
+ * plus a multi-valued numeric field (scores) for array coercion/dedup/ordering.
+ */
+@linkedShape
+export class Metric extends Shape {
+  static targetClass = metricClass;
+
+  @literalProperty({path: metricScore, maxCount: 1, datatype: xsd.decimal})
+  get score(): number {
+    return null;
+  }
+
+  @literalProperty({path: metricRating, maxCount: 1, datatype: xsd.double})
+  get rating(): number {
+    return null;
+  }
+
+  @literalProperty({path: metricViews, maxCount: 1, datatype: xsd.long})
+  get views(): number {
+    return null;
+  }
+
+  @literalProperty({path: metricCount, maxCount: 1, datatype: xsd.integer})
+  get count(): number {
+    return null;
+  }
+
+  @literalProperty({path: metricJoinedOn, maxCount: 1, datatype: xsd.date})
+  get joinedOn(): Date {
+    return null;
+  }
+
+  @literalProperty({path: metricScores, datatype: xsd.decimal})
+  get scores(): number[] {
+    return [];
+  }
+}
+
 @linkedShape
 export class Employee extends Person {
   static targetClass = employeeClass;

@@ -250,13 +250,11 @@ Each phase = one commit (tests + updated plan doc).
   correctness effort, not test authoring — left backlogged rather than fixed here.
 - **Result so far: 43 passing, 5 skipped.**
 
-### Phase 3 — §3 datatypes (`Metric` shape)
-- Add `Metric` shape to `query-fixtures.ts` (single-valued `score:decimal,
-  rating:double, views:long, count:integer, joinedOn:date` + multi-valued
-  `scores:decimal[]`); add `Metric` seed block.
-- Tests: JS coercion per datatype, negative round-trip, multi-valued numeric
-  collection/dedup/ordering.
-- **Validation**: G-fast + G-e2e green.
+### Phase 3 — §3 datatypes (`Metric` shape)  ✅ DONE
+- Added `Metric` shape to `query-fixtures.ts` + seed (`m1`, `m2`).
+- Tests pass: decimal/double/long/integer → JS number, `xsd:date` → Date,
+  negative round-trip, multi-valued numeric dedup → number[]. No golden
+  regression (G-fast 605 pass). **47 passing, 5 skipped.**
 
 ### Phase 4 — §2 operators  *(numeric/date depend on Phase 3)*
 - Fixtures + exact tests: string (`concat/contains/startsWith/endsWith/substr/

@@ -12,6 +12,7 @@ import {
   Person,
   Employee,
   Dog,
+  Metric,
   tmpEntityBase,
 } from '../test-helpers/query-fixtures';
 import {FusekiStore} from '../test-helpers/FusekiStore';
@@ -35,6 +36,7 @@ const P = 'https://linked.cm/shape/core/Person';
 const D = 'https://linked.cm/shape/core/Dog';
 const PET = 'https://linked.cm/shape/core/Pet';
 const E = 'https://linked.cm/shape/core/Employee';
+const M = 'https://linked.cm/shape/core/Metric';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const ENT = tmpEntityBase;
@@ -89,6 +91,19 @@ const BASE_DATA = `
 <${ENT}e2> <${RDF_TYPE}> <${E}> .
 <${ENT}e2> <${E}/name> "Bob" .
 <${ENT}e2> <${E}/department> "Sales" .
+<${ENT}m1> <${RDF_TYPE}> <${M}> .
+<${ENT}m1> <${M}/score> "3.14"^^<${XSD}decimal> .
+<${ENT}m1> <${M}/rating> "2.5"^^<${XSD}double> .
+<${ENT}m1> <${M}/views> "1000000"^^<${XSD}long> .
+<${ENT}m1> <${M}/count> "42"^^<${XSD}integer> .
+<${ENT}m1> <${M}/joinedOn> "2020-06-15"^^<${XSD}date> .
+<${ENT}m1> <${M}/scores> "1.5"^^<${XSD}decimal> .
+<${ENT}m1> <${M}/scores> "2.5"^^<${XSD}decimal> .
+<${ENT}m1> <${M}/scores> "2.5"^^<${XSD}decimal> .
+<${ENT}m1> <${M}/scores> "3.5"^^<${XSD}decimal> .
+<${ENT}m2> <${RDF_TYPE}> <${M}> .
+<${ENT}m2> <${M}/score> "-7.25"^^<${XSD}decimal> .
+<${ENT}m2> <${M}/count> "-3"^^<${XSD}integer> .
 `.trim();
 
 let fusekiAvailable = false;
@@ -126,6 +141,52 @@ const runSel = (name: keyof typeof queryFactories) =>
 
 const find = (rows: Row[], id: string): Row =>
   rows.find((r) => r.id.includes(id))!;
+
+// =========================================================================
+// §3 — Datatype coercion (Metric shape)
+// =========================================================================
+describe('coverage §3 — datatypes', () => {
+  test('decimal/double/long/integer coerce to JS number', async () => {
+    if (!fusekiAvailable) return;
+    const m = (await store.selectQuery(
+      Metric.select((x: any) => [x.score, x.rating, x.views, x.count]).for({id: `${ENT}m1`}),
+    )) as Row;
+    expect(m.score).toBe(3.14);
+    expect(m.rating).toBe(2.5);
+    expect(m.views).toBe(1000000);
+    expect(m.count).toBe(42);
+    expect(typeof m.score).toBe('number');
+  });
+
+  test('xsd:date coerces to a JS Date', async () => {
+    if (!fusekiAvailable) return;
+    const m = (await store.selectQuery(
+      Metric.select((x: any) => x.joinedOn).for({id: `${ENT}m1`}),
+    )) as Row;
+    expect(m.joinedOn instanceof Date).toBe(true);
+    expect((m.joinedOn as Date).getUTCFullYear()).toBe(2020);
+  });
+
+  test('negative numbers round-trip', async () => {
+    if (!fusekiAvailable) return;
+    const m = (await store.selectQuery(
+      Metric.select((x: any) => [x.score, x.count]).for({id: `${ENT}m2`}),
+    )) as Row;
+    expect(m.score).toBe(-7.25);
+    expect(m.count).toBe(-3);
+  });
+
+  test('multi-valued numeric literal collects, dedups, into number[]', async () => {
+    if (!fusekiAvailable) return;
+    const m = (await store.selectQuery(
+      Metric.select((x: any) => x.scores).for({id: `${ENT}m1`}),
+    )) as Row;
+    expect(Array.isArray(m.scores)).toBe(true);
+    // seed has 1.5, 2.5, 2.5, 3.5 → deduped {1.5, 2.5, 3.5}
+    expect([...(m.scores as number[])].sort((a, b) => a - b)).toEqual([1.5, 2.5, 3.5]);
+    (m.scores as number[]).forEach((v) => expect(typeof v).toBe('number'));
+  });
+});
 
 // =========================================================================
 // §1 — Deep nesting / sub-selects (read-only). 11 sound; 3 quarantined (bugs).
