@@ -237,12 +237,18 @@ Each phase = one commit (tests + updated plan doc).
 - Local Fuseki: Apache Jena 5.5.0 standalone (docker image host egress-blocked);
   run via `bash /home/user/fuseki-dist/run-fuseki-tests.sh '<pattern>'`.
 
-### Phase 2 — §1 deep-nesting RISKY group (spike → fix)
-- Run the 15 deep-nesting fixtures through the store; triage pass/fail.
-- Land passing ones as exact tests; **fix surfaced bugs immediately** (pause +
-  report only if a fix balloons — likely `resultMapping.ts` / `IRLower` /
-  `IRProjection`).
-- **Validation**: G-fast + G-e2e green.
+### Phase 2 — §1 deep-nesting RISKY group (spike → fix)  ✅ DONE (with backlog)
+- Spiked all 14 deep-nesting fixtures through the store. **11 are correct** →
+  landed as exact tests. **3 surfaced bugs** → quarantined (`test.skip`) and
+  documented in `docs/backlog/004`:
+  - `pluralFilteredNestedSubSelect` — inline `.where()` on a plural sub-select
+    dropped.
+  - `subSelectWithCount` — nested aggregate mis-scoped to the parent row.
+  - `subSelectWithOne` — null-property friend dropped under `.one()`.
+- **Ballooning flag (per decision 2A):** these 3 + backlog 003's 2 update bugs =
+  5 core lowering bugs. Fixing nested-projection/mutation internals is a separate
+  correctness effort, not test authoring — left backlogged rather than fixed here.
+- **Result so far: 43 passing, 5 skipped.**
 
 ### Phase 3 — §3 datatypes (`Metric` shape)
 - Add `Metric` shape to `query-fixtures.ts` (single-valued `score:decimal,

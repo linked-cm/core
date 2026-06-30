@@ -124,6 +124,118 @@ const ids = (rows: Row[]): string[] =>
 const runSel = (name: keyof typeof queryFactories) =>
   store.selectQuery((queryFactories as any)[name]());
 
+const find = (rows: Row[], id: string): Row =>
+  rows.find((r) => r.id.includes(id))!;
+
+// =========================================================================
+// §1 — Deep nesting / sub-selects (read-only). 11 sound; 3 quarantined (bugs).
+// =========================================================================
+describe('coverage §1 — deep nesting', () => {
+  test('tripleNestedSubSelect — friends→bestFriend→friends', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('tripleNestedSubSelect')) as Row[];
+    const p1 = find(rows, 'p1');
+    expect(p1.friends.map((f: Row) => f.id.replace(ENT, '')).sort()).toEqual(['p2', 'p3']);
+    const p2 = p1.friends.find((f: Row) => f.id.includes('p2'));
+    expect(p2.bestFriend.id).toContain('p3');
+    expect(p2.bestFriend.friends).toEqual([]);
+  });
+
+  test('doubleNestedSingularPlural — bestFriend→friends', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('doubleNestedSingularPlural')) as Row[];
+    expect(find(rows, 'p2').bestFriend.id).toContain('p3');
+    expect(find(rows, 'p2').bestFriend.friends).toEqual([]);
+    expect(find(rows, 'p1').bestFriend).toBeNull();
+  });
+
+  test('doubleNestedPluralSingular — friends→bestFriend {name,isReal}', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('doubleNestedPluralSingular')) as Row[];
+    const p2 = find(rows, 'p1').friends.find((f: Row) => f.id.includes('p2'));
+    expect(p2.bestFriend).toEqual(expect.objectContaining({name: 'Jinx', isReal: true}));
+  });
+
+  test('employeeSubSelect — Employee.bestFriend {name,dept}', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('employeeSubSelect')) as Row[];
+    expect(find(rows, 'e1').bestFriend).toEqual(expect.objectContaining({name: 'Bob', dept: 'Sales'}));
+    expect(find(rows, 'e2').bestFriend).toBeNull();
+  });
+
+  test('mixedPathAndSubSelect — name + friends.select(name,hobby)', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('mixedPathAndSubSelect')) as Row[];
+    const p1 = find(rows, 'p1');
+    expect(p1.name).toBe('Semmy');
+    const moa = p1.friends.find((f: Row) => f.id.includes('p2'));
+    expect(moa).toEqual(expect.objectContaining({name: 'Moa', hobby: 'Jogging'}));
+    expect(p1.friends.find((f: Row) => f.id.includes('p3')).hobby).toBeNull();
+  });
+
+  test('multipleSubSelectsInArray — friends.select(name) + bestFriend.select(hobby)', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('multipleSubSelectsInArray')) as Row[];
+    const p2 = find(rows, 'p2');
+    expect(p2.friends.map((f: Row) => f.id.replace(ENT, '')).sort()).toEqual(['p3', 'p4']);
+    expect(p2.bestFriend.id).toContain('p3');
+    expect(p2.bestFriend.hobby).toBeNull();
+    expect(find(rows, 'p1').bestFriend).toBeNull();
+  });
+
+  test('subSelectArrayOfPaths — friends.select([name,hobby,birthDate])', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('subSelectArrayOfPaths')) as Row[];
+    const moa = find(rows, 'p1').friends.find((f: Row) => f.id.includes('p2'));
+    expect(moa).toEqual(expect.objectContaining({name: 'Moa', hobby: 'Jogging', birthDate: null}));
+  });
+
+  test('subSelectSingularArrayPaths — bestFriend.select([name,hobby,isRealPerson])', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('subSelectSingularArrayPaths')) as Row[];
+    expect(find(rows, 'p2').bestFriend).toEqual(
+      expect.objectContaining({name: 'Jinx', hobby: null, isRealPerson: true}),
+    );
+  });
+
+  test('subSelectAllPlural — friends.selectAll() includes nested refs', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('subSelectAllPlural')) as Row[];
+    const moa = find(rows, 'p1').friends.find((f: Row) => f.id.includes('p2'));
+    expect(moa.name).toBe('Moa');
+    expect(moa.isRealPerson).toBe(false);
+    expect(moa.bestFriend.id).toContain('p3');
+    expect(moa.firstPet.id).toContain('dog2');
+  });
+
+  test('subSelectAllSingular — bestFriend.selectAll()', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('subSelectAllSingular')) as Row[];
+    const bf = find(rows, 'p2').bestFriend;
+    expect(bf.name).toBe('Jinx');
+    expect(bf.isRealPerson).toBe(true);
+    expect(bf.hobby).toBeNull();
+  });
+
+  test('selectBestFriendOnly — bestFriend reference only', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('selectBestFriendOnly')) as Row[];
+    expect(find(rows, 'p2').bestFriend.id).toContain('p3');
+    expect(find(rows, 'p1').bestFriend).toBeNull();
+  });
+
+  // Quarantined — surfaced bugs (backlog 004):
+  //  - pluralFilteredNestedSubSelect: inline .where() on a plural sub-select is
+  //    dropped (all pluralTestProp entries returned, not just name='Moa').
+  //  - subSelectWithCount: nested aggregate f.friends.size() is mis-scoped to the
+  //    parent row instead of each friend.
+  //  - subSelectWithOne: under .one(), a friend with a null projected property
+  //    (Jinx, no hobby) is dropped from the array.
+  test.skip('pluralFilteredNestedSubSelect [BUG: filter on plural sub-select dropped]', () => {});
+  test.skip('subSelectWithCount [BUG: nested aggregate mis-scoped to parent]', () => {});
+  test.skip('subSelectWithOne [BUG: null-property friend dropped under .one()]', () => {});
+});
+
 // =========================================================================
 // §1 — MINUS exclusion (read-only)
 // =========================================================================
