@@ -294,11 +294,13 @@ type ProjectionSeed =
       kind: 'path';
       path: DesugaredSelectionPath;
       key?: string;
+      containerKey?: string;
     }
   | {
       kind: 'expression';
       expression: IRExpression;
       key: string;
+      containerKey?: string;
     };
 
 const combineWithParentPath = (
@@ -308,6 +310,13 @@ const combineWithParentPath = (
   kind: 'selection_path',
   steps: [...parentPath, ...path.steps],
 });
+
+const localName = (iri: string): string => {
+  const hashIdx = iri.lastIndexOf('#');
+  if (hashIdx >= 0) return iri.substring(hashIdx + 1);
+  const slashIdx = iri.lastIndexOf('/');
+  return slashIdx >= 0 ? iri.substring(slashIdx + 1) : iri;
+};
 
 /**
  * Lowers a canonical desugared select query into the final IRSelectQuery.
@@ -344,17 +353,20 @@ export const lowerSelectQuery = (
     selection: DesugaredSelection,
     key?: string,
     parentPath: DesugaredStep[] = [],
+    containerKey?: string,
   ): ProjectionSeed[] => {
     if (selection.kind === 'selection_path') {
       return [{
         kind: 'path',
         path: combineWithParentPath(parentPath, selection),
         key,
+        containerKey,
       }];
     }
 
     if (selection.kind === 'sub_select') {
       const combinedParentPath = [...parentPath, ...selection.parentPath];
+      const nestedContainerKey = key || containerKey;
       // Nested-select inner LIMIT/OFFSET/ORDER BY → attach to the root→child
       // traverse (the alias reached by walking combinedParentPath). The serializer
       // wraps that traverse in a SPARQL sub-SELECT. Single-subject is enforced in
@@ -376,20 +388,21 @@ export const lowerSelectQuery = (
       }
       return collectProjectionSeeds(
         selection.selections,
-        key,
+        undefined,
         combinedParentPath,
+        nestedContainerKey,
       );
     }
 
     if (selection.kind === 'custom_object_select') {
       return selection.entries.flatMap((entry) =>
-        collectProjectionSeeds(entry.value, entry.key, parentPath),
+        collectProjectionSeeds(entry.value, entry.key, parentPath, containerKey),
       );
     }
 
     if (selection.kind === 'multi_selection') {
       return selection.selections.flatMap((nestedSelection) =>
-        collectProjectionSeeds(nestedSelection, key, parentPath),
+        collectProjectionSeeds(nestedSelection, key, parentPath, containerKey),
       );
     }
 
@@ -411,6 +424,7 @@ export const lowerSelectQuery = (
         kind: 'expression',
         key: key || 'expr',
         expression: resolved,
+        containerKey,
       }];
     }
 
@@ -439,7 +453,11 @@ export const lowerSelectQuery = (
 
   for (const seed of projectionSeeds) {
     const key = seed.kind === 'path'
-      ? (seed.key || projectionKeyFromPath(seed.path))
+      ? (seed.key || (
+        seed.containerKey
+          ? localName(projectionKeyFromPath(seed.path))
+          : projectionKeyFromPath(seed.path)
+      ))
       : seed.key;
     const alias = projectionScope.generateAlias(key).alias;
     projection.push({
@@ -451,6 +469,7 @@ export const lowerSelectQuery = (
     resultMapEntries.push({
       key,
       alias,
+      ...(seed.containerKey ? {containerKey: seed.containerKey} : {}),
     });
   }
 

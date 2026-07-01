@@ -37,6 +37,7 @@ import '../ontologies/xsd';
 
 const P = 'https://linked.cm/shape/core/Person';
 const ENT = tmpEntityBase; // linked://tmp/entities/
+const GRAPH = 'https://example.test/graph';
 
 // ---------------------------------------------------------------------------
 // Create mutation tests
@@ -445,6 +446,97 @@ describe('SPARQL golden — conditional update mutations', () => {
     expect(sparql).toContain(`rdf:type <${P}>`);
     expect(sparql).toContain('?a0');
     expect(sparql).toContain('FILTER');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Graph-scoped mutation tests
+// ---------------------------------------------------------------------------
+
+describe('SPARQL golden — graph-scoped public mutation wrappers', () => {
+  test('createToSparql — graph option wraps INSERT DATA', async () => {
+    const ir = (await captureQuery(queryFactories.createWithFixedId)) as IRCreateMutation;
+    const sparql = createToSparql(ir, {graph: GRAPH});
+
+    expect(sparql).toContain('INSERT DATA {');
+    expect(sparql).toContain(`GRAPH <${GRAPH}> {`);
+    expect(sparql).toContain(`<${ENT}fixed-id> rdf:type <${P}> .`);
+    expect(sparql).toContain(`<${ENT}fixed-id> <${P}/name> "Fixed" .`);
+  });
+
+  test('updateToSparql — graph option wraps DELETE INSERT WHERE', async () => {
+    const ir = (await captureQuery(queryFactories.updateSimple)) as IRUpdateMutation;
+    const sparql = updateToSparql(ir, {graph: GRAPH});
+
+    expect(sparql).toBe(
+`DELETE {
+  GRAPH <${GRAPH}> {
+    <${ENT}p1> <${P}/hobby> ?old_hobby .
+  }
+}
+INSERT {
+  GRAPH <${GRAPH}> {
+    <${ENT}p1> <${P}/hobby> "Chess" .
+  }
+}
+WHERE {
+  GRAPH <${GRAPH}> {
+    OPTIONAL {
+      <${ENT}p1> <${P}/hobby> ?old_hobby .
+    }
+  }
+}`);
+  });
+
+  test('deleteToSparql — graph option wraps DELETE and WHERE without INSERT', async () => {
+    const ir = (await captureQuery(queryFactories.deleteSingle)) as IRDeleteMutation;
+    const sparql = deleteToSparql(ir, {graph: GRAPH});
+
+    expect(sparql).toContain('DELETE {');
+    expect(sparql).toContain(`GRAPH <${GRAPH}> {`);
+    expect(sparql).toContain(`<${ENT}to-delete> ?p ?o .`);
+    expect(sparql).toContain('WHERE {');
+    expect(sparql).not.toContain('INSERT {');
+  });
+
+  test('deleteAllToSparql — graph option uses deleteInsert serializer', async () => {
+    const ir = (await captureQuery(queryFactories.deleteAll)) as IRDeleteAllMutation;
+    const sparql = deleteAllToSparql(ir, {graph: GRAPH});
+
+    expect(sparql).toContain(`GRAPH <${GRAPH}> {`);
+    expect(sparql).toContain(`?a0 rdf:type <${P}> .`);
+    expect(sparql).toContain('?a0 ?p ?o .');
+  });
+
+  test('deleteWhereToSparql — graph option uses deleteInsert serializer', async () => {
+    const ir = (await captureQuery(queryFactories.deleteWhere)) as IRDeleteWhereMutation;
+    const sparql = deleteWhereToSparql(ir, {graph: GRAPH});
+
+    expect(sparql).toContain(`GRAPH <${GRAPH}> {`);
+    expect(sparql).toContain(`?a0 rdf:type <${P}> .`);
+    expect(sparql).toContain('FILTER');
+    expect(sparql).not.toContain('DELETE WHERE');
+  });
+
+  test('updateWhereToSparql — graph option wraps required and optional patterns', async () => {
+    const ir = (await captureQuery(queryFactories.updateWhere)) as IRUpdateWhereMutation;
+    const sparql = updateWhereToSparql(ir, {graph: GRAPH});
+
+    expect(sparql).toContain(`GRAPH <${GRAPH}> {`);
+    expect(sparql).toContain(`?a0 rdf:type <${P}> .`);
+    expect(sparql).toContain('OPTIONAL');
+    expect(sparql).toContain('FILTER');
+    expect(sparql).toContain('INSERT');
+  });
+
+  test('graphless public wrappers remain graphless', async () => {
+    const createIr = (await captureQuery(queryFactories.createWithFixedId)) as IRCreateMutation;
+    const updateIr = (await captureQuery(queryFactories.updateSimple)) as IRUpdateMutation;
+    const deleteWhereIr = (await captureQuery(queryFactories.deleteWhere)) as IRDeleteWhereMutation;
+
+    expect(createToSparql(createIr)).not.toContain(`GRAPH <${GRAPH}>`);
+    expect(updateToSparql(updateIr)).not.toContain(`GRAPH <${GRAPH}>`);
+    expect(deleteWhereToSparql(deleteWhereIr)).not.toContain(`GRAPH <${GRAPH}>`);
   });
 });
 

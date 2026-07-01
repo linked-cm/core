@@ -43,6 +43,7 @@ export type IROrderByItem = {
 export type IRResultMapEntry = {
   key: string;
   alias: IRAlias;
+  containerKey?: string;
 };
 
 export type IRGraphPattern =
