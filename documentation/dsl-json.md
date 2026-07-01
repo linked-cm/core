@@ -6,13 +6,12 @@ or JavaScript to any other language. If you are building an endpoint, a cache, a
 non-JS backend, or anything that needs to send, store, or inspect a Linked query, this is
 the structure you target.
 
-> **Status.** This document specifies the **Z-c** grammar — the compact, DSL-shaped wire
-> format (`v:"1.0"`). The JavaScript serializer emits it for **where-clauses, mutation values,
-> projections (incl. computed/scoped/casts), and the select envelope** (`sortBy` ordered array,
-> `one`). One cosmetic item is not yet on the wire: **mutation node data** still uses the
-> self-describing `{shape, fields}` envelope rather than the path-keyed `{name: "Alice"}` form
-> shown in the Create/Update examples below (tracked in docs/backlog/002, G6). Where the doc and
-> the serializer differ, **this document is the contract**.
+> **Status.** This document specifies the **Z-c** grammar — the compact, DSL-shaped wire format
+> (`v:"1.0"`) — and the JavaScript serializer emits it: where-clauses, mutation values,
+> path-keyed **mutation node data** (`__id`/`__shape`), projections (incl. computed/scoped/casts),
+> and the select envelope (`sortBy` ordered array, `one`). Remaining edges are tracked in
+> docs/backlog/002 (`preload`, `in`/`nin`, cross-shape context property). See report 019 for the
+> implementation record.
 
 A Linked query exists in three tiers:
 

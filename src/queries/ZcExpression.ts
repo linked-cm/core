@@ -93,7 +93,6 @@ export function pathToSegmentIds(shape: NodeShape, path: string): string[] {
   return walkPropertyPath(shape, path).segments.map((s) => s.id);
 }
 
-
 // ---------------------------------------------------------------------------
 // refs merging
 // ---------------------------------------------------------------------------
@@ -442,9 +441,10 @@ function isOpMap(value: unknown): boolean {
   if (keys.some((k) => k === 'id' || k === '$ctx' || k === 'path' || k === 'date' || k === 'list')) {
     return false;
   }
-  return keys.every(
-    (k) => COMPARISON_OPS.has(k as IRBinaryOperator) || k === 'in' || k === 'nin',
-  );
+  // Only comparison operators form an op-map. `in`/`nin` are intentionally NOT
+  // recognized here: there is no matching IR operator or encoder path yet, so
+  // accepting them would only produce a broken decode (backlog 002, G7).
+  return keys.every((k) => COMPARISON_OPS.has(k as IRBinaryOperator));
 }
 
 function matchQuantifier(

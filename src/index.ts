@@ -118,7 +118,6 @@ export type {
   UpdateMutationJSON,
   DeleteMutationJSON,
   MutationValueJSON,
-  MutationFieldJSON,
   MutationNodeDataJSON,
 } from './queries/MutationSerialization.js';
 
