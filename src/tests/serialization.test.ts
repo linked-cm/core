@@ -91,7 +91,7 @@ describe('QueryBuilder — serialization', () => {
       .toJSON();
 
     expect(json.subject).toBe(`${tmpEntityBase}p1`);
-    expect(json.singleResult).toBe(true);
+    expect(json.one).toBe(true);
   });
 
   test('toJSON — with offset', () => {
@@ -105,13 +105,13 @@ describe('QueryBuilder — serialization', () => {
     expect(json.limit).toBe(5);
   });
 
-  test('toJSON — orderBy direction', () => {
+  test('toJSON — orderBy direction (Z-c ordered sortBy array)', () => {
     const json = QueryBuilder.from(Person)
       .select(['name'])
       .orderBy((p) => p.name, 'DESC')
       .toJSON();
 
-    expect(json.orderDirection).toBe('DESC');
+    expect(json.sortBy).toEqual([{name: 'DESC'}]);
   });
 
   test('fromJSON — round-trip IR equivalence', () => {
@@ -223,16 +223,16 @@ describe('QueryBuilder — serialization', () => {
     expect(lower(restored).limit).toBe(10);
   });
 
-  test('fromJSON — orderDirection preserved', () => {
+  test('fromJSON — sort direction preserved (ordered sortBy array)', () => {
     const json = QueryBuilder.from(Person)
       .select(['name'])
       .orderBy((p) => p.name, 'DESC')
       .toJSON();
-    expect(json.orderDirection).toBe('DESC');
+    expect(json.sortBy).toEqual([{name: 'DESC'}]);
 
     const restored = QueryBuilder.fromJSON(json);
     const restoredJson = restored.toJSON();
-    expect(restoredJson.orderDirection).toBe('DESC');
+    expect(restoredJson.sortBy).toEqual([{name: 'DESC'}]);
   });
 });
 
@@ -336,9 +336,7 @@ describe('QueryBuilder — sort key serialization', () => {
       .orderBy((p) => p.name, 'DESC')
       .toJSON();
 
-    expect(json.sortBy).toBeDefined();
-    expect(json.sortBy!.paths).toContain('name');
-    expect(json.sortBy!.direction).toBe('DESC');
+    expect(json.sortBy).toEqual([{name: 'DESC'}]);
   });
 
   test('round-trip — orderBy produces same IR', () => {
@@ -422,7 +420,7 @@ describe('QueryBuilder — nullSubject & pendingContextName serialization', () =
       shape: personShape.id,
       fields: [{path: 'name'}],
       nullSubject: true,
-      singleResult: true,
+      one: true,
     };
     const restored = QueryBuilder.fromJSON(json);
     // The restored builder should have _nullSubject set

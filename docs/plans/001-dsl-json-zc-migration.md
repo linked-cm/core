@@ -358,7 +358,8 @@ Cast detection + `as(<label>)` in `segmentsToPath`; `walkPathWithCasts`; wire it
 projection (de)serialization. Re-include `selectShapeAs`, `selectShapeSetAs` in the gate.
 - **Validation:** gate 125 green; full suite; tsc clean.
 
-### Phase 9 — G6 envelope — status: pending
+### Phase 9 — G6 envelope — status: done (partial)
+_Validated: gate 125; full suite 1340; tsc cjs+esm clean. sortBy -> ordered array of {path:dir}; singleResult -> one; dropped the write-only orderDirection. fields:"*" skipped (selectAll already round-trips as enumerated fields — redundant)._
 `sortBy` ordered array, `singleResult`→`one`, `fields:"*"`, drop `orderDirection`. Update envelope
 assertions.
 - **Validation:** gate green; full suite; tsc clean.

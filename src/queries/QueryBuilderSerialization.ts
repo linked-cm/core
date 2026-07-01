@@ -25,10 +25,8 @@ import {ExpressionNode, ExistsCondition} from '../expressions/ExpressionNode.js'
 /** A where-clause on the wire is a Z-c condition (see documentation/dsl-json.md). */
 export type WherePathJSON = ZcCondition;
 
-export type SortByPathJSON = {
-  paths: string[];
-  direction: 'ASC' | 'DESC';
-};
+/** An ordered list of `{path: direction}` — element order is sort precedence. */
+export type SortByPathJSON = Array<{[path: string]: 'ASC' | 'DESC'}>;
 
 export type RawMinusEntryJSON = {
   shapeId?: string;
@@ -53,10 +51,7 @@ export function serializeWherePath(
 }
 
 export function serializeSortByPath(sort: SortByPath): SortByPathJSON {
-  return {
-    paths: sort.paths.map((p) => p.toString()),
-    direction: sort.direction,
-  };
+  return sort.paths.map((p) => ({[p.toString()]: sort.direction}));
 }
 
 export function serializeRawMinusEntry(
@@ -91,8 +86,8 @@ export function deserializeSortByPath(
   json: SortByPathJSON,
 ): SortByPath {
   return {
-    paths: json.paths.map((p) => walkPropertyPath(shape, p)),
-    direction: json.direction,
+    paths: json.map((e) => walkPropertyPath(shape, Object.keys(e)[0])),
+    direction: (json.length ? Object.values(json[0])[0] : 'ASC') as 'ASC' | 'DESC',
   };
 }
 

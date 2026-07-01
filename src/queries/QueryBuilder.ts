@@ -44,8 +44,8 @@ export type QueryBuilderJSON = {
   /** A node id, or a `{$ctx: name}` context reference resolved at lowering. */
   subject?: string | ContextRefJSON;
   subjects?: string[];
-  singleResult?: boolean;
-  orderDirection?: 'ASC' | 'DESC';
+  /** `.one()` — unwrap a single result. */
+  one?: boolean;
   where?: WherePathJSON;
   sortBy?: SortByPathJSON;
   minusEntries?: RawMinusEntryJSON[];
@@ -460,10 +460,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       json.subjects = this._subjects.map((s) => s.id);
     }
     if (this._singleResult) {
-      json.singleResult = true;
-    }
-    if (this._sortDirection) {
-      json.orderDirection = this._sortDirection;
+      json.one = true;
     }
 
     if (this._whereFn) {
@@ -530,7 +527,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     if (json.subjects && json.subjects.length > 0) {
       builder = builder.forAll(json.subjects) as SelectBuilder<S>;
     }
-    if (json.singleResult && !json.subject) {
+    if (json.one && !json.subject) {
       builder = builder.one() as SelectBuilder<S>;
     }
 
@@ -543,12 +540,11 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       overrides._where = deserializeWherePath(nodeShape, json.where);
     }
 
-    // Restore sort key + direction
-    if (json.sortBy && nodeShape) {
-      overrides._sortBy = deserializeSortByPath(nodeShape, json.sortBy);
-      overrides.sortDirection = json.sortBy.direction;
-    } else if (json.orderDirection) {
-      overrides.sortDirection = json.orderDirection;
+    // Restore sort key + direction (direction rides on the ordered sortBy array)
+    if (json.sortBy && json.sortBy.length > 0 && nodeShape) {
+      const sortBy = deserializeSortByPath(nodeShape, json.sortBy);
+      overrides._sortBy = sortBy;
+      overrides.sortDirection = sortBy.direction;
     }
 
     // Restore minus entries
