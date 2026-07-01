@@ -75,3 +75,29 @@ round-trips as enumerated fields.)
   envelope. Deferred as the highest-risk / lowest-value reshape (mutation data is machine-generated;
   the current form is IR-free and round-trips). Doing it needs nested-node shape threading (a nested
   node's shape derived from the parent property's value-shape) across encode/decode/builders/lowering.
+
+## G7 — DSL-JSON test-coverage review: gaps & edge limitations
+
+From a full review of the DSL-JSON test suite (round-trip gate + explicit-shape suites). The gate
+proves **semantic** (lower-)equivalence across 125 fixtures; the items below are edges the gate
+doesn't reach. Closed ones were added during the review.
+
+**Closed during review** (tests added):
+- Quantifier wire shapes (`{"friends.some":…}`, `.none`, `.every`) — `zc-expression.test.ts`.
+- S-expr fallback wire shape (function-LHS comparison, chained arithmetic) — `zc-expression.test.ts`.
+- `fromJSON` rejects an unrecognized `op` — `mutation-serialization.test.ts`.
+- Path-keyed mutation node + `__id` + `__shape` polymorphism — `dsl-json-mutation-node.test.ts`.
+
+**Open edge limitations** (low-risk, no fixtures hit them):
+- **`in` / `nin` half-wired.** The condition decoder recognizes `in`/`nin` as operators, but there
+  is no IR operator, no encoder path, and `{list}` decoding throws. Effectively unsupported —
+  either wire it end-to-end (IR operator + SPARQL) or drop it from the recognized-operator set.
+- **Reserved value-key collision in mutation node data.** A property literally named `id`, `list`,
+  `date`, `path`, `$ctx`, `add`, `remove`, or `unset` would be mis-read as a tagged value rather
+  than a property (a bare nested node is detected by *absence* of these keys). Analogous to the
+  `and/or/not` condition-key reservation but not currently guarded for mutation-value positions.
+- **Cross-shape context property.** `{$ctx, path}` resolves the `path` against the *query* root
+  shape, not the context entity's own shape — correct when they coincide (the only case fixtures
+  exercise). A context property on a different shape would need the context shape on the wire.
+- **Nested `some`-of-`some`** is rejected by the *builder* (not a DSL construct), so the codec never
+  sees it — noted so it isn't mistaken for a codec gap.

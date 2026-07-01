@@ -7,6 +7,7 @@ import {describe, expect, test} from '@jest/globals';
 import {Person} from '../test-helpers/query-fixtures';
 import {
   ExpressionNode,
+  ExistsCondition,
   tracedPropertyExpression,
   tracedAliasExpression,
 } from '../expressions/ExpressionNode';
@@ -135,5 +136,63 @@ describe('ZcExpression — condition tier', () => {
     expect(where.expressionNode.ir.operator).toBe('=');
     expect(where.expressionNode.ir.left.kind).toBe('property_expr');
     expect(where.expressionNode.ir.right).toEqual(lit('Alice'));
+  });
+});
+
+describe('ZcExpression — quantifiers (some/every/none) wire shape', () => {
+  const friendsSegs = pathToSegmentIds(shape, 'friends');
+  const friendNamePred = () => {
+    const fn = tracedPropertyExpression(pathToSegmentIds(shape, 'name'));
+    return new ExpressionNode(cmp('=', fn.ir, lit('Moa')), fn._refs);
+  };
+
+  test('some → {"friends.some": <pred>} and round-trips', () => {
+    const ec = new ExistsCondition(friendsSegs, friendNamePred(), false);
+    expect(encodeCondition(ec, shape)).toEqual({'friends.some': {name: 'Moa'}});
+    const w: any = decodeCondition({'friends.some': {name: 'Moa'}}, shape);
+    expect(w.existsCondition).toBeInstanceOf(ExistsCondition);
+    expect(w.existsCondition.negated).toBe(false);
+  });
+
+  test('none → {"friends.none": <pred>} (negated exists)', () => {
+    const ec = new ExistsCondition(friendsSegs, friendNamePred(), true);
+    expect(encodeCondition(ec, shape)).toEqual({'friends.none': {name: 'Moa'}});
+    const w: any = decodeCondition({'friends.none': {name: 'Moa'}}, shape);
+    expect(w.existsCondition.negated).toBe(true);
+  });
+
+  test('every → {"friends.every": <pred>} decodes to a negated NOT-pred exists', () => {
+    const w: any = decodeCondition({'friends.every': {name: 'Moa'}}, shape);
+    expect(w.existsCondition.negated).toBe(true);
+    expect(w.existsCondition.predicate.ir.kind).toBe('not_expr');
+  });
+  // (nested some-of-some is rejected by the builder itself — not a DSL construct —
+  //  so the codec never sees it.)
+});
+
+describe('ZcExpression — S-expr fallback wire shape', () => {
+  const fn = (name: string, ...args: IRExpression[]): IRExpression => ({
+    kind: 'function_expr',
+    name,
+    args,
+  });
+
+  test('function on the LHS of a comparison → S-expr array (not path-keyed)', () => {
+    // strlen(name) > 5
+    const p = prop(nameSegs);
+    const node = new ExpressionNode(cmp('>', fn('STRLEN', p.ir), lit(5)), p._refs);
+    expect(encodeCondition(node, shape)).toEqual(['>', ['STRLEN', {path: 'name'}], 5]);
+  });
+
+  test('chained arithmetic → nested S-expr, round-trips structurally', () => {
+    // strlen(name) + 10 < 100
+    const p = prop(nameSegs);
+    const inner = cmp('+', fn('STRLEN', p.ir), lit(10));
+    const node = new ExpressionNode(cmp('<', inner, lit(100)), p._refs);
+    const zc = encodeCondition(node, shape);
+    expect(zc).toEqual(['<', ['+', ['STRLEN', {path: 'name'}], 10], 100]);
+    const w: any = decodeCondition(zc as any, shape);
+    expect(w.expressionNode.ir.kind).toBe('binary_expr');
+    expect(w.expressionNode.ir.operator).toBe('<');
   });
 });

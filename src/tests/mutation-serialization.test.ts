@@ -282,6 +282,11 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
     expect(() => fromJSON(noV)).not.toThrow();
   });
 
+  test('fromJSON rejects an unrecognized op (kind detection)', () => {
+    const json: any = queryFactories.createSimple().toJSON();
+    expect(() => fromJSON({...json, op: 'frobnicate'})).toThrow();
+  });
+
   test('date value survives the wire as a Date', () => {
     const ir: any = lowerMutationJSON(
       JSON.parse(JSON.stringify(queryFactories.updateBirthDate().toJSON())),
