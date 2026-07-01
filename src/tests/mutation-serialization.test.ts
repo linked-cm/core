@@ -183,8 +183,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
           Person.update({bestFriend: entity('p2')}).for(entity('p1')).toJSON(),
         ),
       );
-      const field = json.data.fields.find((f: any) => f.prop === 'bestFriend');
-      field.value = {$ctx: 'ctx-v'};
+      json.data.bestFriend = {$ctx: 'ctx-v'};
 
       // unresolved → lowering throws (a mutation must hit a concrete node)
       expect(() => lowerMutationJSON(json)).toThrow(UnresolvedContextError);
@@ -203,8 +202,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       // The live builder now carries the context as a {$ctx} marker on the wire
       // (it is no longer silently collapsed to a malformed {id: undefined} ref).
       const json: any = JSON.parse(JSON.stringify(b.toJSON()));
-      const field = json.data.fields.find((f: any) => f.prop === 'bestFriend');
-      expect(field.value).toEqual({$ctx: 'ctx-fv'});
+      expect(json.data.bestFriend).toEqual({$ctx: 'ctx-fv'});
 
       // Unresolved → BOTH the live-builder path and the wire path throw (a
       // mutation must hit a concrete node — no silent undefined ref).
@@ -230,8 +228,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       expect(() => lower(del)).not.toThrow();
 
       const upd: any = Person.update({bestFriend: getQueryContext('ctx-set')} as any).for(entity('p1'));
-      const field = upd.toJSON().data.fields.find((f: any) => f.prop === 'bestFriend');
-      expect(field.value).toEqual({$ctx: 'ctx-set'});
+      expect(upd.toJSON().data.bestFriend).toEqual({$ctx: 'ctx-set'});
       expect(() => lower(upd)).not.toThrow();
 
       setQueryContext('ctx-set', undefined);

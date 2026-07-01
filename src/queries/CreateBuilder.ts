@@ -68,7 +68,8 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   /** Reconstruct a CreateBuilder from its DSL-JSON (inverse of `toJSON`). */
   static fromJSON(json: CreateMutationJSON): CreateBuilder {
     assertWireVersion(json.v);
-    return CreateBuilder.from(json.shape).set(decodeNodeDataToRaw(json.data) as any);
+    const builder = CreateBuilder.from(json.shape);
+    return builder.set(decodeNodeDataToRaw(json.data, builder._shape.shape) as any);
   }
 
   // ---------------------------------------------------------------------------
@@ -152,7 +153,7 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       v: WIRE_VERSION,
       op: 'create',
       shape: this._shape.shape.id,
-      data: encodeNodeData(description),
+      data: encodeNodeData(description, this._shape.shape),
     };
   }
 

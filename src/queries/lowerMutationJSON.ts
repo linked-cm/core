@@ -45,11 +45,13 @@ import type {IRDeleteQuery} from './DeleteQuery.js';
 import {isContextRefJSON, resolveContextId} from './ContextRef.js';
 import {assertWireVersion} from './wireVersion.js';
 import {
+  valueShapeOf,
   type MutationJSON,
   type MutationNodeDataJSON,
   type MutationValueJSON,
 } from './MutationSerialization.js';
 import {decodeValueExpr, type ZcValue} from './ZcExpression.js';
+import type {PropertyShape} from '../shapes/SHACL.js';
 
 function requireShape(shapeId: string): NodeShape {
   const shape = getShapeClass(shapeId)?.shape;
@@ -61,11 +63,18 @@ function requireShape(shapeId: string): NodeShape {
   return shape;
 }
 
-/** Decode a Z-c value to the normalized form the canonical-IR builders consume. */
-function decodeValue(json: MutationValueJSON, shape: NodeShape): PropUpdateValue {
+/**
+ * Decode a Z-c value to the normalized form the canonical-IR builders consume.
+ * `currentShape` resolves computed `{path}`/S-expr; `prop` gives a nested node's shape.
+ */
+function decodeValue(
+  json: MutationValueJSON,
+  currentShape: NodeShape,
+  prop?: PropertyShape,
+): PropUpdateValue {
   // S-expr computed value (no IR on the wire)
   if (Array.isArray(json)) {
-    const {ir, refs} = decodeValueExpr(json as ZcValue, shape);
+    const {ir, refs} = decodeValueExpr(json as ZcValue, currentShape);
     return new ExpressionNode(ir, refs) as unknown as PropUpdateValue;
   }
   if (json === null) return null as unknown as PropUpdateValue;
@@ -73,9 +82,6 @@ function decodeValue(json: MutationValueJSON, shape: NodeShape): PropUpdateValue
   const o = json as Record<string, unknown>;
   if ('unset' in o) return undefined;
   if ('date' in o) return new Date(o.date as string) as unknown as PropUpdateValue;
-  if ('node' in o) {
-    return decodeNodeData(o.node as MutationNodeDataJSON) as unknown as PropUpdateValue;
-  }
   if ('$ctx' in o) {
     // Lowering path: a mutation must hit a concrete node, so resolve the
     // context now and throw if it isn't set.
@@ -85,40 +91,53 @@ function decodeValue(json: MutationValueJSON, shape: NodeShape): PropUpdateValue
   if ('id' in o) return {id: o.id} as PropUpdateValue;
   if ('list' in o) {
     return (o.list as MutationValueJSON[]).map(
-      (item) => decodeValue(item, shape) as SinglePropertyUpdateValue,
+      (item) => decodeValue(item, currentShape, prop) as SinglePropertyUpdateValue,
     );
   }
   if ('add' in o || 'remove' in o) {
     const mod: SetModificationValue = {};
     if (o.add) {
       mod.$add = (o.add as MutationValueJSON[]).map((v) =>
-        decodeValue(v, shape),
+        decodeValue(v, currentShape, prop),
       ) as SetModificationValue['$add'];
     }
     if (o.remove) mod.$remove = (o.remove as string[]).map((id) => ({id}));
     return mod as PropUpdateValue;
   }
   if ('path' in o) {
-    const {ir, refs} = decodeValueExpr(json as ZcValue, shape);
+    const {ir, refs} = decodeValueExpr(json as ZcValue, currentShape);
     return new ExpressionNode(ir, refs) as unknown as PropUpdateValue;
   }
-  throw new Error(`Cannot decode mutation value: ${JSON.stringify(json)}`);
+  // Otherwise: a bare path-keyed nested-node create.
+  return decodeNodeData(
+    o as MutationNodeDataJSON,
+    valueShapeOf(prop) ?? currentShape,
+  ) as unknown as PropUpdateValue;
 }
 
-/** Rebuild a normalized node description from JSON, resolving labels via the shape. */
-export function decodeNodeData(json: MutationNodeDataJSON): NodeDescriptionValue {
-  const shape = requireShape(json.shape);
-  const fields: UpdateNodePropertyValue[] = json.fields.map((f) => {
-    const prop = shape.getPropertyShape(f.prop);
+/**
+ * Rebuild a normalized node description from path-keyed JSON, resolving labels via the
+ * shape. `shape` is the shape inferred from context; `__shape` overrides it.
+ */
+export function decodeNodeData(
+  json: MutationNodeDataJSON,
+  shape?: NodeShape,
+): NodeDescriptionValue {
+  const nodeShape =
+    typeof json.__shape === 'string' ? requireShape(json.__shape) : shape!;
+  const fields: UpdateNodePropertyValue[] = [];
+  for (const [key, val] of Object.entries(json)) {
+    if (key === '__id' || key === '__shape' || val === undefined) continue;
+    const prop = nodeShape.getPropertyShape(key);
     if (!prop) {
       throw new Error(
-        `Property '${f.prop}' not found on shape '${shape.label || shape.id}'`,
+        `Property '${key}' not found on shape '${nodeShape.label || nodeShape.id}'`,
       );
     }
-    return {prop, val: decodeValue(f.value, shape)} as UpdateNodePropertyValue;
-  });
-  const desc: NodeDescriptionValue = {shape, fields};
-  if (json.id) desc.__id = json.id;
+    fields.push({prop, val: decodeValue(val as MutationValueJSON, nodeShape, prop)} as UpdateNodePropertyValue);
+  }
+  const desc: NodeDescriptionValue = {shape: nodeShape, fields};
+  if (typeof json.__id === 'string') desc.__id = json.__id;
   return desc;
 }
 
@@ -140,14 +159,16 @@ export function lowerMutationJSON(
 ): IRCreateQuery | IRUpdateQuery | IRDeleteQuery {
   assertWireVersion(json.v);
   switch (json.op) {
-    case 'create':
+    case 'create': {
+      const shape = requireShape(json.shape);
       return buildCanonicalCreateMutationIR({
-        shape: requireShape(json.shape),
-        description: decodeNodeData(json.data),
+        shape,
+        description: decodeNodeData(json.data, shape),
       });
+    }
     case 'update': {
       const shape = requireShape(json.shape);
-      const updates = decodeNodeData(json.data);
+      const updates = decodeNodeData(json.data, shape);
       if (json.mode === 'for') {
         // A `{$ctx}` target resolves against the current context map; a mutation
         // must hit a concrete subject, so an unresolved context throws.

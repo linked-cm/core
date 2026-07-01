@@ -34,7 +34,7 @@ import type {WherePathJSON} from './QueryBuilderSerialization.js';
 import type {ContextRefJSON} from './ContextRef.js';
 import {PendingQueryContext} from './QueryContext.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
 import {
   encodeValueExpr,
   decodeValueExpr,
@@ -47,8 +47,9 @@ import {
 
 /**
  * A mutation field value in the Z-c grammar. A bare scalar is a literal; objects
- * tag the non-JSON-native kinds; a computed value is an S-expr array (no IR). The
- * `{shape, fields}` node envelope is kept so nested nodes stay self-describing.
+ * tag the non-JSON-native kinds; a computed value is an S-expr array (no IR); a
+ * nested-node create is a bare path-keyed object ({@link MutationNodeDataJSON}),
+ * disambiguated from the tagged forms by having no reserved value-key.
  */
 export type MutationValueJSON =
   | string
@@ -60,17 +61,23 @@ export type MutationValueJSON =
   | {$ctx: string}
   | {list: MutationValueJSON[]}
   | {add?: MutationValueJSON[]; remove?: string[]}
-  | {node: MutationNodeDataJSON}
   | {unset: true}
+  | MutationNodeDataJSON // nested-node create (bare, path-keyed)
   | ZcValue; // computed expression (S-expr) / {path}
 
-export type MutationFieldJSON = {prop: string; value: MutationValueJSON};
-
+/**
+ * A node description in **path-keyed** form: `label → value`, plus two reserved
+ * keys — `__id` (a fixed/predefined id) and `__shape` (the concrete shape IRI,
+ * emitted only when it differs from the shape inferred from context, e.g. a
+ * subclass instance under a superclass-typed relation).
+ */
 export type MutationNodeDataJSON = {
-  shape: string;
-  id?: string;
-  fields: MutationFieldJSON[];
+  [key: string]: MutationValueJSON | undefined;
 };
+
+/** Reserved node-data keys (not property labels). */
+const NODE_ID_KEY = '__id';
+const NODE_SHAPE_KEY = '__shape';
 
 export type CreateMutationJSON = {
   v?: string;
@@ -104,8 +111,17 @@ export type MutationJSON =
 // Value codec
 // =============================================================================
 
-/** Encode a single (non-array, non-setMod) property value. */
-function encodeSingleValue(value: SinglePropertyUpdateValue): MutationValueJSON {
+/** The shape a nested node is expected to have (a property's value shape), if resolvable. */
+export function valueShapeOf(prop?: PropertyShape): NodeShape | undefined {
+  const id = (prop as unknown as {valueShape?: {id: string}})?.valueShape?.id;
+  return id ? getShapeClass(id)?.shape : undefined;
+}
+
+/** Encode a single (non-array, non-setMod) property value. `prop` gives the nested-node shape. */
+function encodeSingleValue(
+  value: SinglePropertyUpdateValue,
+  prop?: PropertyShape,
+): MutationValueJSON {
   if (value === undefined) return {unset: true};
   if (isExpressionNode(value)) {
     // A computed value is an S-expr (or {path}) via the shared codec — no IR.
@@ -126,7 +142,8 @@ function encodeSingleValue(value: SinglePropertyUpdateValue): MutationValueJSON 
       return {$ctx: value.contextName};
     }
     if ('fields' in value) {
-      return {node: encodeNodeData(value as NodeDescriptionValue)};
+      // Nested-node create — bare path-keyed; expected shape = the relation's value shape.
+      return encodeNodeData(value as NodeDescriptionValue, valueShapeOf(prop));
     }
     if ('id' in value) return {id: (value as NodeReferenceValue).id};
   }
@@ -134,31 +151,41 @@ function encodeSingleValue(value: SinglePropertyUpdateValue): MutationValueJSON 
 }
 
 /** Encode any property value, including arrays and set modifications. */
-export function encodeValue(value: PropUpdateValue): MutationValueJSON {
+export function encodeValue(
+  value: PropUpdateValue,
+  prop?: PropertyShape,
+): MutationValueJSON {
   if (value === undefined) return {unset: true};
   if (Array.isArray(value)) {
-    return {list: value.map(encodeSingleValue)};
+    return {list: value.map((v) => encodeSingleValue(v, prop))};
   }
   if (isSetModificationValue(value)) {
     const mod = value as SetModificationValue;
     const json: {add?: MutationValueJSON[]; remove?: string[]} = {};
-    if (mod.$add) json.add = mod.$add.map((v) => encodeValue(v as PropUpdateValue));
+    if (mod.$add) json.add = mod.$add.map((v) => encodeValue(v as PropUpdateValue, prop));
     if (mod.$remove) json.remove = mod.$remove.map((r) => r.id);
     return json;
   }
-  return encodeSingleValue(value as SinglePropertyUpdateValue);
+  return encodeSingleValue(value as SinglePropertyUpdateValue, prop);
 }
 
-/** Encode a normalized node description (shape + label-keyed fields + optional id). */
-export function encodeNodeData(desc: NodeDescriptionValue): MutationNodeDataJSON {
-  const json: MutationNodeDataJSON = {
-    shape: desc.shape.id,
-    fields: desc.fields.map((f) => ({
-      prop: f.prop.label,
-      value: encodeValue(f.val),
-    })),
-  };
-  if (desc.__id) json.id = desc.__id;
+/**
+ * Encode a normalized node description to path-keyed form. `expectedShape` is the
+ * shape inferable from context (the envelope, or the parent relation's value shape);
+ * `__shape` is emitted only when the concrete shape differs (a subclass instance).
+ */
+export function encodeNodeData(
+  desc: NodeDescriptionValue,
+  expectedShape?: NodeShape,
+): MutationNodeDataJSON {
+  const json: MutationNodeDataJSON = {};
+  if (desc.__id) json[NODE_ID_KEY] = desc.__id;
+  if (!expectedShape || desc.shape.id !== expectedShape.id) {
+    json[NODE_SHAPE_KEY] = desc.shape.id;
+  }
+  for (const f of desc.fields) {
+    json[f.prop.label] = encodeValue(f.val, f.prop);
+  }
   return json;
 }
 
@@ -166,11 +193,18 @@ export function encodeNodeData(desc: NodeDescriptionValue): MutationNodeDataJSON
 // JSON → raw UpdatePartial (for builder rehydration / fromJSON)
 // =============================================================================
 
-/** Decode a Z-c value back to a raw DSL value (the form `.set()` accepts). */
-function decodeValueToRaw(json: MutationValueJSON, shape: NodeShape | undefined): unknown {
+/**
+ * Decode a Z-c value back to a raw DSL value (the form `.set()` accepts).
+ * `currentShape` resolves computed `{path}`/S-expr; `prop` gives a nested node's shape.
+ */
+function decodeValueToRaw(
+  json: MutationValueJSON,
+  currentShape: NodeShape | undefined,
+  prop?: PropertyShape,
+): unknown {
   // S-expr computed value
   if (Array.isArray(json)) {
-    const {ir, refs} = decodeValueExpr(json as ZcValue, requireShapeForExpr(shape));
+    const {ir, refs} = decodeValueExpr(json as ZcValue, requireShapeForExpr(currentShape));
     return new ExpressionNode(ir, refs);
   }
   if (json === null) return null;
@@ -178,27 +212,27 @@ function decodeValueToRaw(json: MutationValueJSON, shape: NodeShape | undefined)
   const o = json as Record<string, unknown>;
   if ('unset' in o) return undefined;
   if ('date' in o) return new Date(o.date as string);
-  if ('node' in o) return decodeNodeDataToRaw(o.node as MutationNodeDataJSON);
   // Rehydration path: preserve the live reference so it re-serializes as a
   // `{$ctx}` marker and resolves at the rebuilt builder's own lowering.
   if ('$ctx' in o) return new PendingQueryContext(o.$ctx as string);
   if ('id' in o) return {id: o.id};
   if ('list' in o) {
-    return (o.list as MutationValueJSON[]).map((i) => decodeValueToRaw(i, shape));
+    return (o.list as MutationValueJSON[]).map((i) => decodeValueToRaw(i, currentShape, prop));
   }
   if ('add' in o || 'remove' in o) {
     // Raw DSL set-modifications use `add`/`remove` (the normalized form uses $add/$remove).
     const mod: {add?: unknown[]; remove?: {id: string}[]} = {};
-    if (o.add) mod.add = (o.add as MutationValueJSON[]).map((i) => decodeValueToRaw(i, shape));
+    if (o.add) mod.add = (o.add as MutationValueJSON[]).map((i) => decodeValueToRaw(i, currentShape, prop));
     if (o.remove) mod.remove = (o.remove as string[]).map((id) => ({id}));
     return mod;
   }
   // A computed-path value (`{path}`) used as a value.
   if ('path' in o) {
-    const {ir, refs} = decodeValueExpr(json as ZcValue, requireShapeForExpr(shape));
+    const {ir, refs} = decodeValueExpr(json as ZcValue, requireShapeForExpr(currentShape));
     return new ExpressionNode(ir, refs);
   }
-  throw new Error(`Cannot decode mutation value: ${JSON.stringify(json)}`);
+  // Otherwise: a bare path-keyed nested-node create.
+  return decodeNodeDataToRaw(o as MutationNodeDataJSON, valueShapeOf(prop) ?? currentShape);
 }
 
 function requireShapeForExpr(shape: NodeShape | undefined): NodeShape {
@@ -209,16 +243,24 @@ function requireShapeForExpr(shape: NodeShape | undefined): NodeShape {
 }
 
 /**
- * Decode a node-data JSON into a raw object the mutation builders' `.set()` accepts.
- * A top-level `id` is preserved (predefined id / fixed id); the factory turns it into
- * the node's id. Mirrors {@link encodeNodeData}.
+ * Decode path-keyed node data into a raw object the mutation builders' `.set()` accepts.
+ * `__id` becomes `id`; `__shape` (if present) overrides the inferred `shape`. Mirrors
+ * {@link encodeNodeData}.
  */
 export function decodeNodeDataToRaw(
   json: MutationNodeDataJSON,
+  shape?: NodeShape,
 ): Record<string, unknown> {
+  const nodeShape =
+    typeof json[NODE_SHAPE_KEY] === 'string'
+      ? getShapeClass(json[NODE_SHAPE_KEY] as string)?.shape ?? shape
+      : shape;
   const obj: Record<string, unknown> = {};
-  if (json.id) obj.id = json.id;
-  const shape = getShapeClass(json.shape)?.shape;
-  for (const f of json.fields) obj[f.prop] = decodeValueToRaw(f.value, shape);
+  if (typeof json[NODE_ID_KEY] === 'string') obj.id = json[NODE_ID_KEY];
+  for (const [key, val] of Object.entries(json)) {
+    if (key === NODE_ID_KEY || key === NODE_SHAPE_KEY || val === undefined) continue;
+    const prop = nodeShape?.getPropertyShape(key);
+    obj[key] = decodeValueToRaw(val as MutationValueJSON, nodeShape, prop);
+  }
   return obj;
 }

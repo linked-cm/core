@@ -90,7 +90,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   static fromJSON(json: UpdateMutationJSON): UpdateBuilder {
     assertWireVersion(json.v);
     const resolved = resolveShape(json.shape);
-    const data = decodeNodeDataToRaw(json.data) as any;
+    const data = decodeNodeDataToRaw(json.data, resolved.shape) as any;
     if (json.mode === 'for') {
       if (isContextRefJSON(json.targetId)) {
         return new UpdateBuilder({shape: resolved, data, targetContextName: json.targetId.$ctx, mode: 'for'});
@@ -213,7 +213,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
       op: 'update',
       shape: this._shape.shape.id,
       mode,
-      data: encodeNodeData(fields),
+      data: encodeNodeData(fields, this._shape.shape),
     };
     if (mode === 'for') {
       if (this._targetContextName) json.targetId = encodeContextRef(this._targetContextName);
