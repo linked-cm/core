@@ -370,11 +370,31 @@ Bare-string leaves + `{as, value}` computed fields in FieldSet (de)serialization
 assertions in serialization.test.ts.
 - **Validation:** gate green; full suite; tsc clean.
 
-### Phase 11 — G6 mutation node path-keyed data — status: pending
+### Phase 11 — G6 mutation node path-keyed data — status: DEFERRED
+_Rationale (maintainability + risk): highest-risk reshape (encode/decode/builders/lowering + nested-node shape threading) for the lowest value — mutation data is machine-generated. The {shape,fields} node envelope is already IR-free and round-trips; only its shape differs from the spec. Value grammar inside is fully Z-c. Kept as the sole remaining G6 item (backlog 002 G6)._
 Reshape `MutationNodeDataJSON` to path-keyed `{__id?, [label]: value}`; thread nested shape from the
 parent property. Update mutation assertions.
 - **Validation:** gate green; full suite; tsc clean.
 
-### Phase 12 — Finalize iteration — status: pending
+### Phase 12 — Finalize iteration — status: done
+_Validated: tsc cjs+esm clean; full suite 1340 passed; round-trip gate 125/128 (only 3 preload skips). Envelope + projection + mutation-value test assertions updated to Z-c across the iteration phases._
 Rewrite any remaining explicit-shape assertions; full tsc + jest; refresh the spec's status note.
 - **Validation:** entire suite green; tsc clean.
+
+## Review — Iteration 1
+
+**G5 (casts): closed.** `.as(Shape)` narrowing rides inline as `as(<ShapeLabel>)` path segments;
+`selectShapeAs`/`selectShapeSetAs` round-trip. Gate now **125/128** (only 3 preload skips).
+
+**G6 (cosmetic reshape): mostly closed.**
+- ✅ Envelope — `sortBy` ordered array of `{path:dir}`; `singleResult`→`one`; dropped write-only
+  `orderDirection`. (`fields:"*"` skipped — `selectAll()` already round-trips as enumerated fields.)
+- ✅ Projection — plain leaves are bare strings (`"name"`, `"friends.friends.name"`); computed fields
+  drop the empty path.
+- ⏳ **Mutation node data — deferred** (backlog 002 G6): still `{shape, fields}`, not path-keyed. The
+  single remaining cosmetic item; highest-risk / lowest-value (machine-generated data, already
+  IR-free). The doc-vs-impl divergence is now narrowed to just this.
+
+**State:** tsc cjs+esm clean; full suite **1340 passed**, 0 failed; round-trip gate **125/128**. The
+IR-free wire contract and all requested reshapes except the mutation-node shorthand are done and
+tested.

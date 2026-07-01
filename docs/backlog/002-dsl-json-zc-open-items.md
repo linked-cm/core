@@ -66,12 +66,12 @@ re-walked (the leaf is on the subclass). Needs a cast segment on the projection 
 The migration eliminated the IR leak (where-clauses + mutation values). These remaining items are
 **cosmetic** — they change the wire's shape, not its IR-freeness, and are deferred:
 
-- **Projection shorthand:** bare-string leaves (`"name"`) and `{as, value}` computed fields, vs the
-  current explicit `{path, as, value, where, ...}` object form (which round-trips correctly).
-- **Envelope:** `sortBy` as an ordered array of `{path: dir}`, `singleResult` → `one`, `fields: "*"`
-  for `selectAll()`, dropping the deprecated `orderDirection`.
-- **Mutation node shorthand:** path-keyed `data: {name: "Alice"}` vs the current `{shape, fields:[…]}`
-  envelope (which is self-describing and round-trips correctly).
+**Shipped** (plan 001, iteration 1): bare-string projection leaves; `sortBy` ordered array;
+`singleResult` → `one`; dropped `orderDirection`. (`fields:"*"` skipped — `selectAll()` already
+round-trips as enumerated fields.)
 
-Each is a wire-shape change with test churn and consumer impact, with no IR-leak benefit; sequence
-them as a focused follow-up if the prettier wire is wanted.
+**Remaining** (the one deferred G6 piece):
+- **Mutation node shorthand:** path-keyed `data: {name: "Alice"}` vs the current `{shape, fields:[…]}`
+  envelope. Deferred as the highest-risk / lowest-value reshape (mutation data is machine-generated;
+  the current form is IR-free and round-trips). Doing it needs nested-node shape threading (a nested
+  node's shape derived from the parent property's value-shape) across encode/decode/builders/lowering.

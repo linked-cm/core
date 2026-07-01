@@ -7,9 +7,12 @@ non-JS backend, or anything that needs to send, store, or inspect a Linked query
 the structure you target.
 
 > **Status.** This document specifies the **Z-c** grammar — the compact, DSL-shaped wire
-> format. It is the design of record for `v:"1.0"`. The JavaScript serializer is being
-> migrated onto it; until that migration lands, `query.toJSON()` may still emit the older
-> IR-embedding form. Where the two differ, **this document is the contract**.
+> format (`v:"1.0"`). The JavaScript serializer emits it for **where-clauses, mutation values,
+> projections (incl. computed/scoped/casts), and the select envelope** (`sortBy` ordered array,
+> `one`). One cosmetic item is not yet on the wire: **mutation node data** still uses the
+> self-describing `{shape, fields}` envelope rather than the path-keyed `{name: "Alice"}` form
+> shown in the Create/Update examples below (tracked in docs/backlog/002, G6). Where the doc and
+> the serializer differ, **this document is the contract**.
 
 A Linked query exists in three tiers:
 
