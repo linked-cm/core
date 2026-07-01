@@ -364,7 +364,8 @@ _Validated: gate 125; full suite 1340; tsc cjs+esm clean. sortBy -> ordered arra
 assertions.
 - **Validation:** gate green; full suite; tsc clean.
 
-### Phase 10 — G6 projection shorthand — status: pending
+### Phase 10 — G6 projection shorthand — status: done (partial)
+_Validated: gate 125; full suite 1340; tsc cjs+esm clean. Plain leaf fields now serialize as bare strings ("name", "friends.friends.name"); computed fields drop the empty path. Fields with extras (relation options, aggregation, computed value, scoped filter) keep the flat object form (the nested path-keyed relation form stays deferred — functional, non-leaking)._
 Bare-string leaves + `{as, value}` computed fields in FieldSet (de)serialization. Update projection
 assertions in serialization.test.ts.
 - **Validation:** gate green; full suite; tsc clean.

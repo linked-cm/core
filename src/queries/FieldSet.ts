@@ -93,20 +93,28 @@ export type FieldSetInput =
   | FieldSet
   | Record<string, string[] | FieldSet>;
 
-/** JSON representation of a FieldSet field entry. */
-export type FieldSetFieldJSON = {
-  path: string;
+/** The object form of a field entry (used when a plain-string leaf isn't enough). */
+export type FieldSetObjectFieldJSON = {
+  /** A dotted label path. Omitted for a computed field (carries `value` instead). */
+  path?: string;
   as?: string;
   subSelect?: FieldSetJSON;
   aggregation?: string;
   customKey?: string;
-  /** A computed projection (e.g. `{k: p.x.strlen()}`) — a Z-c value; path is empty. */
+  /** A computed projection (e.g. `{k: p.x.strlen()}`) — a Z-c value; no path. */
   value?: ZcValue;
   /** A scoped filter on a relation segment (`p.friends.where(...)`). */
   where?: WherePathJSON;
   /** Which path segment the scoped `where` applies to (defaults to the last). */
   whereIndex?: number;
 };
+
+/**
+ * JSON representation of a FieldSet field entry: a bare dotted-path string for a
+ * plain leaf (`"name"`, `"friends.friends.name"`), or the object form for
+ * anything with extras (alias, sub-select, aggregation, computed value, filter).
+ */
+export type FieldSetFieldJSON = string | FieldSetObjectFieldJSON;
 
 /** JSON representation of a FieldSet. */
 export type FieldSetJSON = {
@@ -469,9 +477,10 @@ export class FieldSet<R = any, Source = any> {
     return {
       shape: this.shape.id,
       fields: (this.entries as FieldSetEntry[]).map((entry) => {
-        const field: FieldSetFieldJSON = {
-          path: FieldSet.pathToStringWithCasts(this.shape, entry.path.segments),
-        };
+        const field: FieldSetObjectFieldJSON = {};
+        if (!entry.expressionNode) {
+          field.path = FieldSet.pathToStringWithCasts(this.shape, entry.path.segments);
+        }
         if (entry.alias) {
           field.as = entry.alias;
         }
@@ -488,7 +497,7 @@ export class FieldSet<R = any, Source = any> {
           field.customKey = entry.customKey;
         }
         if (entry.expressionNode) {
-          // Computed projection — the path is empty; carry the Z-c value.
+          // Computed projection — no path; carry the Z-c value.
           field.value = encodeValueExpr(
             entry.expressionNode.ir,
             entry.expressionNode._refs,
@@ -503,6 +512,9 @@ export class FieldSet<R = any, Source = any> {
           );
           field.whereIndex = idx;
         }
+        // Bare-string shorthand for a plain leaf path with no extras.
+        const keys = Object.keys(field);
+        if (keys.length === 1 && keys[0] === 'path') return field.path as string;
         return field;
       }),
     };
@@ -522,7 +534,10 @@ export class FieldSet<R = any, Source = any> {
    */
   static fromJSON(json: FieldSetJSON): FieldSet {
     const resolvedShape = FieldSet.resolveShape(json.shape);
-    const entries: FieldSetEntry[] = json.fields.map((field) => {
+    const entries: FieldSetEntry[] = json.fields.map((raw) => {
+      // Bare-string shorthand → the object form with just a path.
+      const field: FieldSetObjectFieldJSON =
+        typeof raw === 'string' ? {path: raw} : raw;
       let entry: FieldSetEntry;
       if (field.value !== undefined) {
         // Computed projection — empty path + the expression rebuilt from the value.

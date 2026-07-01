@@ -17,14 +17,14 @@ describe('FieldSet — serialization', () => {
     const json = FieldSet.for(personShape, ['name', 'hobby']).toJSON();
     expect(json.shape).toBe(personShape.id);
     expect(json.fields).toHaveLength(2);
-    expect(json.fields[0].path).toBe('name');
-    expect(json.fields[1].path).toBe('hobby');
+    expect(json.fields[0]).toBe('name');
+    expect(json.fields[1]).toBe('hobby');
   });
 
   test('toJSON — nested path', () => {
     const json = FieldSet.for(personShape, ['friends.name']).toJSON();
     expect(json.fields).toHaveLength(1);
-    expect(json.fields[0].path).toBe('friends.name');
+    expect(json.fields[0]).toBe('friends.name');
   });
 
   test('fromJSON — round-trip', () => {
@@ -68,8 +68,8 @@ describe('QueryBuilder — serialization', () => {
 
     expect(json.shape).toBe(personShape.id);
     expect(json.fields).toHaveLength(2);
-    expect(json.fields[0].path).toBe('name');
-    expect(json.fields[1].path).toBe('hobby');
+    expect(json.fields[0]).toBe('name');
+    expect(json.fields[1]).toBe('hobby');
     expect(json.limit).toBe(20);
   });
 
@@ -78,7 +78,7 @@ describe('QueryBuilder — serialization', () => {
     expect(json.shape).toBe(personShape.id);
     expect(json.fields.length).toBeGreaterThan(0);
     // All unique property labels should be present
-    const paths = json.fields.map((f) => f.path);
+    const paths = json.fields.map((f) => (typeof f === "string" ? f : f.path));
     expect(paths).toContain('name');
     expect(paths).toContain('hobby');
     expect(paths).toContain('friends');
@@ -189,7 +189,7 @@ describe('QueryBuilder — serialization', () => {
       .select((p) => [p.name])
       .toJSON();
     expect(json.fields).toHaveLength(1);
-    expect(json.fields![0].path).toBe('name');
+    expect(json.fields![0]).toBe('name');
   });
 
   test('toJSON — callback select nested', () => {
@@ -197,7 +197,7 @@ describe('QueryBuilder — serialization', () => {
       .select((p) => [p.friends.name])
       .toJSON();
     expect(json.fields).toHaveLength(1);
-    expect(json.fields![0].path).toBe('friends.name');
+    expect(json.fields![0]).toBe('friends.name');
   });
 
   test('toJSON — callback select with aggregation', () => {
@@ -205,7 +205,7 @@ describe('QueryBuilder — serialization', () => {
       .select((p) => [p.friends.size()])
       .toJSON();
     expect(json.fields).toHaveLength(1);
-    expect(json.fields![0].aggregation).toBe('count');
+    expect((json.fields![0] as any).aggregation).toBe('count');
   });
 
   test('fromJSON — round-trip callback select', () => {
@@ -218,8 +218,8 @@ describe('QueryBuilder — serialization', () => {
     // The restored builder won't have the callback, but the FieldSet
     // should produce equivalent IR for the selection part.
     expect(json.fields).toHaveLength(2);
-    expect(json.fields![0].path).toBe('name');
-    expect(json.fields![1].path).toBe('hobby');
+    expect(json.fields![0]).toBe('name');
+    expect(json.fields![1]).toBe('hobby');
     expect(lower(restored).limit).toBe(10);
   });
 
@@ -474,7 +474,9 @@ describe('QueryBuilder — preload serialization', () => {
 
     // Should have 2 fields: name + bestFriend (with subSelect from preload)
     expect(json.fields!.length).toBe(2);
-    const bestFriendField = json.fields!.find((f) => f.path === 'bestFriend');
+    const bestFriendField = json.fields!.find(
+      (f) => typeof f !== 'string' && f.path === 'bestFriend',
+    ) as any;
     expect(bestFriendField).toBeDefined();
     expect(bestFriendField!.subSelect).toBeDefined();
     expect(bestFriendField!.subSelect!.fields.length).toBeGreaterThan(0);
