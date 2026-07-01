@@ -297,3 +297,81 @@ projection round-trip; mutation value grammar (no `expr` IR leak); reserved `and
 The IR-free wire contract (the migration's stated goal) is **production-ready and fully tested** for
 selects (where + projection incl. computed/scoped) and all mutations. The deferred items are either
 pre-existing gaps (casts) or cosmetic shorthands (G6) — separable follow-ups, none blocking.
+
+## Iteration 1 — Ideation
+
+Selected gaps: **G5** (`.as(Shape)` casts) and **G6** (cosmetic wire reshape). Decisions made with
+the maintainability-first framework and guarded by the round-trip gate (wire-shape-agnostic).
+
+### Gap 1 of 2 — G5: `.as(Shape)` projection casts
+
+`.as(Dog)` adds no segment; it switches the shape context, so `guardDogLevel`'s segment **owner**
+(the `{ownerShapeId}/{label}` prefix of its id) is `Dog` while `pets.valueShape` is `Pet`. That
+mismatch is the cast signal.
+
+- **Approach A — inline `as(<Label>)` path segment (chosen):** serialize the cast in the dotted path
+  itself: `"pets.as(Dog).guardDogLevel"` (the `as(<ShapeLabel>)` convention already documented for
+  condition paths). Encode detects the cast (segment owner ≠ prior valueShape) and inserts
+  `as(<label>)`; a cast-aware path walker splits on `.`, and on an `as(X)` token switches the shape
+  context. One string, no nested restructure, reuses a documented convention.
+- **Approach B — nested `{path, cast, fields}`** (spec's other form): more structure, more code.
+- **Approach C — raw segment IRIs fallback:** robust but reintroduces IRIs (against the label goal).
+- **Rationale:** A is the least complex and matches the DSL's `.as(Dog)` reading; casts are rare so a
+  focused cast-aware walker (not a global `walkPropertyPath` change) contains the blast radius.
+
+### Gap 2 of 2 — G6: cosmetic reshape (to match documentation/dsl-json.md)
+
+- **Envelope (chosen — do):** `sortBy` → ordered array of `{path: dir}` (fixes the key-order hazard);
+  `singleResult` → `one`; `fields: "*"` for `selectAll()`; drop the deprecated `orderDirection`.
+- **Projection (chosen — do):** bare-string leaves (`"name"`, `"friends.friends.name"`); `{as, value}`
+  for computed fields; relation options stay `{path: {as, where, fields, …}}`. Keeps `{path:…}` only
+  where a bare string can't carry the extras.
+- **Mutation node data (chosen — do, carefully):** path-keyed `data: {name: "Alice"}` with a reserved
+  `__id` for a fixed id; nested node shape is derived from the parent property's value-shape on
+  decode. Riskiest piece (loses the explicit per-node shape), but guarded by the gate.
+- **Rationale:** these close the doc-vs-impl divergence. Each is wire-shape churn only; the round-trip
+  gate proves IR-equivalence is preserved, and explicit-shape test assertions are rewritten per phase.
+
+## Iteration 1 — Plan
+
+Reuse the existing codec and seams; the changes are localized reshapes + a cast-aware path walker.
+
+- **Cast-aware path grammar** (`ZcExpression.ts`): `segmentsToPath` inserts `as(<label>)` at a cast
+  point; a new `walkPathWithCasts(shape, path)` resolves `as(X)` tokens by switching shape context
+  (used by projection decode). Encode-side cast detection compares each segment's owner id to the
+  previous segment's `valueShape` id.
+- **Projection** (`FieldSet.ts`): field entry serializes as a **bare string** when it is a plain
+  path with no extras; else `{path:{…}}` (relation options) or `{as, value}` (computed). Decode
+  accepts bare strings and both object forms.
+- **Envelope** (`QueryBuilder.ts` + `QueryBuilderSerialization.ts`): `sortBy` becomes
+  `Array<{[path]: 'ASC'|'DESC'}>`; `one` replaces `singleResult`; `fields:"*"` marks selectAll;
+  `orderDirection` removed.
+- **Mutation node** (`MutationSerialization.ts` + `lowerMutationJSON.ts`): `MutationNodeDataJSON`
+  becomes a path-keyed record `{__id?, [label]: value}`; nested node shape resolved via the parent
+  PropertyShape's value-shape.
+
+## Iteration 1 — Phases
+
+### Phase 8 — G5 cast-aware paths — status: pending
+Cast detection + `as(<label>)` in `segmentsToPath`; `walkPathWithCasts`; wire it into FieldSet
+projection (de)serialization. Re-include `selectShapeAs`, `selectShapeSetAs` in the gate.
+- **Validation:** gate 125 green; full suite; tsc clean.
+
+### Phase 9 — G6 envelope — status: pending
+`sortBy` ordered array, `singleResult`→`one`, `fields:"*"`, drop `orderDirection`. Update envelope
+assertions.
+- **Validation:** gate green; full suite; tsc clean.
+
+### Phase 10 — G6 projection shorthand — status: pending
+Bare-string leaves + `{as, value}` computed fields in FieldSet (de)serialization. Update projection
+assertions in serialization.test.ts.
+- **Validation:** gate green; full suite; tsc clean.
+
+### Phase 11 — G6 mutation node path-keyed data — status: pending
+Reshape `MutationNodeDataJSON` to path-keyed `{__id?, [label]: value}`; thread nested shape from the
+parent property. Update mutation assertions.
+- **Validation:** gate green; full suite; tsc clean.
+
+### Phase 12 — Finalize iteration — status: pending
+Rewrite any remaining explicit-shape assertions; full tsc + jest; refresh the spec's status note.
+- **Validation:** entire suite green; tsc clean.
