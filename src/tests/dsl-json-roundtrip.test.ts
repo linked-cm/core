@@ -42,9 +42,6 @@ const EXCLUDED = new Set<string>([
   'preloadBestFriend',
   'preloadBestFriendWithFieldSet',
   'queryBuilderPreload',
-  // `.as(Shape)` projection casts — deferred (backlog 002 G5; needs cast wire form)
-  'selectShapeAs',
-  'selectShapeSetAs',
 ]);
 
 const factoryNames = Object.keys(queryFactories) as (keyof typeof queryFactories)[];

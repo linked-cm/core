@@ -352,7 +352,8 @@ Reuse the existing codec and seams; the changes are localized reshapes + a cast-
 
 ## Iteration 1 — Phases
 
-### Phase 8 — G5 cast-aware paths — status: pending
+### Phase 8 — G5 cast-aware paths — status: done
+_Validated: gate 125 passed (casts re-included); full suite 1340 passed; tsc clean. Inline as(<ShapeLabel>) path segments via cast detection (segment owner != prior valueShape) + walkPathWithCasts._
 Cast detection + `as(<label>)` in `segmentsToPath`; `walkPathWithCasts`; wire it into FieldSet
 projection (de)serialization. Re-include `selectShapeAs`, `selectShapeSetAs` in the gate.
 - **Validation:** gate 125 green; full suite; tsc clean.

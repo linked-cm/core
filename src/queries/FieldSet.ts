@@ -1,7 +1,7 @@
 import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
 import type {Shape, ShapeConstructor} from '../shapes/Shape.js';
 import {PropertyPath, walkPropertyPath} from './PropertyPath.js';
-import {getShapeClass} from '../utils/ShapeClass.js';
+import {getShapeClass, getAllShapeClasses} from '../utils/ShapeClass.js';
 import type {WherePath} from './SelectQuery.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
@@ -469,7 +469,9 @@ export class FieldSet<R = any, Source = any> {
     return {
       shape: this.shape.id,
       fields: (this.entries as FieldSetEntry[]).map((entry) => {
-        const field: FieldSetFieldJSON = {path: entry.path.toString()};
+        const field: FieldSetFieldJSON = {
+          path: FieldSet.pathToStringWithCasts(this.shape, entry.path.segments),
+        };
         if (entry.alias) {
           field.as = entry.alias;
         }
@@ -530,7 +532,7 @@ export class FieldSet<R = any, Source = any> {
           expressionNode: new ExpressionNode(ir, refs),
         };
       } else {
-        entry = {path: walkPropertyPath(resolvedShape, field.path)};
+        entry = {path: FieldSet.walkPathWithCasts(resolvedShape, field.path)};
         if (field.subSelect) {
           entry.subSelect = FieldSet.fromJSON(field.subSelect);
         }
@@ -781,6 +783,79 @@ export class FieldSet<R = any, Source = any> {
       current = current.subject;
     }
     return segments;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cast-aware path (de)serialization — carries `.as(Shape)` narrowing inline as
+  // an `as(<ShapeLabel>)` path segment (documentation/dsl-json.md, backlog 002 G5).
+  // ---------------------------------------------------------------------------
+
+  private static shapeById(id: string): NodeShape | undefined {
+    return getShapeClass(id)?.shape;
+  }
+
+  private static shapeByLabel(label: string): NodeShape | undefined {
+    for (const cls of getAllShapeClasses().values()) {
+      const shape = (cls as unknown as {shape?: NodeShape}).shape;
+      if (shape && (shape.label === label || FieldSet.labelOfId(shape.id) === label)) {
+        return shape;
+      }
+    }
+    return undefined;
+  }
+
+  private static labelOfId(id: string): string {
+    const i = id.lastIndexOf('/');
+    return i >= 0 ? id.slice(i + 1) : id;
+  }
+
+  /**
+   * Render a segment chain as a dotted label path, inserting `as(<ShapeLabel>)`
+   * wherever a segment is not resolvable by label from the natural (walked) shape
+   * — i.e. a `.as(Shape)` narrowing happened before it.
+   */
+  static pathToStringWithCasts(rootShape: NodeShape, segments: readonly PropertyShape[]): string {
+    const parts: string[] = [];
+    let current: NodeShape | undefined = rootShape;
+    for (const seg of segments) {
+      const label = FieldSet.labelOfId(seg.id);
+      const natural = current?.getPropertyShape(label);
+      if (!natural || natural.id !== seg.id) {
+        // A cast narrowed the context to the segment's owner shape.
+        const ownerId = seg.id.slice(0, seg.id.lastIndexOf('/'));
+        const owner = FieldSet.shapeById(ownerId);
+        parts.push(`as(${owner?.label ?? FieldSet.labelOfId(ownerId)})`);
+        current = owner ?? current;
+      }
+      parts.push(label);
+      const vs = (seg as unknown as {valueShape?: {id: string}}).valueShape;
+      current = vs ? FieldSet.shapeById(vs.id) ?? current : current;
+    }
+    return parts.join('.');
+  }
+
+  /** Inverse of {@link pathToStringWithCasts}: resolve a dotted path with `as(X)` casts. */
+  static walkPathWithCasts(rootShape: NodeShape, path: string): PropertyPath {
+    if (!path.includes('as(')) return walkPropertyPath(rootShape, path);
+    const segments: PropertyShape[] = [];
+    let current: NodeShape | undefined = rootShape;
+    for (const token of path.split('.')) {
+      const cast = /^as\((.+)\)$/.exec(token);
+      if (cast) {
+        current = FieldSet.shapeByLabel(cast[1]) ?? current;
+        continue;
+      }
+      const ps = current?.getPropertyShape(token);
+      if (!ps) {
+        throw new Error(
+          `Property '${token}' not found on shape '${current?.label || current?.id}' while resolving path '${path}'`,
+        );
+      }
+      segments.push(ps);
+      const vs = (ps as unknown as {valueShape?: {id: string}}).valueShape;
+      current = vs ? FieldSet.shapeById(vs.id) ?? current : current;
+    }
+    return new PropertyPath(rootShape, segments);
   }
 
   /**
