@@ -1,6 +1,6 @@
 ---
 summary: Behavior-preserving simplification & leanness pass over @_linked/core — remove dead code, an unused dependency, build-config bloat, a no-op IR pass, and add two hot-path memoizations. Safety net is the full 1444-test suite staying green.
-status: Tasks
+status: Implementation
 source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 1)
 packages: [core]
 ---
@@ -127,7 +127,8 @@ Quick gate == full gate: `npm test` (~16s, 1444 tests). Run `npm run compile` fi
 ### Dependency graph / parallelization
 Phases are **sequential by commit** (one commit each) but independent in content, except P2 and P4 both edit `irToAlgebra.ts` — so they must run in order, not in parallel, to avoid conflicts. Chosen order P1 → P2 → P3 → P4 (lowest-risk config first, perf last). No sub-agent parallelism warranted (small, single-file-per-concern edits; the risk is in validation, not throughput). Every phase's acceptance gate is identical: `npm run compile` exits 0 **and** `npm test` shows **1444 passed, 117 skipped, 5 snapshots passed** (the frozen baseline).
 
-### Phase 1 — Dependency + build-config leanness
+### Phase 1 — Dependency + build-config leanness ✅ DONE
+Result: compile exit 0; `npm test` = 1444 passed / 117 skipped / 5 snapshots (exact baseline). Emit checks: no `lib/esm/test-helpers`, `index.js` present, no `__metadata(` in `List.js`. No deviations.
 Tasks: (a) drop `next-tick` dep + fix `types` field in `package.json`; (b) `tsconfig.json` exclude test-helpers, remove `emitDecoratorMetadata`/`downlevelIteration`/`jsx`, prune phantom `include` entries; (c) remove `testPathIgnorePatterns` in `jest.config.js`.
 Validation (quick gate = full gate):
 - `npm run compile` → exit 0, no TS errors.
