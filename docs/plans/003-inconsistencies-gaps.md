@@ -41,5 +41,39 @@ Precedence-aware parenthesization of `binary_expr` operands only:
 - `npm test` (jest + typecheck) stays green — existing golden output unchanged (no nested `binary_expr` in fixtures).
 - New golden assertions: `(a+b)*c` → `(?.. + ?..) * ?..`; `a+b*c` (as `binary(+,a,binary(*,b,c))`) stays `?.. + ?.. * ?..`; `a-(b-c)` → `?.. - (?.. - ?..)`; relational-in-relational parenthesized. Prefer an IR/algebra-level unit test in `sparql-serialization`/`expression` tests.
 
-## G2+ — ideation (not yet implemented)
-Explore DSL-JSON spec-vs-code drift (G2) with the user before planning: catalogue documented-but-unimplemented forms, decide implement-vs-document-down per item.
+## Phase 2 — G2: DSL-JSON authoring surface (decisions locked)
+
+Context: DSL-JSON is the canonical wire format + the LLM-authoring target (`documentation/dsl-json.md` + `dsl-json-llm-prompt.md`). The doc is currently ideation-only — **nothing persists old-format JSON**, so we can change the format freely, no migration/phases, no wire-version dance. Goal: one short, LLM-friendly grammar with no redundant spellings.
+
+### Locked decisions
+
+**D1 (Q1) — relation-keyed projection is the single canonical form.**
+Rewrite `FieldSet.toJSON` (emit) and `FieldSet.fromJSON` (decode) to the short relation-keyed grammar; **delete** the path-keyed `{path, subSelect}` projection spelling and the redundant nested `shape` (inferred from the relation's `valueShape`, already resolved by `walkPathWithCasts`). Projection grammar collapses to three unambiguous cases:
+- string → leaf path (`"name"`, `"bestFriend.name"`)
+- single-key object → relation: `{ "friends": ["name","hobby"] }` or `{ "friends": { as?, where?, one?, fields } }`; cast via `{ "pets": { "cast":"Dog", "fields":[…] } }`
+- `{ "as", "value" }` → computed field
+Regenerate the round-trip fixtures and the doc. (See before/after examples in the review thread.)
+
+**D2 (Q2) — word-operator aliases in conditions.**
+`equals`→`=`, `notEquals`→`!=`, `gt`→`>`, `gte`→`>=`, `lt`→`<`, `lte`→`<=` recognized by `isOpMap`/decode alongside the symbols. Removes the current silent-wrong decode of `{name:{equals:"x"}}`.
+
+**D3 (Q3) — membership operator `oneOf` / `noneOf`.**
+New feature top-to-bottom (no membership operator exists in the DSL today). Naming `oneOf`/`noneOf` (clearest read; avoids the `includes`/`excludes` "collection-contains" ambiguity, which we reserve for a future real collection op).
+- **Placement:** a boolean predicate — lives in `where` and inside `.some()`/`.every()`; **not** a projection field. (Confirmed: it resolves to a filter.)
+- **Element types:** literals **and** named nodes — mirrors SPARQL `IN`, which takes both. Element type follows the property type: literal property → literal list; object property → node-reference list (`{id}`/Shape).
+- **Lowering:** IR membership op → SPARQL `?x IN (…)` / `NOT IN (…)`.
+- **Deferred (own gap):** value-∈-subquery (`oneOf(Person.select(...))`) and set-to-set (`friends.notIn(...)`) — these are `FILTER (NOT) EXISTS` / anti-join territory, larger than list membership.
+
+**D4 (Q5) — keep doc/fixtures sync simple (for now).**
+No generator/CI. Add a `dsl-json` spec-fixtures test that feeds the *documented* JSON examples through `fromJSON` and asserts they decode/lower correctly; manually keep `dsl-json.md` matching those fixtures; add a note in the doc pointing at the fixtures file as the source of truth. (Generator + CI check is a later improvement — backlog.)
+
+### Phases (G2)
+- **2a — spec-fixtures harness (D4):** `src/tests/dsl-json-spec.test.ts` + a fixtures file mirroring the doc's *currently-working* examples; doc note. Small, low-risk, lands first as scaffolding.
+- **2b — word-operator aliases (D2):** decode + fixtures.
+- **2c — relation-keyed projection (D1):** `FieldSet.toJSON`/`fromJSON` rewrite, doc rewrite, round-trip + spec fixtures.
+- **2d — `oneOf`/`noneOf` (D3):** DSL method + IR op + SPARQL lowering + encode/decode + round-trip + spec fixtures.
+
+Gate each: `npm test` (jest + typecheck); new fixtures lock each; existing tests changed only with sign-off.
+
+## Still open (ideating) — G3+
+G4 (expr-in-create), G6/G7 (null / set-mod precedence), G9 (multi-key sort), G11 (aggregates + SetSize comparisons), G12/G13 (Expr drift / SHACL path reader) — not yet scoped.
