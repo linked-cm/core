@@ -35,32 +35,32 @@ import {walkPropertyPath} from './PropertyPath.js';
 // Wire types
 // ---------------------------------------------------------------------------
 
-export type DslScalar = string | number | boolean | null;
-export type DslRef = {id: string};
-export type DslCtx = {$ctx: string; path?: string};
-export type DslDate = {date: string};
-export type DslList = {list: DslValue[]};
-export type DslPath = {path: string};
-export type DslSExpr = [string, ...DslValue[]];
-export type DslValue =
-  | DslScalar
-  | DslRef
-  | DslCtx
-  | DslDate
-  | DslList
-  | DslPath
-  | DslSExpr;
+export type DslJsonScalar = string | number | boolean | null;
+export type DslJsonRef = {id: string};
+export type DslJsonCtx = {$ctx: string; path?: string};
+export type DslJsonDate = {date: string};
+export type DslJsonList = {list: DslJsonValue[]};
+export type DslJsonPath = {path: string};
+export type DslJsonSExpr = [string, ...DslJsonValue[]];
+export type DslJsonValue =
+  | DslJsonScalar
+  | DslJsonRef
+  | DslJsonCtx
+  | DslJsonDate
+  | DslJsonList
+  | DslJsonPath
+  | DslJsonSExpr;
 
-export type DslOpMap = {[op: string]: DslValue};
+export type DslJsonOpMap = {[op: string]: DslJsonValue};
 /**
  * A DSL-JSON condition: an S-expr array, or a keyed object whose keys are property
  * paths (→ value / operator-map), quantifier keys like `rel.some` (→ a nested
  * condition), or combinators `and`/`or` (→ a condition array) / `not` (→ a
  * condition). The permissive index reflects the structural wire shape.
  */
-export type DslCondition =
-  | DslSExpr
-  | {[key: string]: DslValue | DslOpMap | DslCondition | DslCondition[]};
+export type DslJsonCondition =
+  | DslJsonSExpr
+  | {[key: string]: DslJsonValue | DslJsonOpMap | DslJsonCondition | DslJsonCondition[]};
 
 const COMPARISON_OPS = new Set<IRBinaryOperator>([
   '=',
@@ -109,12 +109,12 @@ function mergeRefs(into: Map<string, readonly string[]>, from: PropertyRefMap): 
 export function encodeValueExpr(
   ir: IRExpression,
   refs: PropertyRefMap,
-): DslValue {
+): DslJsonValue {
   switch (ir.kind) {
     case 'literal_expr': {
       const v = ir.value as unknown;
       if (v instanceof Date) return {date: v.toISOString()};
-      return v as DslScalar;
+      return v as DslJsonScalar;
     }
     case 'reference_expr':
       if (ir.contextName !== undefined) return {$ctx: ir.contextName};
@@ -151,12 +151,12 @@ export function encodeValueExpr(
 
 /** Decode a DSL-JSON value back into an IR expression + its placeholder refs. */
 export function decodeValueExpr(
-  dsl: DslValue,
+  json: DslJsonValue,
   shape: NodeShape,
 ): {ir: IRExpression; refs: PropertyRefMap} {
   // S-expr array
-  if (Array.isArray(dsl)) {
-    const [head, ...operands] = dsl;
+  if (Array.isArray(json)) {
+    const [head, ...operands] = json;
     const refs = new Map<string, readonly string[]>();
     const args = operands.map((o) => {
       const {ir, refs: r} = decodeValueExpr(o, shape);
@@ -166,8 +166,8 @@ export function decodeValueExpr(
     return {ir: headToIR(head, args), refs};
   }
   // Objects: recognized value-objects
-  if (dsl !== null && typeof dsl === 'object') {
-    const o = dsl as Record<string, unknown>;
+  if (json !== null && typeof json === 'object') {
+    const o = json as Record<string, unknown>;
     if ('id' in o) {
       return {ir: {kind: 'reference_expr', value: o.id as string}, refs: new Map()};
     }
@@ -192,7 +192,7 @@ export function decodeValueExpr(
     }
   }
   // bare scalar literal
-  return {ir: {kind: 'literal_expr', value: dsl as never}, refs: new Map()};
+  return {ir: {kind: 'literal_expr', value: json as never}, refs: new Map()};
 }
 
 /**
@@ -240,14 +240,14 @@ const AGGREGATES = new Set(['count', 'sum', 'avg', 'min', 'max']);
 export function encodeCondition(
   node: ExpressionNode | ExistsCondition,
   shape: NodeShape,
-): DslCondition {
+): DslJsonCondition {
   if (node instanceof ExistsCondition) {
     return encodeExists(node, shape);
   }
   return encodeBoolExpr(node.ir, node._refs, shape);
 }
 
-function encodeExists(ec: ExistsCondition, shape: NodeShape): DslCondition {
+function encodeExists(ec: ExistsCondition, shape: NodeShape): DslJsonCondition {
   const rel = segmentsToPath(ec.pathSegmentIds);
   let quantifier: 'some' | 'none' | 'every';
   let predIr = ec.predicate.ir;
@@ -261,7 +261,7 @@ function encodeExists(ec: ExistsCondition, shape: NodeShape): DslCondition {
   } else {
     quantifier = 'none';
   }
-  let base: DslCondition = {
+  let base: DslJsonCondition = {
     [`${rel}.${quantifier}`]: encodeBoolExpr(predIr, predRefs, shape),
   };
   // Fold any chained and/or conditions into nested logical combinators.
@@ -270,7 +270,7 @@ function encodeExists(ec: ExistsCondition, shape: NodeShape): DslCondition {
       condition instanceof ExistsCondition ? condition : (condition as ExpressionNode),
       shape,
     );
-    base = {[op]: [base, c]} as DslCondition;
+    base = {[op]: [base, c]} as DslJsonCondition;
   }
   return base;
 }
@@ -280,14 +280,14 @@ function encodeBoolExpr(
   ir: IRExpression,
   refs: PropertyRefMap,
   shape: NodeShape,
-): DslCondition {
+): DslJsonCondition {
   if (ir.kind === 'logical_expr') {
     const parts = ir.expressions.map((e) => encodeBoolExpr(e, refs, shape));
     if (ir.operator === 'and') {
       const merged = tryMergeAnd(parts);
       if (merged) return merged;
     }
-    return {[ir.operator]: parts} as DslCondition;
+    return {[ir.operator]: parts} as DslJsonCondition;
   }
   if (ir.kind === 'not_expr') {
     return {not: encodeBoolExpr(ir.expression, refs, shape)};
@@ -301,7 +301,7 @@ function encodeBoolExpr(
     }
   }
   // Fallback: S-expr (boolean expression that isn't a simple path-keyed shape).
-  return encodeValueExpr(ir, refs) as DslCondition;
+  return encodeValueExpr(ir, refs) as DslJsonCondition;
 }
 
 /** A path key for a left operand that is a single property/alias/context property. */
@@ -321,7 +321,7 @@ function pathKeyOf(ir: IRExpression, refs: PropertyRefMap): string | null {
 }
 
 /** Merge AND conjuncts into one path-keyed object iff all are distinct single-key path conditions. */
-function tryMergeAnd(parts: DslCondition[]): DslCondition | null {
+function tryMergeAnd(parts: DslJsonCondition[]): DslJsonCondition | null {
   const out: Record<string, unknown> = {};
   for (const p of parts) {
     if (Array.isArray(p) || typeof p !== 'object' || p === null) return null;
@@ -331,39 +331,39 @@ function tryMergeAnd(parts: DslCondition[]): DslCondition | null {
     if (COMBINATORS.has(k) || k in out) return null;
     out[k] = (p as Record<string, unknown>)[k];
   }
-  return out as DslCondition;
+  return out as DslJsonCondition;
 }
 
 /** Decode a DSL-JSON condition into a runtime WherePath (`{expressionNode}` | `{existsCondition}`). */
-export function decodeCondition(dsl: DslCondition, shape: NodeShape): WherePath {
-  const node = decodeConditionNode(dsl, shape);
+export function decodeCondition(json: DslJsonCondition, shape: NodeShape): WherePath {
+  const node = decodeConditionNode(json, shape);
   return node instanceof ExistsCondition
     ? ({existsCondition: node} as WherePath)
     : ({expressionNode: node} as WherePath);
 }
 
 function decodeConditionNode(
-  dsl: DslCondition,
+  json: DslJsonCondition,
   shape: NodeShape,
 ): ExpressionNode | ExistsCondition {
   // S-expr fallback
-  if (Array.isArray(dsl)) {
-    const {ir, refs} = decodeValueExpr(dsl, shape);
+  if (Array.isArray(json)) {
+    const {ir, refs} = decodeValueExpr(json, shape);
     return new ExpressionNode(ir, refs);
   }
-  const o = dsl as Record<string, unknown>;
+  const o = json as Record<string, unknown>;
   const keys = Object.keys(o);
 
   // Combinators
   if (keys.length === 1 && COMBINATORS.has(keys[0])) {
     const k = keys[0];
     if (k === 'not') {
-      const inner = decodeConditionNode(o.not as DslCondition, shape);
+      const inner = decodeConditionNode(o.not as DslJsonCondition, shape);
       if (inner instanceof ExistsCondition) return inner.not();
       return new ExpressionNode({kind: 'not_expr', expression: inner.ir}, inner._refs);
     }
     // and / or
-    const elems = (o[k] as DslCondition[]).map((c) => decodeConditionNode(c, shape));
+    const elems = (o[k] as DslJsonCondition[]).map((c) => decodeConditionNode(c, shape));
     // An exists-chain: first operand is an ExistsCondition → fold the rest as its chain.
     if (elems[0] instanceof ExistsCondition) {
       let ec = elems[0] as ExistsCondition;
@@ -384,7 +384,7 @@ function decodeConditionNode(
   if (keys.length === 1) {
     const q = matchQuantifier(keys[0]);
     if (q) {
-      const predicate = expressionNodeFromCondition(o[keys[0]] as DslCondition, shape);
+      const predicate = expressionNodeFromCondition(o[keys[0]] as DslJsonCondition, shape);
       const segmentIds = pathToSegmentIds(shape, q.rel);
       if (q.kind === 'some') return new ExistsCondition(segmentIds, predicate, false);
       if (q.kind === 'none') return new ExistsCondition(segmentIds, predicate, true);
@@ -421,14 +421,14 @@ function comparisonsFor(
 ): IRExpression[] {
   // operator map: { ">": 18, "<": 65 }
   if (isOpMap(value)) {
-    return Object.entries(value as DslOpMap).map(([op, v]) => {
-      const r = decodeValueExpr(v as DslValue, shape);
+    return Object.entries(value as DslJsonOpMap).map(([op, v]) => {
+      const r = decodeValueExpr(v as DslJsonValue, shape);
       mergeRefs(refs, r.refs);
       return {kind: 'binary_expr', operator: op as IRBinaryOperator, left, right: r.ir};
     });
   }
   // implicit equals
-  const r = decodeValueExpr(value as DslValue, shape);
+  const r = decodeValueExpr(value as DslJsonValue, shape);
   mergeRefs(refs, r.refs);
   return [{kind: 'binary_expr', operator: '=', left, right: r.ir}];
 }
@@ -459,8 +459,8 @@ function matchQuantifier(
 }
 
 /** A quantifier predicate decodes to an ExpressionNode (its inner boolean). */
-function expressionNodeFromCondition(dsl: DslCondition, shape: NodeShape): ExpressionNode {
-  const node = decodeConditionNode(dsl, shape);
+function expressionNodeFromCondition(json: DslJsonCondition, shape: NodeShape): ExpressionNode {
+  const node = decodeConditionNode(json, shape);
   if (node instanceof ExistsCondition) {
     // Nested exists as a predicate is uncommon; wrap is not representable here.
     throw new Error('Nested exists inside a quantifier predicate is not supported');

@@ -1,5 +1,5 @@
 /**
- * Focused unit tests for the DSL-JSON expression codec (DslExpression.ts).
+ * Focused unit tests for the DSL-JSON expression codec (DslJsonExpression.ts).
  * The comprehensive semantic check is dsl-json-roundtrip.test.ts; these pin the
  * exact wire shapes and the codec's structural round-trip in isolation.
  */
@@ -18,7 +18,7 @@ import {
   decodeCondition,
   pathToSegmentIds,
   segmentsToPath,
-} from '../queries/DslExpression';
+} from '../queries/DslJsonExpression';
 import type {IRExpression} from '../queries/IntermediateRepresentation';
 
 const shape = Person.shape;
@@ -35,14 +35,14 @@ const cmp = (op: any, left: IRExpression, right: IRExpression): IRExpression => 
   right,
 });
 
-describe('DslExpression — path helpers', () => {
+describe('DslJsonExpression — path helpers', () => {
   test('segmentsToPath / pathToSegmentIds round-trip', () => {
     expect(segmentsToPath(friendNameSegs)).toBe('friends.name');
     expect(pathToSegmentIds(shape, 'friends.name')).toEqual(friendNameSegs);
   });
 });
 
-describe('DslExpression — value tier', () => {
+describe('DslJsonExpression — value tier', () => {
   test('literal → bare scalar', () => {
     expect(encodeValueExpr(lit('Alice'), new Map())).toBe('Alice');
     expect(encodeValueExpr(lit(42), new Map())).toBe(42);
@@ -81,7 +81,7 @@ describe('DslExpression — value tier', () => {
   });
 });
 
-describe('DslExpression — condition tier', () => {
+describe('DslJsonExpression — condition tier', () => {
   test('equality → implicit-equals path-keyed', () => {
     const p = prop(nameSegs);
     const node = new ExpressionNode(cmp('=', p.ir, lit('Alice')), p._refs);
@@ -139,7 +139,7 @@ describe('DslExpression — condition tier', () => {
   });
 });
 
-describe('DslExpression — quantifiers (some/every/none) wire shape', () => {
+describe('DslJsonExpression — quantifiers (some/every/none) wire shape', () => {
   const friendsSegs = pathToSegmentIds(shape, 'friends');
   const friendNamePred = () => {
     const fn = tracedPropertyExpression(pathToSegmentIds(shape, 'name'));
@@ -170,7 +170,7 @@ describe('DslExpression — quantifiers (some/every/none) wire shape', () => {
   //  so the codec never sees it.)
 });
 
-describe('DslExpression — S-expr fallback wire shape', () => {
+describe('DslJsonExpression — S-expr fallback wire shape', () => {
   const fn = (name: string, ...args: IRExpression[]): IRExpression => ({
     kind: 'function_expr',
     name,

@@ -83,8 +83,8 @@ proves **semantic** (lower-)equivalence across 125 fixtures; the items below are
 doesn't reach. Closed ones were added during the review.
 
 **Closed during review** (tests added):
-- Quantifier wire shapes (`{"friends.some":…}`, `.none`, `.every`) — `dsl-expression.test.ts`.
-- S-expr fallback wire shape (function-LHS comparison, chained arithmetic) — `dsl-expression.test.ts`.
+- Quantifier wire shapes (`{"friends.some":…}`, `.none`, `.every`) — `dsl-json-expression.test.ts`.
+- S-expr fallback wire shape (function-LHS comparison, chained arithmetic) — `dsl-json-expression.test.ts`.
 - `fromJSON` rejects an unrecognized `op` — `mutation-serialization.test.ts`.
 - Path-keyed mutation node + `__id` + `__shape` polymorphism — `dsl-json-mutation-node.test.ts`.
 

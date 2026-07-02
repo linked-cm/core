@@ -3,7 +3,7 @@
  * references (where-clauses, sort paths, minus entries).
  *
  * Where-clauses serialize through the DSL-JSON expression codec
- * (`DslExpression.ts`) — the wire form carries no IR. This module wires that
+ * (`DslJsonExpression.ts`) — the wire form carries no IR. This module wires that
  * codec into the select/mutation envelopes and handles sort + minus.
  */
 
@@ -14,8 +14,8 @@ import type {RawMinusEntry, PropertyPathSegment} from './IRDesugar.js';
 import {
   encodeCondition,
   decodeCondition,
-  type DslCondition,
-} from './DslExpression.js';
+  type DslJsonCondition,
+} from './DslJsonExpression.js';
 import type {ExpressionNode, ExistsCondition} from '../expressions/ExpressionNode.js';
 
 // =============================================================================
@@ -23,7 +23,7 @@ import type {ExpressionNode, ExistsCondition} from '../expressions/ExpressionNod
 // =============================================================================
 
 /** A where-clause on the wire is a DSL-JSON condition (see documentation/dsl-json.md). */
-export type WherePathJSON = DslCondition;
+export type WherePathJSON = DslJsonCondition;
 
 /** An ordered list of `{path: direction}` — element order is sort precedence. */
 export type SortByPathJSON = Array<{[path: string]: 'ASC' | 'DESC'}>;

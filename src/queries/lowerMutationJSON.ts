@@ -50,7 +50,7 @@ import {
   type MutationNodeDataJSON,
   type MutationValueJSON,
 } from './MutationSerialization.js';
-import {decodeValueExpr, type DslValue} from './DslExpression.js';
+import {decodeValueExpr, type DslJsonValue} from './DslJsonExpression.js';
 import type {PropertyShape} from '../shapes/SHACL.js';
 
 function requireShape(shapeId: string): NodeShape {
@@ -74,7 +74,7 @@ function decodeValue(
 ): PropUpdateValue {
   // S-expr computed value (no IR on the wire)
   if (Array.isArray(json)) {
-    const {ir, refs} = decodeValueExpr(json as DslValue, currentShape);
+    const {ir, refs} = decodeValueExpr(json as DslJsonValue, currentShape);
     return new ExpressionNode(ir, refs) as unknown as PropUpdateValue;
   }
   if (json === null) return null as unknown as PropUpdateValue;
@@ -105,7 +105,7 @@ function decodeValue(
     return mod as PropUpdateValue;
   }
   if ('path' in o) {
-    const {ir, refs} = decodeValueExpr(json as DslValue, currentShape);
+    const {ir, refs} = decodeValueExpr(json as DslJsonValue, currentShape);
     return new ExpressionNode(ir, refs) as unknown as PropUpdateValue;
   }
   // Otherwise: a bare path-keyed nested-node create.

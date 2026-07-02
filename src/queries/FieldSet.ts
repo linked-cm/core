@@ -5,7 +5,7 @@ import {getShapeClass, getAllShapeClasses} from '../utils/ShapeClass.js';
 import type {WherePath} from './SelectQuery.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
-import {encodeValueExpr, decodeValueExpr, type DslValue} from './DslExpression.js';
+import {encodeValueExpr, decodeValueExpr, type DslJsonValue} from './DslJsonExpression.js';
 import {
   serializeWherePath,
   deserializeWherePath,
@@ -102,7 +102,7 @@ export type FieldSetObjectFieldJSON = {
   aggregation?: string;
   customKey?: string;
   /** A computed projection (e.g. `{k: p.x.strlen()}`) — a DSL-JSON value; no path. */
-  value?: DslValue;
+  value?: DslJsonValue;
   /** A scoped filter on a relation segment (`p.friends.where(...)`). */
   where?: WherePathJSON;
   /** Which path segment the scoped `where` applies to (defaults to the last). */

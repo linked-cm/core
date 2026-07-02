@@ -1,5 +1,5 @@
 ---
-summary: Migrated the DSL-JSON wire format to the compact, IR-free wire grammar — query.toJSON() emits path-keyed conditions, dotted-string projections, an S-expr fallback, and path-keyed mutation node data (with __id/__shape), and fromJSON() rehydrates losslessly. A new pure DslExpression codec bridges the expression IR and the wire; the builder→IR→store pipeline and lower() are unchanged. Round-trip-through-lower is the contract.
+summary: Migrated the DSL-JSON wire format to the compact, IR-free wire grammar — query.toJSON() emits path-keyed conditions, dotted-string projections, an S-expr fallback, and path-keyed mutation node data (with __id/__shape), and fromJSON() rehydrates losslessly. A new pure DslJsonExpression codec bridges the expression IR and the wire; the builder→IR→store pipeline and lower() are unchanged. Round-trip-through-lower is the contract.
 packages: [core]
 ---
 
@@ -23,13 +23,13 @@ Only the **middle tier** (the bytes exchanged) changed; the builder→IR→store
 
 ## Architecture
 
-A single new pure module, **`src/queries/DslExpression.ts`**, is the codec. Everything else delegates
+A single new pure module, **`src/queries/DslJsonExpression.ts`**, is the codec. Everything else delegates
 to it. It depends only on IR types, `ExpressionNode`/`ExistsCondition`, `walkPropertyPath`, and the
 shape registry — no builder internals.
 
 ```
-toJSON:   builder → {ir,refs}/{existsCondition} ──DslExpression.encode──▶ DSL-JSON JSON
-fromJSON: DSL-JSON JSON ──DslExpression.decode──▶ {ir,refs}/{existsCondition} → builder → lower()
+toJSON:   builder → {ir,refs}/{existsCondition} ──DslJsonExpression.encode──▶ DSL-JSON
+fromJSON: DSL-JSON ──DslJsonExpression.decode──▶ {ir,refs}/{existsCondition} → builder → lower()
 ```
 
 The insight that made this tractable: a runtime `WherePath` is only `{expressionNode}` |
@@ -95,8 +95,8 @@ reconstructs identical segment IRIs, so `lower` of the round-trip is byte-identi
 
 | File | Responsibility |
 |---|---|
-| `src/queries/DslExpression.ts` | **NEW** — the codec: `encode/decodeValueExpr`, `encode/decodeCondition`, path helpers (`segmentsToPath`, `pathToSegmentIds`), the wire types (`DslValue`, `DslCondition`, …). |
-| `src/queries/QueryBuilderSerialization.ts` | `serialize/deserializeWherePath` delegate to the codec; `WherePathJSON = DslCondition`; `sortBy` ordered array; minus. Legacy evaluation/andOr/QueryStep machinery removed. |
+| `src/queries/DslJsonExpression.ts` | **NEW** — the codec: `encode/decodeValueExpr`, `encode/decodeCondition`, path helpers (`segmentsToPath`, `pathToSegmentIds`), the wire types (`DslJsonValue`, `DslJsonCondition`, …). |
+| `src/queries/QueryBuilderSerialization.ts` | `serialize/deserializeWherePath` delegate to the codec; `WherePathJSON = DslJsonCondition`; `sortBy` ordered array; minus. Legacy evaluation/andOr/QueryStep machinery removed. |
 | `src/queries/FieldSet.ts` | Projection (de)serialization: bare-string leaves, `{as,value}` computed fields, scoped relation filters, and cast-aware paths (`pathToStringWithCasts` / `walkPathWithCasts`). |
 | `src/queries/MutationSerialization.ts` | DSL-JSON value grammar + path-keyed node codec (`encodeNodeData`/`decodeNodeDataToRaw`, `valueShapeOf`, `__id`/`__shape`). |
 | `src/queries/lowerMutationJSON.ts` | JSON→IR mirror of the mutation value/node codec. |
@@ -125,7 +125,7 @@ exported types `MutationValueJSON` and `MutationNodeDataJSON` changed shape. Rep
 | Test file | Covers |
 |---|---|
 | `src/tests/dsl-json-roundtrip.test.ts` | The conformance **gate**: `lower(fromJSON(toJSON))≡lower` over all query fixtures (125 pass; 3 `preload` skipped). Wire-shape-agnostic — the authoritative semantic guard. |
-| `src/tests/dsl-expression.test.ts` | Codec units: path helpers, value tier, condition tier, quantifier wire shapes, S-expr fallback shapes (~19). |
+| `src/tests/dsl-json-expression.test.ts` | Codec units: path helpers, value tier, condition tier, quantifier wire shapes, S-expr fallback shapes (~19). |
 | `src/tests/serialization.test.ts` | Select envelope + FieldSet + where explicit shapes (DSL-JSON). |
 | `src/tests/mutation-serialization.test.ts` | Mutation round-trip, context resolution/throw parity, wire-version + unknown-op rejection. |
 | `src/tests/dsl-json-mutation-node.test.ts` | Path-keyed node form, `__id`, and `__shape` polymorphism round-trip (5). |
