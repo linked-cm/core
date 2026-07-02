@@ -203,8 +203,9 @@ Result: compile 0; suite = **1449 passed** (1444 baseline + 5 new) / 117 skipped
 - Tests: add `src/tests/prefix-tofull.test.ts` (colon-in-localname), extend `core-utils.test.ts` or add `cached.test.ts` (collision + error rethrow), and a metamodel assertion that `NodeShape` `type` resolves to `rdf:type`. NEW tests only.
 - Validation: compile 0; suite = 1444 + N new, 0 failures; if any *existing* test flips → STOP and consult user (would mean a test encoded the bug).
 
-**Phase 6 — Gap 3.a builder thenable base**
-- New `src/queries/MutationThenable.ts`; `Create/Update/DeleteBuilder` extend it (add `super()` to constructors, a `protected get builderName`), remove the three duplicated blocks.
+**Phase 6 — Gap 3.a builder thenable base** ✅ DONE
+Result: compile 0 (incl. `query-builder.types`/`intermediate-representation.types`); suite = 1449 passed (unchanged) / 117 skipped / 5 snapshots. `Symbol.toStringTag` preserved exactly via a `_tag` field. New `src/queries/MutationThenable.ts`; three ~24-line duplicated blocks removed.
+- New `src/queries/MutationThenable.ts`; `Create/Update/DeleteBuilder` extend it (add `super()` to constructors, a `protected readonly _tag`), remove the three duplicated blocks.
 - Validation: compile 0 (esp. `query-builder.types.test.ts`, `intermediate-representation.types.test.ts`); suite exact baseline (+ new from P5).
 
 **Phase 7 — Gap 3.b/3.c mechanical dedups**

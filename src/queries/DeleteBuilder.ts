@@ -2,6 +2,7 @@ import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import type {DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
+import {MutationThenable} from './MutationThenable.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
@@ -41,8 +42,9 @@ interface DeleteBuilderInit<S extends Shape> {
  * R is the resolved type: DeleteResponse for ID-based, void for bulk operations.
  */
 export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
-  implements PromiseLike<R>, Promise<R>
+  extends MutationThenable<R>
 {
+  protected readonly _tag = 'DeleteBuilder';
   private readonly _shape: ShapeConstructor<S>;
   private readonly _ids?: DeleteId[];
   private readonly _mode?: DeleteMode;
@@ -50,6 +52,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   private readonly _where?: WherePath;
 
   private constructor(init: DeleteBuilderInit<S>) {
+    super();
     this._shape = init.shape;
     this._ids = init.ids;
     this._mode = init.mode;
@@ -209,28 +212,4 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     return getQueryDispatch().deleteQuery(this) as Promise<R>;
   }
 
-  // ---------------------------------------------------------------------------
-  // Promise interface
-  // ---------------------------------------------------------------------------
-
-  then<TResult1 = R, TResult2 = never>(
-    onfulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
-  ): Promise<TResult1 | TResult2> {
-    return this.exec().then(onfulfilled, onrejected);
-  }
-
-  catch<TResult = never>(
-    onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null,
-  ): Promise<R | TResult> {
-    return this.then().catch(onrejected);
-  }
-
-  finally(onfinally?: (() => void) | null): Promise<R> {
-    return this.then().finally(onfinally);
-  }
-
-  get [Symbol.toStringTag](): string {
-    return 'DeleteBuilder';
-  }
 }

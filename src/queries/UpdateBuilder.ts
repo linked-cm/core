@@ -2,6 +2,7 @@ import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
 import {MutationQueryFactory} from './MutationQuery.js';
+import {MutationThenable} from './MutationThenable.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {PendingQueryContext, getQueryContext, UnresolvedContextError} from './QueryContext.js';
@@ -44,8 +45,9 @@ interface UpdateBuilderInit<S extends Shape> {
  * R is the resolved type: AddId<U> for ID-based, void for bulk operations.
  */
 export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> = UpdatePartial<S>, R = AddId<U>>
-  implements PromiseLike<R>, Promise<R>
+  extends MutationThenable<R>
 {
+  protected readonly _tag = 'UpdateBuilder';
   private readonly _shape: ShapeConstructor<S>;
   private readonly _data?: UpdatePartial<S>;
   private readonly _targetId?: string;
@@ -55,6 +57,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   private readonly _targetContextName?: string;
 
   private constructor(init: UpdateBuilderInit<S>) {
+    super();
     this._shape = init.shape;
     this._data = init.data;
     this._targetId = init.targetId;
@@ -238,28 +241,4 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     return getQueryDispatch().updateQuery(this) as Promise<R>;
   }
 
-  // ---------------------------------------------------------------------------
-  // Promise interface
-  // ---------------------------------------------------------------------------
-
-  then<TResult1 = R, TResult2 = never>(
-    onfulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
-  ): Promise<TResult1 | TResult2> {
-    return this.exec().then(onfulfilled, onrejected);
-  }
-
-  catch<TResult = never>(
-    onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null,
-  ): Promise<R | TResult> {
-    return this.then().catch(onrejected);
-  }
-
-  finally(onfinally?: (() => void) | null): Promise<R> {
-    return this.then().finally(onfinally);
-  }
-
-  get [Symbol.toStringTag](): string {
-    return 'UpdateBuilder';
-  }
 }
