@@ -1,6 +1,6 @@
 ---
 summary: Behavior-preserving simplification & leanness pass over @_linked/core — remove dead code, an unused dependency, build-config bloat, a no-op IR pass, and add two hot-path memoizations. Safety net is the full 1444-test suite staying green.
-status: Plan
+status: Tasks
 source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 1)
 packages: [core]
 ---
@@ -121,3 +121,39 @@ Quick gate == full gate: `npm test` (~16s, 1444 tests). Run `npm run compile` fi
 
 ### Files expected to change
 `package.json`, `tsconfig.json`, `jest.config.js` (P1); `src/utils/Types.ts` (delete), `src/sparql/irToAlgebra.ts`, `src/shapes/SHACL.ts`, `src/shapes/Shape.ts`, `src/expressions/Expr.ts`, `src/queries/MutationQuery.ts` (P2); `src/queries/IRCanonicalize.ts`, `lower.ts`, `lowerMutationJSON.ts` (P3); `src/sparql/irToAlgebra.ts` (P4).
+
+## Tasks
+
+### Dependency graph / parallelization
+Phases are **sequential by commit** (one commit each) but independent in content, except P2 and P4 both edit `irToAlgebra.ts` — so they must run in order, not in parallel, to avoid conflicts. Chosen order P1 → P2 → P3 → P4 (lowest-risk config first, perf last). No sub-agent parallelism warranted (small, single-file-per-concern edits; the risk is in validation, not throughput). Every phase's acceptance gate is identical: `npm run compile` exits 0 **and** `npm test` shows **1444 passed, 117 skipped, 5 snapshots passed** (the frozen baseline).
+
+### Phase 1 — Dependency + build-config leanness
+Tasks: (a) drop `next-tick` dep + fix `types` field in `package.json`; (b) `tsconfig.json` exclude test-helpers, remove `emitDecoratorMetadata`/`downlevelIteration`/`jsx`, prune phantom `include` entries; (c) remove `testPathIgnorePatterns` in `jest.config.js`.
+Validation (quick gate = full gate):
+- `npm run compile` → exit 0, no TS errors.
+- `npm test` → 1444 passed / 117 skipped / 5 snapshots — **exact match** to baseline.
+- Structural: `npx tsc -p tsconfig-esm.json` then assert `lib/esm/test-helpers` does **not** exist and `lib/esm/index.js` does; assert no `__metadata(` string appears in `lib/esm/shapes/List.js` (decorator-metadata no longer emitted).
+
+### Phase 2 — Internal dead code + unused imports
+Tasks: delete `src/utils/Types.ts`; strip the five unused imports/comment listed in the plan.
+Validation:
+- `npm run compile` → exit 0 (compilation failure here would prove a symbol was NOT dead — treat as a stop-and-report deviation).
+- `npm test` → exact baseline match.
+- Structural: `grep -rn "utils/Types" src/` → zero hits; `git grep -n "SparqlDeleteWherePlan\|deleteWherePlanToSparql" src/sparql/irToAlgebra.ts` → zero hits.
+
+### Phase 3 — Remove `canonicalizeWhere` no-op
+Tasks: delete `canonicalizeWhere`, inline its 3 call sites, drop 2 now-unused imports, keep the 3 types + `canonicalizeDesugaredSelectQuery` (with its minusEntries reshaping).
+Validation:
+- `npm run compile` → exit 0.
+- `npm test` with attention to: `ir-canonicalize.test.ts`, `lower.test.ts`, `ir-select-golden.test.ts`, `sparql-select-golden.test.ts`, `sparql-mutation-golden.test.ts` — all green; overall exact baseline match.
+- Structural: `grep -rn "canonicalizeWhere" src/` → zero hits (fully removed).
+
+### Phase 4 — Hot-path memoization
+Tasks: add size-guarded `predicateTermCache` to `resolvePropertyPredicateTerm` (cache successes only); memoize `collectContainment` with the same size guard.
+Validation:
+- `npm run compile` → exit 0.
+- `npm test` → exact baseline match; specifically `sparql-select-golden`, `sparql-mutation-golden`, `property-path-sparql`, `property-path-integration`, `shacl-cascade`, `store-routing` green (these exercise multi-shape registries + cascades, where a stale cache would show).
+- Edge case to reason about (not a coded test, argued in the plan): a shape registered *after* a query in the same module instance → size guard clears the cache; not-found predicates are never cached, so late registration still resolves. No golden test regresses.
+
+### Integration check (end of P4)
+After the last phase, run the whole suite once more clean (`npm run compile && npm test`) and confirm the published-artifact shape via `npm run build` (rimraf + cjs + esm + dual-package) exits 0 and produces `lib/` without `test-helpers/`. This catches cross-phase interaction (P2 and P4 both touched `irToAlgebra.ts`).
