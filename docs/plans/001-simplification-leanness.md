@@ -158,6 +158,60 @@ Tasks: add size-guarded `predicateTermCache` to `resolvePropertyPredicateTerm` (
 
 ### Integration check ✅ DONE
 `npm run build` (rimraf + cjs + esm + dual-package) exit 0. Artifact: no `test-helpers/` in `lib/esm` or `lib/cjs`; `lib/esm/index.d.ts` present (matches fixed `package.json` `types`); `Types.js` gone. Cross-phase interaction on `irToAlgebra.ts` (P2 + P4) clean.
+
+## Review
+
+Baseline pass (P1–P4) landed behavior-preserving; suite 1444/117/5 throughout. Four gaps identified; user chose to **iterate Gap 1 (behavior-changing bug fixes) and Gap 3 (duplication refactors) now**, keep Gap 2 (public-surface prune) deferred, and Gap 4 (Fuseki/CI test integrity) noted.
+
+Gap 2 answer (recorded): `CoreSet` is load-bearing (`ShapeSet extends CoreSet`; `SelectQuery` uses `.first()`/`.concat()`), `CoreMap` is used in 3 spots but only for native-`Map` behavior; the dead part is ~80 lines of extra methods, not the classes. Deferred.
+
+## Iteration 1 — Ideation (Gaps 1 & 3)
+
+Constraint reaffirmed: full suite stays green; new tests may be added to lock fixes; **existing tests are not modified without user sign-off** (none are expected to change — no current test covers the buggy behavior).
+
+### Gap 1.a — `NodeShape.type` clobbered to `sh:description` (`Package.ts`)
+Context: label `'type'` is registered twice on `NodeShape` — once `{path: rdf.type, shape: Shape}` and again `{path: shacl.description}`; `registerPropertyShape` `Object.assign`s the second onto the first, leaving `type`'s path = `sh:description`. `'description'` is already registered (`rdfs.comment`). The second block is a copy-paste error and redundant.
+Decision: **delete the erroneous `{path: shacl.description}, 'type'` block.** Restores `type → rdf:type`; `description → rdfs:comment` stays. (Maintainability: remove the bug at its source rather than rename to a third label that invents API.) Rejected: relabel to `'description'` (would duplicate the existing `rdfs:comment` description) or `'shaclDescription'` (invents public surface).
+
+### Gap 1.b — `Prefix._toFull` drops text after the 2nd colon
+Context: `const [prefix, rest] = uri.split(':')` — for `ex:foo:bar`, `rest='foo'`, `:bar` lost.
+Decision: **split on the first colon via `indexOf`.** Full URIs (`http://…`) are unaffected (first colon is after the scheme, same as today). Add a unit test for a local name containing a colon.
+
+### Gap 1.c — `cached()` key collisions, error-as-value, unbounded growth
+Context: key is `JSON.stringify(args)` only (two different fns collide); on `alsoCacheErrors` the caught error is stored and **returned** as a value instead of rethrown; entries evict only on same-key re-request. Zero internal callers (public util).
+Decision: **per-function cache via `WeakMap<Function, Map<argKey, entry>>`** (removes cross-fn collisions and bounds growth to each fn's live arg-set), and **rethrow cached errors** (store an `isError` flag; still avoids re-invoking a throwing fn within the window, but surfaces it as a throw). Signature unchanged. Add a unit test. Rejected: appending `fn.toString()` to the key (fragile, large keys, minifier-dependent).
+
+### Gap 3 — duplication refactors (scoped for "keep tests passing")
+Decision — **do now (safe, behavior-preserving):**
+- **3.a Builder thenable base class.** Extract the byte-identical `then/catch/finally/[Symbol.toStringTag]` from Create/Update/DeleteBuilder into an abstract `MutationThenable<R>` they extend (each keeps its `exec()` + a `builderName`). ~45 dup lines → one base.
+- **3.b `mapSparqlUpdateResult` reuse.** Replace its inline field loop with the existing `populateRowFromNodeData` helper (if types align cleanly; else skip).
+- **3.c `buildPredicateTerm` extraction.** Fold the 4× `pattern.pathExpr ? {kind:'path',…} : resolvePropertyPredicateTerm(…)` ternary in `irToAlgebra.ts` into one helper — centralizes an invariant next to the memoized resolver.
+
+Decision — **DEFER (too risky for this gate):** DSL-JSON decoder unification (`lowerMutationJSON` vs `MutationSerialization`) and the `lower.ts`/`lowerMutationJSON.ts` merge. These change decode/lowering control flow with subtle `$ctx`/`{list}` divergence; they belong in a dedicated thread with added round-trip fixtures. → backlog at wrapup.
+
+## Iteration 1 — Plan
+
+Architecture: unchanged (no `docs/architecture`; golden + round-trip tests are the contract). All phases gated by `npm run compile` + `npm test` (exact 1444/117/5, plus any NEW tests added → higher pass count, which is expected and must be stated per phase).
+
+### Iteration 1 — Phases
+
+**Phase 5 — Gap 1 bug fixes + lock-in tests**
+- `src/utils/Package.ts`: delete the `createPropertyShape({path: shacl.description, maxCount:1},'type',shacl.Literal,NodeShape)` block.
+- `src/utils/Prefix.ts`: `_toFull` (and the `toFull` error-path prefix parse) split on first colon.
+- `src/utils/cached.ts`: WeakMap-per-fn cache + rethrow errors.
+- Tests: add `src/tests/prefix-tofull.test.ts` (colon-in-localname), extend `core-utils.test.ts` or add `cached.test.ts` (collision + error rethrow), and a metamodel assertion that `NodeShape` `type` resolves to `rdf:type`. NEW tests only.
+- Validation: compile 0; suite = 1444 + N new, 0 failures; if any *existing* test flips → STOP and consult user (would mean a test encoded the bug).
+
+**Phase 6 — Gap 3.a builder thenable base**
+- New `src/queries/MutationThenable.ts`; `Create/Update/DeleteBuilder` extend it (add `super()` to constructors, a `protected get builderName`), remove the three duplicated blocks.
+- Validation: compile 0 (esp. `query-builder.types.test.ts`, `intermediate-representation.types.test.ts`); suite exact baseline (+ new from P5).
+
+**Phase 7 — Gap 3.b/3.c mechanical dedups**
+- `resultMapping.ts`: `mapSparqlUpdateResult` reuses `populateRowFromNodeData` (guarded by type-fit; skip+note if not clean).
+- `irToAlgebra.ts`: extract `buildPredicateTerm(pattern)`; replace the 4 ternaries.
+- Validation: compile 0; suite exact; golden SPARQL byte-identical.
+
+Deferred → backlog at wrapup: decoder unification, lower.ts/lowerMutationJSON merge, Gap 2 public-surface prune, Gap 1 has no remainder, Gap 4 CI/Fuseki integrity.
 Validation:
 - `npm run compile` → exit 0.
 - `npm test` → exact baseline match; specifically `sparql-select-golden`, `sparql-mutation-golden`, `property-path-sparql`, `property-path-integration`, `shacl-cascade`, `store-routing` green (these exercise multi-shape registries + cascades, where a stale cache would show).
