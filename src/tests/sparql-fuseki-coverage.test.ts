@@ -26,6 +26,7 @@ import {
   clearAllData,
 } from '../test-helpers/fuseki-test-store';
 import {setQueryContext, getQueryContext} from '../queries/QueryContext';
+import {Expr} from '../expressions/Expr';
 import {fromJSON} from '../queries/fromJSON';
 import {createHash} from 'node:crypto';
 
@@ -453,12 +454,24 @@ describe('coverage §2 — null / introspection / hash', () => {
       .toBe(createHash('sha256').update('Semmy').digest('hex'));
   });
 
-  // Quarantined — surfaced bugs (backlog 005):
-  //  - isNotDefined: the property is inner-joined, so !BOUND can never match
-  //    (returns [] instead of the rows lacking the property).
-  //  - Expr.ifThen: returns the ELSE branch even when the condition is true.
-  test.skip('isNotDefined [BUG: property inner-joined, never matches]', () => {});
-  test.skip('Expr.ifThen [BUG: returns else-branch when condition is true]', () => {});
+  test('isNotDefined (filter) → persons without a hobby', async () => {
+    if (!fusekiAvailable) return;
+    expect(await filterIds(Person.select().where((p: any) => p.hobby.isNotDefined()))).toEqual([
+      'p3', 'p4', 'p5',
+    ]);
+  });
+  test('Expr.ifThen picks the matching branch per row', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(
+      Person.select((p: any) => ({r: Expr.ifThen(p.name.equals('Semmy'), 'yes', 'no')})),
+    )) as Row[];
+    expect(Object.fromEntries(r.map((x) => [x.id.replace(ENT, ''), x.r]))).toEqual({
+      p1: 'yes', p2: 'no', p3: 'no', p4: 'no', p5: 'no',
+    });
+    expect(await projVal(
+      Person.select((p: any) => ({r: Expr.ifThen(p.isRealPerson.equals(true), 'real', 'fake')})).for(P1),
+    )).toBe('real');
+  });
 });
 
 // =========================================================================

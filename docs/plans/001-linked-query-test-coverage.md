@@ -355,3 +355,28 @@ un-quarantined with positive (target-with-bestFriend) and no-corruption tests.
 **82 passing, 5 skipped** in the coverage suite; **full suite 1433 passed, 0
 failed**. Remaining skips are backlog 004 (nested sub-select: 3) and backlog 005
 (operators: 2). Bug 1 (`exprNestedPath`) and backlog 003 are now fixed.
+
+## Iteration 2 — backlog 005 operator bugs
+
+Fixed the two operator-lowering bugs (2 of the 5 remaining skips).
+
+### Bug 6 — `isNotDefined` never matches — FIXED
+`collectRequiredBindingKeys` (`src/sparql/irToAlgebra.ts`) treated `BOUND`'s
+argument as a required binding, inner-joining the property and making
+`FILTER(!BOUND(?x))` unsatisfiable. `BOUND` now contributes no required keys, so
+the property stays OPTIONAL. `isDefined` results are unchanged (the positive
+filter enforces boundness itself). Residual noted in backlog 005: `COALESCE`/`IF`
+args in a where-filter are still marked required (same family, no failing test yet).
+
+### Bug 7 — `Expr.ifThen` wrong branch — FIXED (diagnosis revised)
+Not branch inversion: `Expr.ifThen`/`Expr.firstDefined`/`Expr.concat` dropped
+their arguments' proxy-trace `_refs` maps when constructing `ExpressionNode`
+directly, leaving `__ref_N__` placeholder aliases unresolved — the condition's
+property pattern became an unconstrained cross-product over all entities. The
+three functions now merge arg refs (`mergedRefs` in `src/expressions/Expr.ts`),
+matching `_derive` semantics.
+
+### Result
+**84 passing, 3 skipped** in the coverage suite (both 005 tests un-quarantined
+with exact-result assertions); **full suite 1435 passed, 0 failed**. Remaining
+skips are the backlog 004 nested sub-select trio.

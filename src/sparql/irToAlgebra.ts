@@ -1223,6 +1223,11 @@ function collectRequiredBindingKeys(expr: IRExpression): Set<string> {
         collectRequiredBindingKeys(expr.right),
       );
     case 'function_expr':
+      // BOUND explicitly tests boundness — forcing its argument into a
+      // required (inner-join) pattern would make !BOUND unsatisfiable.
+      if (expr.name.toUpperCase() === 'BOUND') {
+        return new Set<string>();
+      }
       return mergeKeySets(...expr.args.map((arg) => collectRequiredBindingKeys(arg)));
     case 'not_expr':
       return collectRequiredBindingKeys(expr.expression);
