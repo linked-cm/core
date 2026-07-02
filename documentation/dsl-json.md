@@ -342,6 +342,19 @@ path suffixes or option keys and do not collide with bare property labels.
 | run an inbound query | `fromJSON(json).exec()` |
 | JSON → IR (a store that wants the algebra) | `lowerMutationJSON(json)` for mutations; `lower(fromJSON(json))` for selects |
 
+## Generating DSL-JSON with an LLM
+
+DSL-JSON is deliberately LLM-authorable: property **labels** (not IRIs), path-keyed conditions, and
+a shape that reads like the DSL. To have a model generate queries, hand it two things: a system
+prompt with the grammar + rules, and the **shape context** in scope (each shape's IRI and its
+properties as `label — literal(datatype) | relation(→ Target) [set]`).
+
+A ready, copy-paste system prompt (the condensed algebra + all caveats, minus the shapes) lives at
+**[dsl-json-llm-prompt.md](./dsl-json-llm-prompt.md)** — paste it, append your shapes, and the model
+emits a single DSL-JSON object. Validate the output with `fromJSON(json)` before executing; the
+receiver rejects unknown shapes/labels, unknown `op`, and bad wire versions, so generation mistakes
+fail loud.
+
 ## Implementing DSL-JSON in another language
 
 DSL-JSON is plain data — a non-JS service can read and write it directly. To **execute** a query
