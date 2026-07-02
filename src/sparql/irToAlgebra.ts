@@ -101,8 +101,23 @@ function resolveShapeScanIri(shapeId: string): string {
  *   that matched nothing.
  * - No matching shape / unresolvable → `{kind:'iri'}` of the property id itself (unchanged shadow fallback).
  */
+// Memoizes resolved predicate terms across the many call sites that resolve the
+// same property. Guarded by the shape-registry size so it self-invalidates when
+// new shapes register (e.g. across test-file module instances). Only successful
+// resolutions are cached — a not-found fallback is never stored, so a predicate
+// resolved before its shape registers can still resolve correctly afterwards.
+const predicateTermCache = new Map<string, SparqlTerm>();
+let predicateTermCacheSize = -1;
+
 function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
   const shapeClasses = getAllShapeClasses();
+  if (shapeClasses.size !== predicateTermCacheSize) {
+    predicateTermCache.clear();
+    predicateTermCacheSize = shapeClasses.size;
+  }
+  const cached = predicateTermCache.get(propertyId);
+  if (cached) return cached;
+
   for (const shapeClass of shapeClasses.values()) {
     const propertyShape = shapeClass.shape
       ?.getPropertyShapes?.(true)
@@ -110,17 +125,21 @@ function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
     if (!propertyShape) continue;
 
     const simplePathId = getSimplePathId(propertyShape.path);
+    let term: SparqlTerm;
     if (simplePathId !== null) {
       // Simple single-IRI path: resolve to the IRI, or fall back to the property id
       // (e.g. unresolvable `linked://tmp/` ids) — unchanged from before.
-      return iriTerm(shouldResolveShapeOrPropertyId(simplePathId) ? simplePathId : propertyId);
+      term = iriTerm(shouldResolveShapeOrPropertyId(simplePathId) ? simplePathId : propertyId);
+    } else {
+      // Structured sh:path — emit a property-path predicate instead of a shadow IRI.
+      term = {
+        kind: 'path',
+        value: pathExprToSparql(propertyShape.path),
+        uris: collectPathUris(propertyShape.path),
+      };
     }
-    // Structured sh:path — emit a property-path predicate instead of a shadow IRI.
-    return {
-      kind: 'path',
-      value: pathExprToSparql(propertyShape.path),
-      uris: collectPathUris(propertyShape.path),
-    };
+    predicateTermCache.set(propertyId, term);
+    return term;
   }
   return iriTerm(propertyId);
 }
@@ -2035,11 +2054,21 @@ function shapeHasContainsProperty(shapeId: string): boolean {
     .some((ps) => (ps as {contains?: boolean}).contains);
 }
 
+// Memoized registry scan for cascade lowering — called once per update/delete and
+// again per owned-cascade item inside loops. Guarded by registry size (same rationale
+// as predicateTermCache). Callers treat the result as read-only.
+let containmentCache: {containsPreds: string[]; dependentTypes: string[]} | null = null;
+let containmentCacheSize = -1;
+
 /** Gather contains-predicate IRIs and dependent targetClass IRIs from the registry. */
 function collectContainment(): {containsPreds: string[]; dependentTypes: string[]} {
+  const shapeClasses = getAllShapeClasses();
+  if (containmentCache && shapeClasses.size === containmentCacheSize) {
+    return containmentCache;
+  }
   const containsPreds = new Set<string>();
   const dependentTypes = new Set<string>();
-  for (const [, shapeClass] of getAllShapeClasses()) {
+  for (const [, shapeClass] of shapeClasses) {
     const nodeShape = shapeClass?.shape;
     if (!nodeShape) continue;
     if ((nodeShape as {dependent?: boolean}).dependent && nodeShape.targetClass?.id) {
@@ -2056,7 +2085,9 @@ function collectContainment(): {containsPreds: string[]; dependentTypes: string[
       }
     }
   }
-  return {containsPreds: [...containsPreds], dependentTypes: [...dependentTypes]};
+  containmentCache = {containsPreds: [...containsPreds], dependentTypes: [...dependentTypes]};
+  containmentCacheSize = shapeClasses.size;
+  return containmentCache;
 }
 
 /**

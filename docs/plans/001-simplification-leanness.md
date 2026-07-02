@@ -152,8 +152,12 @@ Validation:
 - `npm test` with attention to: `ir-canonicalize.test.ts`, `lower.test.ts`, `ir-select-golden.test.ts`, `sparql-select-golden.test.ts`, `sparql-mutation-golden.test.ts` — all green; overall exact baseline match.
 - Structural: `grep -rn "canonicalizeWhere" src/` → zero hits (fully removed).
 
-### Phase 4 — Hot-path memoization
+### Phase 4 — Hot-path memoization ✅ DONE
+Result: compile exit 0; `npm test` = 1444/117/5 (exact baseline, incl. `sparql-*-golden`, `property-path-*`, `shacl-cascade`, `store-routing`). Verified callers of `collectContainment` are read-only (no push/splice/sort), so sharing the cached object is safe. No deviations.
 Tasks: add size-guarded `predicateTermCache` to `resolvePropertyPredicateTerm` (cache successes only); memoize `collectContainment` with the same size guard.
+
+### Integration check ✅ DONE
+`npm run build` (rimraf + cjs + esm + dual-package) exit 0. Artifact: no `test-helpers/` in `lib/esm` or `lib/cjs`; `lib/esm/index.d.ts` present (matches fixed `package.json` `types`); `Types.js` gone. Cross-phase interaction on `irToAlgebra.ts` (P2 + P4) clean.
 Validation:
 - `npm run compile` → exit 0.
 - `npm test` → exact baseline match; specifically `sparql-select-golden`, `sparql-mutation-golden`, `property-path-sparql`, `property-path-integration`, `shacl-cascade`, `store-routing` green (these exercise multi-shape registries + cascades, where a stale cache would show).
