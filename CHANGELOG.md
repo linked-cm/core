@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- [#122](https://github.com/linked-cm/core/pull/122) [`9fa981e`](https://github.com/linked-cm/core/commit/9fa981e508950c6d470c78a9ee3a938cd776e3c5) Thanks [@flyon](https://github.com/flyon)! - DSL-JSON is now the compact, **IR-free "Z-c" wire grammar**. `query.toJSON()` no longer embeds
+- [#122](https://github.com/linked-cm/core/pull/122) [`9fa981e`](https://github.com/linked-cm/core/commit/9fa981e508950c6d470c78a9ee3a938cd776e3c5) Thanks [@flyon](https://github.com/flyon)! - DSL-JSON is now a compact, **IR-free wire grammar**. `query.toJSON()` no longer embeds
   `IRExpression` in where-clauses or `{kind:…}` value tags in mutations — the wire reads like the DSL,
   and `fromJSON()` rehydrates it losslessly (`lower(fromJSON(query.toJSON())) ≡ lower(query)`).
 
@@ -49,7 +49,7 @@
   **Breaking / behavioral notes**
 
   - The wire shape of `query.toJSON()` changed across the board; anything that read the old
-    IR-embedding / `{shape,fields}` / `{kind:…}` forms must move to the Z-c grammar.
+    IR-embedding / `{shape,fields}` / `{kind:…}` forms must move to the new grammar.
   - The exported types `MutationValueJSON` and `MutationNodeDataJSON` changed shape accordingly.
   - `and`, `or`, and `not` are now **reserved property labels** (they are boolean combinators in a
     where-clause and have no key-position escape) — declaring a property with one of those names throws
