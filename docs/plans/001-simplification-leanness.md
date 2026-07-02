@@ -195,7 +195,8 @@ Architecture: unchanged (no `docs/architecture`; golden + round-trip tests are t
 
 ### Iteration 1 — Phases
 
-**Phase 5 — Gap 1 bug fixes + lock-in tests**
+**Phase 5 — Gap 1 bug fixes + lock-in tests** ✅ DONE
+Result: compile 0; suite = **1449 passed** (1444 baseline + 5 new) / 117 skipped / 5 snapshots. No existing test changed (confirmed the bugs were uncovered → your validation condition met, no sign-off needed). New file `src/tests/gap1-fixes.test.ts` locks all three fixes.
 - `src/utils/Package.ts`: delete the `createPropertyShape({path: shacl.description, maxCount:1},'type',shacl.Literal,NodeShape)` block.
 - `src/utils/Prefix.ts`: `_toFull` (and the `toFull` error-path prefix parse) split on first colon.
 - `src/utils/cached.ts`: WeakMap-per-fn cache + rethrow errors.

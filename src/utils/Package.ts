@@ -619,11 +619,6 @@ createPropertyShape(
 );
 
 createPropertyShape({
-  path: shacl.description,
-  maxCount: 1,
-},'type',shacl.Literal, NodeShape);
-
-createPropertyShape({
   path: shacl.targetNode,
   shape: Shape,//actually returns a NamedNode... is this correct then? Should we define or use a rdfs Class that matches the potential values?
 },'targetNode',shacl.IRI, NodeShape);

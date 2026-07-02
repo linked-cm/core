@@ -89,7 +89,8 @@ export class Prefix {
     if(res) {
       return res;
     }
-    let [prefix, rest] = uri.split(':');
+    const colon = uri.indexOf(':');
+    const prefix = colon === -1 ? uri : uri.slice(0, colon);
     throw new Error(
       'Unknown prefix ' +
         prefix +
@@ -99,7 +100,12 @@ export class Prefix {
     );
   }
   private static _toFull(uri) {
-    let [prefix, rest] = uri.split(':');
+    // Split on the FIRST colon only: the local name may itself contain colons
+    // (e.g. `ex:foo:bar`), which `split(':')` would truncate.
+    const colon = uri.indexOf(':');
+    if (colon === -1) return undefined;
+    const prefix = uri.slice(0, colon);
+    const rest = uri.slice(colon + 1);
     let ontologyURI = this.getFullURI(prefix);
     if (ontologyURI) {
       return ontologyURI + rest;
