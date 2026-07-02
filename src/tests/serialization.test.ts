@@ -17,14 +17,14 @@ describe('FieldSet — serialization', () => {
     const json = FieldSet.for(personShape, ['name', 'hobby']).toJSON();
     expect(json.shape).toBe(personShape.id);
     expect(json.fields).toHaveLength(2);
-    expect(json.fields[0].path).toBe('name');
-    expect(json.fields[1].path).toBe('hobby');
+    expect(json.fields[0]).toBe('name');
+    expect(json.fields[1]).toBe('hobby');
   });
 
   test('toJSON — nested path', () => {
     const json = FieldSet.for(personShape, ['friends.name']).toJSON();
     expect(json.fields).toHaveLength(1);
-    expect(json.fields[0].path).toBe('friends.name');
+    expect(json.fields[0]).toBe('friends.name');
   });
 
   test('fromJSON — round-trip', () => {
@@ -68,8 +68,8 @@ describe('QueryBuilder — serialization', () => {
 
     expect(json.shape).toBe(personShape.id);
     expect(json.fields).toHaveLength(2);
-    expect(json.fields[0].path).toBe('name');
-    expect(json.fields[1].path).toBe('hobby');
+    expect(json.fields[0]).toBe('name');
+    expect(json.fields[1]).toBe('hobby');
     expect(json.limit).toBe(20);
   });
 
@@ -78,7 +78,7 @@ describe('QueryBuilder — serialization', () => {
     expect(json.shape).toBe(personShape.id);
     expect(json.fields.length).toBeGreaterThan(0);
     // All unique property labels should be present
-    const paths = json.fields.map((f) => f.path);
+    const paths = json.fields.map((f) => (typeof f === "string" ? f : f.path));
     expect(paths).toContain('name');
     expect(paths).toContain('hobby');
     expect(paths).toContain('friends');
@@ -91,7 +91,7 @@ describe('QueryBuilder — serialization', () => {
       .toJSON();
 
     expect(json.subject).toBe(`${tmpEntityBase}p1`);
-    expect(json.singleResult).toBe(true);
+    expect(json.one).toBe(true);
   });
 
   test('toJSON — with offset', () => {
@@ -105,13 +105,13 @@ describe('QueryBuilder — serialization', () => {
     expect(json.limit).toBe(5);
   });
 
-  test('toJSON — orderBy direction', () => {
+  test('toJSON — orderBy direction (Z-c ordered sortBy array)', () => {
     const json = QueryBuilder.from(Person)
       .select(['name'])
       .orderBy((p) => p.name, 'DESC')
       .toJSON();
 
-    expect(json.orderDirection).toBe('DESC');
+    expect(json.sortBy).toEqual([{name: 'DESC'}]);
   });
 
   test('fromJSON — round-trip IR equivalence', () => {
@@ -189,7 +189,7 @@ describe('QueryBuilder — serialization', () => {
       .select((p) => [p.name])
       .toJSON();
     expect(json.fields).toHaveLength(1);
-    expect(json.fields![0].path).toBe('name');
+    expect(json.fields![0]).toBe('name');
   });
 
   test('toJSON — callback select nested', () => {
@@ -197,7 +197,7 @@ describe('QueryBuilder — serialization', () => {
       .select((p) => [p.friends.name])
       .toJSON();
     expect(json.fields).toHaveLength(1);
-    expect(json.fields![0].path).toBe('friends.name');
+    expect(json.fields![0]).toBe('friends.name');
   });
 
   test('toJSON — callback select with aggregation', () => {
@@ -205,7 +205,7 @@ describe('QueryBuilder — serialization', () => {
       .select((p) => [p.friends.size()])
       .toJSON();
     expect(json.fields).toHaveLength(1);
-    expect(json.fields![0].aggregation).toBe('count');
+    expect((json.fields![0] as any).aggregation).toBe('count');
   });
 
   test('fromJSON — round-trip callback select', () => {
@@ -218,21 +218,21 @@ describe('QueryBuilder — serialization', () => {
     // The restored builder won't have the callback, but the FieldSet
     // should produce equivalent IR for the selection part.
     expect(json.fields).toHaveLength(2);
-    expect(json.fields![0].path).toBe('name');
-    expect(json.fields![1].path).toBe('hobby');
+    expect(json.fields![0]).toBe('name');
+    expect(json.fields![1]).toBe('hobby');
     expect(lower(restored).limit).toBe(10);
   });
 
-  test('fromJSON — orderDirection preserved', () => {
+  test('fromJSON — sort direction preserved (ordered sortBy array)', () => {
     const json = QueryBuilder.from(Person)
       .select(['name'])
       .orderBy((p) => p.name, 'DESC')
       .toJSON();
-    expect(json.orderDirection).toBe('DESC');
+    expect(json.sortBy).toEqual([{name: 'DESC'}]);
 
     const restored = QueryBuilder.fromJSON(json);
     const restoredJson = restored.toJSON();
-    expect(restoredJson.orderDirection).toBe('DESC');
+    expect(restoredJson.sortBy).toEqual([{name: 'DESC'}]);
   });
 });
 
@@ -241,52 +241,31 @@ describe('QueryBuilder — serialization', () => {
 // =============================================================================
 
 describe('QueryBuilder — where clause serialization', () => {
-  test('toJSON — simple where equals', () => {
+  test('toJSON — simple where equals (Z-c implicit equals)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.name.equals('Bob'))
       .toJSON();
 
-    expect(json.where).toBeDefined();
-    expect(json.where!.kind).toBe('expression');
-    if (json.where!.kind === 'expression') {
-      expect(json.where!.ir.kind).toBe('binary_expr');
-      if (json.where!.ir.kind === 'binary_expr') {
-        expect(json.where!.ir.operator).toBe('=');
-      }
-    }
+    expect(json.where).toEqual({name: 'Bob'});
   });
 
-  test('toJSON — where with nodeRef arg', () => {
+  test('toJSON — where with nodeRef arg (Z-c {id} value)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.bestFriend.equals({id: `${tmpEntityBase}p1`}))
       .toJSON();
 
-    expect(json.where).toBeDefined();
-    expect(json.where!.kind).toBe('expression');
-    if (json.where!.kind === 'expression') {
-      expect(json.where!.ir.kind).toBe('binary_expr');
-      if (json.where!.ir.kind === 'binary_expr') {
-        expect(json.where!.ir.right.kind).toBe('reference_expr');
-      }
-    }
+    expect(json.where).toEqual({bestFriend: {id: `${tmpEntityBase}p1`}});
   });
 
-  test('toJSON — where with AND', () => {
+  test('toJSON — where with AND (Z-c implicit-AND multi-key)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.name.equals('Bob').and(p.hobby.equals('Chess')))
       .toJSON();
 
-    expect(json.where).toBeDefined();
-    expect(json.where!.kind).toBe('expression');
-    if (json.where!.kind === 'expression') {
-      expect(json.where!.ir.kind).toBe('logical_expr');
-      if (json.where!.ir.kind === 'logical_expr') {
-        expect(json.where!.ir.operator).toBe('and');
-      }
-    }
+    expect(json.where).toEqual({name: 'Bob', hobby: 'Chess'});
   });
 
   test('round-trip — simple where equals produces same IR', () => {
@@ -357,9 +336,7 @@ describe('QueryBuilder — sort key serialization', () => {
       .orderBy((p) => p.name, 'DESC')
       .toJSON();
 
-    expect(json.sortBy).toBeDefined();
-    expect(json.sortBy!.paths).toContain('name');
-    expect(json.sortBy!.direction).toBe('DESC');
+    expect(json.sortBy).toEqual([{name: 'DESC'}]);
   });
 
   test('round-trip — orderBy produces same IR', () => {
@@ -443,7 +420,7 @@ describe('QueryBuilder — nullSubject & pendingContextName serialization', () =
       shape: personShape.id,
       fields: [{path: 'name'}],
       nullSubject: true,
-      singleResult: true,
+      one: true,
     };
     const restored = QueryBuilder.fromJSON(json);
     // The restored builder should have _nullSubject set
@@ -497,7 +474,9 @@ describe('QueryBuilder — preload serialization', () => {
 
     // Should have 2 fields: name + bestFriend (with subSelect from preload)
     expect(json.fields!.length).toBe(2);
-    const bestFriendField = json.fields!.find((f) => f.path === 'bestFriend');
+    const bestFriendField = json.fields!.find(
+      (f) => typeof f !== 'string' && f.path === 'bestFriend',
+    ) as any;
     expect(bestFriendField).toBeDefined();
     expect(bestFriendField!.subSelect).toBeDefined();
     expect(bestFriendField!.subSelect!.fields.length).toBeGreaterThan(0);

@@ -1,5 +1,119 @@
 # Changelog
 
+## 2.10.1
+
+### Patch Changes
+
+- [#122](https://github.com/linked-cm/core/pull/122) [`9fa981e`](https://github.com/linked-cm/core/commit/9fa981e508950c6d470c78a9ee3a938cd776e3c5) Thanks [@flyon](https://github.com/flyon)! - DSL-JSON is now the compact, **IR-free "Z-c" wire grammar**. `query.toJSON()` no longer embeds
+  `IRExpression` in where-clauses or `{kind:…}` value tags in mutations — the wire reads like the DSL,
+  and `fromJSON()` rehydrates it losslessly (`lower(fromJSON(query.toJSON())) ≡ lower(query)`).
+
+  (Pre-adoption, so this ships as a patch despite the wire-shape change — there are no published
+  consumers of the old format to protect.)
+
+  **Where-clauses** are path-keyed conditions with an S-expr fallback:
+
+  ```jsonc
+  { "where": { "name": "Alice", "age": { ">": 18 } } }        // implicit equals + implicit AND
+  { "where": { "friends.some": { "name": "Moa" } } }          // quantifiers: some / every / none
+  { "where": ["<", ["+", ["STRLEN", {"path":"name"}], 10], 100] }  // computed → S-expr array
+  ```
+
+  Values follow one grammar: a bare scalar is a literal; `{id}` a node ref; `{$ctx}` / `{$ctx,path}` a
+  query-context reference; `{date}`, `{list}`, `{unset}`, `{add,remove}` the tagged kinds; a computed
+  value is an S-expr.
+
+  **Projections** use bare dotted-string leaves (`"name"`, `"friends.friends.name"`), `{as, value}` for
+  computed fields, scoped relation filters, and inline `as(<ShapeLabel>)` casts.
+
+  **Mutations** carry path-keyed node data:
+
+  ```jsonc
+  {
+    "op": "create",
+    "shape": "…/Person",
+    "data": {
+      "name": "Alice",
+      "bestFriend": { "name": "Bestie" },
+      "friends": { "list": [{ "id": "…" }] }
+    }
+  }
+  ```
+
+  with reserved `__id` (a fixed/predefined id) and `__shape` (the concrete shape, emitted only for a
+  subclass instance under a superclass-typed relation).
+
+  **Envelope:** `sortBy` is now an ordered array of `{path: direction}` (element order = precedence);
+  `.one()` serializes as `one` (was `singleResult`); the deprecated `orderDirection` is gone.
+
+  **Breaking / behavioral notes**
+
+  - The wire shape of `query.toJSON()` changed across the board; anything that read the old
+    IR-embedding / `{shape,fields}` / `{kind:…}` forms must move to the Z-c grammar.
+  - The exported types `MutationValueJSON` and `MutationNodeDataJSON` changed shape accordingly.
+  - `and`, `or`, and `not` are now **reserved property labels** (they are boolean combinators in a
+    where-clause and have no key-position escape) — declaring a property with one of those names throws
+    at shape registration.
+
+  See the full [DSL-JSON specification](./documentation/dsl-json.md). Deferred edge items are tracked
+  in `docs/backlog/002-dsl-json-zc-open-items.md`.
+
+## 2.10.0
+
+### Minor Changes
+
+- [#114](https://github.com/linked-cm/core/pull/114) [`30dd8d4`](https://github.com/linked-cm/core/commit/30dd8d47a990836dce2c078d07e50258b7a1c659) Thanks [@flyon](https://github.com/flyon)! - Flip the query contract: datasets receive the live query, DSL-JSON is the wire format, and the IR becomes an opt-in store detail behind a free `lower()`.
+
+  **Breaking changes** (the package is pre-adoption, so this ships as a minor rather than a major — there are no published consumers to protect yet)
+
+  - **`build()` is removed** from all builders. Use the free `lower(query)` function to produce IR:
+    ```ts
+    import { lower } from "@_linked/core";
+    const ir = lower(query); // select or any mutation
+    ```
+  - **`IDataset` methods now receive the live (closed) query object, not IR.** A dataset opts into the IR by calling `lower(query)`, or forwards the query as DSL-JSON via `query.toJSON()`:
+    ```ts
+    class MyStore implements IDataset {
+      async selectQuery(query: SelectQuery) {
+        return run(lower(query));
+      }
+    }
+    ```
+  - **`SelectQuery`/`CreateQuery`/`UpdateQuery`/`DeleteQuery` are now closed read-only interfaces** (the live query), not aliases of the IR. The IR types are `IRSelectQuery` / `IRCreateMutation` / `IRUpdateMutation` / `IRDeleteMutation`.
+  - **`QueryBuilder` is renamed to `SelectBuilder`** (a deprecated `QueryBuilder` alias is still exported).
+
+  **New: DSL-JSON, the standardized wire format**
+
+  Every query — select and every mutation — serializes losslessly to a compact, versioned JSON structure and rehydrates anywhere:
+
+  ```ts
+  import { fromJSON } from "@_linked/core";
+  const json = query.toJSON(); // builder → DSL-JSON (carries a wire version `v` and the shape)
+  await fromJSON(json).exec(); // DSL-JSON → live query → run (kind-detected by `op`)
+  ```
+
+  See the new [DSL-JSON specification](./documentation/dsl-json.md) for the envelope shapes, value encodings, and versioning.
+
+  **New: `{$ctx}` query-context references**
+
+  A query can reference the current context (e.g. the signed-in user) without resolving it yet — it travels on the wire as `{$ctx: "user"}` and is resolved at lowering time, whether the context is set or unset when the query is built. Works for the select subject, update target, mutation field values, delete ids, and where-clause args:
+
+  ```ts
+  Person.select((p) => p.name).for(getQueryContext("user")); // subject: {$ctx:"user"}
+  Person.delete(getQueryContext("user")); // delete-by-context (no .for() needed)
+  Person.update({ hobby: "x" }).for(getQueryContext("user"));
+  ```
+
+  Mutations throw `UnresolvedContextError` if the context isn't set at lowering; selects resolve to `null`. `subscribeQueryContext(fn)` is exported as the reactivity primitive for re-running queries when a context lands.
+
+  **New / changed exports**
+
+  `lower`, `fromJSON`, `lowerMutationJSON`, `encodeNodeData`, `decodeNodeData`, `subscribeQueryContext`, `UnresolvedContextError`, `encodeContextRef`, `isContextRefJSON`, `resolveContextId`, `CONTEXT_REF_KEY`, and the types `ContextRefJSON` / `DeleteId` / `IRSelectQuery` / `IR*Mutation`.
+
+  **Tree-shaking**
+
+  The IR pipeline (and the SPARQL layer) is reachable only through `lower()`. A client that builds, serializes, and forwards queries but never lowers them tree-shakes the entire IR + SPARQL pipeline out of its bundle. `package.json` now declares `sideEffects` accordingly.
+
 ## 2.9.0
 
 ### Minor Changes

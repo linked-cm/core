@@ -604,10 +604,23 @@ const connectValueShape = <
   }
 };
 
+/**
+ * The DSL-JSON where-clause combinators. A property may not be named after one,
+ * because a condition key in those positions has no `{path}` escape (the key is a
+ * bare string). See documentation/dsl-json.md (Reserved words).
+ */
+const RESERVED_PROPERTY_LABELS = new Set(['and', 'or', 'not']);
+
 export function registerPropertyShape(
   shape: NodeShape,
   propertyShape: PropertyShape,
 ) {
+  if (RESERVED_PROPERTY_LABELS.has(propertyShape.label)) {
+    throw new Error(
+      `Property label '${propertyShape.label}' is reserved (a DSL-JSON boolean combinator) ` +
+        `and cannot be used as a property name. See documentation/dsl-json.md (Reserved words).`,
+    );
+  }
   const inherited = shape.getPropertyShape(propertyShape.label, true);
   const existing = shape.getPropertyShape(propertyShape.label, false);
   if (!existing && inherited) {
