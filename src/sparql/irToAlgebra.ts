@@ -1840,13 +1840,36 @@ export function updateToAlgebra(
   const subjectTerm = iriTerm(query.id);
   const result = processUpdateFields(query.data, subjectTerm, options);
 
+  // Partition old-value/optional triples into subject-anchored ones and those
+  // anchored on a traversal target variable (e.g. `?a1 <name> ?a1_name` from a
+  // `p.bestFriend.name.ucase()` expression). Traversal-anchored triples MUST be
+  // nested inside the same OPTIONAL group as their traversal edge — otherwise,
+  // when the subject has no such edge, the leaf variable is unbound and the
+  // property triple matches every entity in the graph (data-corruption bug).
+  const travTos = new Set(
+    (query.traversalPatterns ?? []).map((t) => t.to),
+  );
+  const travAnchoredByTo = new Map<string, SparqlTriple[]>();
+  const subjectAnchored: SparqlTriple[] = [];
+  for (const triple of result.oldValueTriples) {
+    if (triple.subject.kind === 'variable' && travTos.has(triple.subject.name)) {
+      const list = travAnchoredByTo.get(triple.subject.name) ?? [];
+      list.push(triple);
+      travAnchoredByTo.set(triple.subject.name, list);
+    } else {
+      subjectAnchored.push(triple);
+    }
+  }
+
   let whereAlgebra = wrapOldValueOptionals(
     {type: 'bgp', triples: []},
-    result.oldValueTriples,
+    subjectAnchored,
   );
 
-  // Add traversal OPTIONAL patterns (for multi-segment expression refs)
-  // These must come BEFORE expression BINDs since the BINDs reference traversal variables.
+  // Add traversal OPTIONAL patterns (for multi-segment expression refs). The
+  // traversal edge and its dependent leaf property triples share one OPTIONAL
+  // group so the leaf variable is scoped to the traversal target. These come
+  // BEFORE expression BINDs since the BINDs reference the traversal variables.
   if (query.traversalPatterns) {
     for (const trav of query.traversalPatterns) {
       const fromTerm =
@@ -1856,11 +1879,19 @@ export function updateToAlgebra(
         iriTerm(trav.property),
         varTerm(trav.to),
       );
-      whereAlgebra = {
-        type: 'left_join',
-        left: whereAlgebra,
-        right: {type: 'bgp', triples: [traversalTriple]},
-      };
+      // The traversal edge binds the target var; each dependent leaf property is
+      // a nested OPTIONAL *within* that scope, so a missing optional property
+      // (e.g. a bestFriend with no hobby) doesn't drop the whole group, while an
+      // absent edge still leaves every leaf var unbound (no cross-entity match).
+      let travNode: SparqlAlgebraNode = {type: 'bgp', triples: [traversalTriple]};
+      for (const leaf of travAnchoredByTo.get(trav.to) ?? []) {
+        travNode = {
+          type: 'left_join',
+          left: travNode,
+          right: {type: 'bgp', triples: [leaf]},
+        };
+      }
+      whereAlgebra = {type: 'left_join', left: whereAlgebra, right: travNode};
     }
   }
 

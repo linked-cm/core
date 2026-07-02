@@ -702,11 +702,42 @@ describe('coverage §1 — expression updates', () => {
     expect(yr).toBeGreaterThanOrEqual(2026);
   });
 
-  // BUG (Phase 2 / backlog 003): expression update over a traversal does not
-  // join on the target's traversal — it writes the UCASE/ LCASE of *every*
-  // entity's value onto the target (silent data corruption). Quarantined.
-  test.skip('updateExprTraversal — hobby := bestFriend.name.ucase() [BUG: unscoped traversal]', () => {});
-  test.skip('updateExprSharedTraversal — shared bestFriend traversal [BUG: unscoped traversal]', () => {});
+  // backlog 003 (FIXED): expression update over a traversal now nests the leaf
+  // property triple inside its traversal-edge OPTIONAL, so it is scoped to the
+  // target's traversal target instead of every entity in the graph.
+  test('updateExprTraversal — hobby := bestFriend.name.ucase(), target WITH bestFriend', async () => {
+    if (!fusekiAvailable) return;
+    // p2.bestFriend = p3 ("Jinx") → hobby becomes "JINX"
+    await store.updateQuery(
+      Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).for({id: `${ENT}p2`}),
+    );
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p2> <${P}/hobby> ?h }`);
+    expect(r.results.bindings.map((b: any) => b.h.value)).toEqual(['JINX']);
+  });
+
+  test('updateExprTraversal — no cross-entity corruption when target has no bestFriend', async () => {
+    if (!fusekiAvailable) return;
+    // p1 has no bestFriend: old hobby is removed, nothing is inserted — and
+    // crucially the hobby must NOT be filled with every entity's UCASE(name).
+    await store.updateQuery(queryFactories.updateExprTraversal());
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${P}/hobby> ?h }`);
+    const vals = r.results.bindings.map((b: any) => b.h.value);
+    expect(vals).not.toContain('SEMMY');
+    expect(vals.length).toBeLessThanOrEqual(1);
+  });
+
+  test('updateExprSharedTraversal — two fields off bestFriend stay scoped', async () => {
+    if (!fusekiAvailable) return;
+    // p2.bestFriend = p3 ("Jinx", no hobby): name := "JINX"; hobby := lcase(none) → unset
+    await store.updateQuery(
+      Person.update((p: any) => ({
+        name: p.bestFriend.name.ucase(),
+        hobby: p.bestFriend.hobby.lcase(),
+      })).for({id: `${ENT}p2`}),
+    );
+    const n = await executeSparqlQuery(`SELECT ?n WHERE { <${ENT}p2> <${P}/name> ?n }`);
+    expect(n.results.bindings.map((b: any) => b.n.value)).toEqual(['JINX']);
+  });
 });
 
 // =========================================================================

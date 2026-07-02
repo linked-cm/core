@@ -32,7 +32,16 @@ The projection alias reuses the traversal's own variable `?a1`. Fix: allocate a
 fresh alias (e.g. `?a1_expr`) for an expression projection that wraps a traversal.
 Likely localized to projection-alias generation in `src/sparql/irToAlgebra.ts`.
 
-## Bug 2 — UPDATE: expression over a traversal is unscoped (data corruption)
+## Bug 2 — UPDATE: expression over a traversal is unscoped (data corruption) — ✅ FIXED
+
+> Fixed in `src/sparql/irToAlgebra.ts` (`updateToAlgebra`): leaf property triples
+> anchored on a traversal-target variable are now nested as OPTIONALs **inside**
+> their traversal-edge group, instead of being flat LEFT JOINs applied before the
+> edge. So `?a1` is scoped to the subject's traversal target (an absent edge
+> leaves every leaf var unbound → no cross-entity match), and each leaf stays
+> independently optional (a missing property doesn't drop sibling fields).
+> `updateExprTraversal` / `updateExprSharedTraversal` un-quarantined.
+
 
 `Person.update(p => ({hobby: p.bestFriend.name.ucase()})).for(p1)` (fixture
 `updateExprTraversal`). `p1` has **no** `bestFriend`, so the expected result is
