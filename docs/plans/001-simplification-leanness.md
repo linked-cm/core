@@ -1,6 +1,6 @@
 ---
 summary: Behavior-preserving simplification & leanness pass over @_linked/core — remove dead code, an unused dependency, build-config bloat, a no-op IR pass, and add two hot-path memoizations. Safety net is the full 1444-test suite staying green.
-status: Implementation
+status: Review
 source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 1)
 packages: [core]
 ---
