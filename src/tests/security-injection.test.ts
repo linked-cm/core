@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 import {describe, expect, test} from '@jest/globals';
-import {formatUri, assertSafeIri} from '../sparql/sparqlUtils';
+import {formatUri, assertSafeIri, assertSafeCallName} from '../sparql/sparqlUtils';
 
 // Report 021 §2 — SPARQL-injection hardening regression tests.
 
@@ -34,5 +34,25 @@ describe('SEC1 — IRI validation in formatUri', () => {
     expect(() => assertSafeIri('http://ok/1')).not.toThrow();
     expect(() => assertSafeIri('a>b' as string)).toThrow(/Invalid IRI/);
     expect(() => assertSafeIri(undefined as unknown as string)).toThrow(/Invalid IRI/);
+  });
+});
+
+describe('SEC2 — function/aggregate name allowlist', () => {
+  test('all SPARQL 1.1 builtins used by the DSL are accepted (case-insensitive)', () => {
+    for (const fn of ['STRLEN', 'NOW', 'CONCAT', 'REGEX', 'COALESCE', 'IF', 'ABS', 'SHA256', 'ENCODE_FOR_URI', 'isIRI']) {
+      expect(() => assertSafeCallName(fn)).not.toThrow();
+    }
+    for (const agg of ['count', 'sum', 'avg', 'min', 'max', 'COUNT']) {
+      expect(() => assertSafeCallName(agg)).not.toThrow();
+    }
+  });
+
+  test('an injected S-expr head (non-builtin) is rejected', () => {
+    // The fromJSON decoder turns an unknown S-expr head into a "function name"
+    // that would otherwise be emitted verbatim: `a() . } ; DELETE WHERE {...}(`.
+    expect(() => assertSafeCallName('a() . } ; DELETE WHERE { ?s ?p ?o } #')).toThrow(/Unsupported SPARQL/);
+    expect(() => assertSafeCallName('DROP')).toThrow(/Unsupported SPARQL/);
+    expect(() => assertSafeCallName('')).toThrow(/Unsupported SPARQL/);
+    expect(() => assertSafeCallName(undefined as unknown as string)).toThrow(/Unsupported SPARQL/);
   });
 });

@@ -25,6 +25,46 @@ export function assertSafeIri(uri: string): void {
   }
 }
 
+// SPARQL 1.1 built-in functions + aggregate names (§17.4, §18.5). Names are
+// case-insensitive in SPARQL; we compare upper-cased. Function/aggregate names
+// are emitted verbatim into query text, so a name from untrusted `fromJSON`
+// input (an S-expr head that isn't a known combinator becomes a "function
+// name") could otherwise inject raw SPARQL — this allowlist is the guard.
+const SPARQL_CALL_NAMES = new Set([
+  // string
+  'STR', 'STRLEN', 'SUBSTR', 'UCASE', 'LCASE', 'STRSTARTS', 'STRENDS',
+  'CONTAINS', 'STRBEFORE', 'STRAFTER', 'ENCODE_FOR_URI', 'CONCAT', 'LANGMATCHES',
+  'REGEX', 'REPLACE',
+  // term / type
+  'LANG', 'DATATYPE', 'BOUND', 'IRI', 'URI', 'BNODE', 'STRDT', 'STRLANG',
+  'UUID', 'STRUUID', 'SAMETERM', 'ISIRI', 'ISURI', 'ISBLANK', 'ISLITERAL',
+  'ISNUMERIC',
+  // numeric
+  'ABS', 'CEIL', 'FLOOR', 'ROUND', 'RAND',
+  // date/time
+  'YEAR', 'MONTH', 'DAY', 'HOURS', 'MINUTES', 'SECONDS', 'TIMEZONE', 'TZ', 'NOW',
+  // hash
+  'MD5', 'SHA1', 'SHA256', 'SHA384', 'SHA512',
+  // control / conditional
+  'IF', 'COALESCE',
+  // aggregates
+  'COUNT', 'SUM', 'MIN', 'MAX', 'AVG', 'SAMPLE', 'GROUP_CONCAT',
+]);
+
+/**
+ * Assert that a function or aggregate name is a known SPARQL 1.1 builtin before
+ * it is emitted verbatim into query text. Throws on anything else (e.g. an
+ * attacker-supplied S-expr head), which is the SPARQL-injection guard for the
+ * `function_expr` / `aggregate_expr` serialization paths.
+ */
+export function assertSafeCallName(name: string): void {
+  if (typeof name !== 'string' || !SPARQL_CALL_NAMES.has(name.toUpperCase())) {
+    throw new Error(
+      `Unsupported SPARQL function/aggregate: ${JSON.stringify(name)}. Only SPARQL 1.1 built-in functions are allowed.`,
+    );
+  }
+}
+
 /**
  * Format a URI for SPARQL output.
  * Returns prefixed form (e.g. `rdf:type`) if a prefix is registered and the

@@ -14,6 +14,7 @@ import {
   formatLiteral,
   escapeSparqlString,
   collectPrefixes,
+  assertSafeCallName,
 } from './sparqlUtils.js';
 
 // ---------------------------------------------------------------------------
@@ -125,6 +126,7 @@ export function serializeExpression(
       return `!(${serializeExpression(expr.inner, collector)})`;
 
     case 'function_expr': {
+      assertSafeCallName(expr.name);
       const args = expr.args
         .map((a) => serializeExpression(a, collector))
         .join(', ');
@@ -132,6 +134,7 @@ export function serializeExpression(
     }
 
     case 'aggregate_expr': {
+      assertSafeCallName(expr.name);
       const args = expr.args
         .map((a) => serializeExpression(a, collector))
         .join(', ');
