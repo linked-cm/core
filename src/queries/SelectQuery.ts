@@ -1232,6 +1232,7 @@ export class QueryShapeSet<
       leastSpecificShape,
       subQueryFn as any,
       parentSegments,
+      this,
     );
     return fs;
   }
@@ -1405,6 +1406,7 @@ export class QueryShape<
       leastSpecificShape,
       subQueryFn as any,
       parentSegments,
+      this,
     );
     return fs;
   }

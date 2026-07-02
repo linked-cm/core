@@ -279,6 +279,12 @@ function buildNestingDescriptor(query: IRSelectQuery): NestingDescriptor {
       sourceAlias = expression.sourceAlias;
     } else if (expression.kind === 'alias_expr') {
       sourceAlias = expression.alias;
+    } else if (expression.kind === 'aggregate_expr') {
+      // An aggregate over a traversed entity's property (e.g. a sub-select
+      // `f.friends.size()`) is grouped per that entity — anchor the field to
+      // the argument's source alias, not the root.
+      const propArg = expression.args.find((a) => a.kind === 'property_expr');
+      sourceAlias = propArg && propArg.kind === 'property_expr' ? propArg.sourceAlias : rootAlias;
     } else {
       sourceAlias = rootAlias;
     }

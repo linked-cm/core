@@ -702,12 +702,23 @@ export function selectToAlgebra(
   // stays scoped — otherwise an empty window leaves ?childVar unbound and the
   // outer property OPTIONAL leaks across the whole graph.
   const subSelectChildPropertyTriplesByAlias = new Map<string, SparqlTriple[]>();
+  // Same scoping rule for filtered traversals (`.where(...)`): anything anchored
+  // on the filtered alias must live inside its filtered OPTIONAL block — when
+  // the filter matches nothing, the alias is unbound and a top-level OPTIONAL
+  // would range over the whole graph.
+  const filteredTraverseAliases = new Set(filteredTraverseBlocks.map((b) => b.toAlias));
+  const filteredChildPropertyTriplesByAlias = new Map<string, SparqlTriple[]>();
   for (const propTriple of optionalPropertyTriples) {
     if (propTriple.subject.kind === 'variable' &&
       subSelectAliases.has(propTriple.subject.name)) {
       const triples = subSelectChildPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
       triples.push(propTriple);
       subSelectChildPropertyTriplesByAlias.set(propTriple.subject.name, triples);
+    } else if (propTriple.subject.kind === 'variable' &&
+      filteredTraverseAliases.has(propTriple.subject.name)) {
+      const triples = filteredChildPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
+      triples.push(propTriple);
+      filteredChildPropertyTriplesByAlias.set(propTriple.subject.name, triples);
     } else if (propTriple.subject.kind === 'variable' &&
       optionalTraversalAliases.has(propTriple.subject.name)) {
       const triples = nestedOptionalPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
@@ -729,7 +740,9 @@ export function selectToAlgebra(
   const rootOptionalTraversalAliases = traversePatternsInOrder
     .filter((pattern) =>
       optionalTraversalAliases.has(pattern.to) &&
-      !optionalTraversalAliases.has(pattern.from),
+      !optionalTraversalAliases.has(pattern.from) &&
+      // Children of a filtered traversal nest inside its filtered block (5b)
+      !filteredTraverseAliases.has(pattern.from),
     )
     .map((pattern) => pattern.to);
 
@@ -820,6 +833,24 @@ export function selectToAlgebra(
     // Wrap each filter property triple in its own nested OPTIONAL
     for (const propTriple of filterPropertyTriples) {
       blockInner = wrapOptional(blockInner, {type: 'bgp', triples: [propTriple]});
+    }
+    // Projected property triples on the filtered alias that aren't part of the
+    // filter (e.g. `.where(name=...).select(pp => [pp.hobby])`)
+    for (const propTriple of filteredChildPropertyTriplesByAlias.get(block.toAlias) ?? []) {
+      blockInner = wrapOptional(blockInner, {type: 'bgp', triples: [propTriple]});
+    }
+    // Optional child traversal subtrees (nested sub-selects below the filtered
+    // alias) — kept inside the block so an empty filter match leaves them unbound
+    for (const childAlias of childOptionalAliasesByParent.get(block.toAlias) ?? []) {
+      blockInner = wrapOptional(
+        blockInner,
+        buildOptionalTraversalSubtree(
+          childAlias,
+          traversePatternMap,
+          childOptionalAliasesByParent,
+          nestedOptionalPropertyTriplesByAlias,
+        ),
+      );
     }
     const filteredBlock: SparqlFilter = {type: 'filter', expression: filterExpr, inner: blockInner};
     algebra = wrapOptional(algebra, filteredBlock);
@@ -1000,13 +1031,29 @@ export function selectToAlgebra(
     }));
   }
 
+  // `.one()` lowers to limit=1 + singleResult, but LIMIT bounds ROWS, not
+  // entities. When the query yields multiple rows per root entity (traversals
+  // or plural properties), a row-level LIMIT would truncate the entity's own
+  // nested data — omit it and let the result mapper pick the single entity.
+  const multiRowPerEntity =
+    query.patterns.some((p) => p.kind === 'traverse') ||
+    query.projection.some(
+      (item) =>
+        item.expression.kind === 'property_expr' &&
+        !(typeof item.expression.maxCount === 'number' && item.expression.maxCount <= 1),
+    );
+  const limit =
+    query.singleResult && query.limit === 1 && multiRowPerEntity
+      ? undefined
+      : query.limit;
+
   return {
     type: 'select',
     algebra,
     projection,
     distinct: !hasAggregates ? true : undefined,
     orderBy,
-    limit: query.limit,
+    limit,
     offset: query.offset,
     groupBy,
     having: havingExpr,

@@ -380,3 +380,34 @@ matching `_derive` semantics.
 **84 passing, 3 skipped** in the coverage suite (both 005 tests un-quarantined
 with exact-result assertions); **full suite 1435 passed, 0 failed**. Remaining
 skips are the backlog 004 nested sub-select trio.
+
+## Iteration 3 — backlog 004 nested sub-select bugs
+
+Fixed the last three quarantined bugs.
+
+### Bug 3 — dropped inline `.where()` on a plural sub-select — FIXED
+`.where(...).select(...)` lost the filter: `forSubSelect` never captured the
+source chain's `wherePath`. Now carried via `parentWherePath`/`Index` on the
+FieldSet and mapped to `entry.scopedFilter` (`FieldSet.ts`, `SelectQuery.ts`).
+Fixing that exposed a second defect: children of a filtered traversal (nested
+sub-select traversals + projected property triples) were emitted as top-level
+OPTIONALs — a cross-product when the filter matched nothing. They now nest
+inside the filtered block (`irToAlgebra.ts` §5b). DSL-JSON round-trip verified.
+
+### Bug 4 — nested aggregate mis-scoped — FIXED
+SPARQL was already per-friend; the result mapper anchored `aggregate_expr` at
+the root. Now anchored to the aggregate argument's `sourceAlias`
+(`resultMapping.ts`).
+
+### Bug 5 — `.one()` truncates plural sub-rows — FIXED (diagnosis revised)
+Not a null-property join issue: `.one()`'s `LIMIT 1` bounds rows, and one
+entity spans N rows when traversals/plural properties are projected. LIMIT is
+now omitted for `singleResult` queries that yield multiple rows per entity; the
+mapper picks the single entity (`irToAlgebra.ts`). Flat `.one()` keeps LIMIT 1.
+
+### Result
+**87 passing, 0 skipped** in the coverage suite — no quarantined tests remain;
+**full suite 1438 passed, 0 failed**. All 7 bugs surfaced by this plan's
+coverage work (backlog 003/004/005) are fixed. Residuals documented in backlog
+004 (nested filtered-inside-filtered traversals) and 005 (COALESCE/IF args in
+where-filters marked required).

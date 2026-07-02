@@ -617,16 +617,52 @@ describe('coverage §1 — deep nesting', () => {
     expect(find(rows, 'p1').bestFriend).toBeNull();
   });
 
-  // Quarantined — surfaced bugs (backlog 004):
-  //  - pluralFilteredNestedSubSelect: inline .where() on a plural sub-select is
-  //    dropped (all pluralTestProp entries returned, not just name='Moa').
-  //  - subSelectWithCount: nested aggregate f.friends.size() is mis-scoped to the
-  //    parent row instead of each friend.
-  //  - subSelectWithOne: under .one(), a friend with a null projected property
-  //    (Jinx, no hobby) is dropped from the array.
-  test.skip('pluralFilteredNestedSubSelect [BUG: filter on plural sub-select dropped]', () => {});
-  test.skip('subSelectWithCount [BUG: nested aggregate mis-scoped to parent]', () => {});
-  test.skip('subSelectWithOne [BUG: null-property friend dropped under .one()]', () => {});
+  test('pluralFilteredNestedSubSelect — inline .where() keeps only Moa + her friends', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('pluralFilteredNestedSubSelect')) as Row[];
+    const p1 = find(rows, 'p1');
+    expect(p1.pluralTestProp).toHaveLength(1);
+    const moa = p1.pluralTestProp[0];
+    expect(moa.id).toContain('p2');
+    expect(moa.name).toBe('Moa');
+    expect(
+      moa.friends
+        .map((f: Row) => ({id: f.id.replace(ENT, ''), name: f.name, hobby: f.hobby}))
+        .sort((a: Row, b: Row) => (a.id as string).localeCompare(b.id as string)),
+    ).toEqual([
+      {id: 'p3', name: 'Jinx', hobby: null},
+      {id: 'p4', name: 'Quinn', hobby: null},
+    ]);
+    // Persons without a matching pluralTestProp keep an empty array (no leak
+    // of unfiltered entries and no cross-product from the unbound alias)
+    expect(find(rows, 'p2').pluralTestProp).toEqual([]);
+    expect(find(rows, 'p5').pluralTestProp).toEqual([]);
+  });
+
+  test('subSelectWithCount — numFriends scoped to each friend, not the parent', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('subSelectWithCount')) as Row[];
+    const friendCounts = (row: Row) =>
+      Object.fromEntries(row.friends.map((f: Row) => [f.name, f.numFriends]));
+    expect(find(rows, 'p1').numFriends).toBeUndefined();
+    expect(friendCounts(find(rows, 'p1'))).toEqual({Moa: 2, Jinx: 0});
+    expect(friendCounts(find(rows, 'p2'))).toEqual({Jinx: 0, Quinn: 0});
+    expect(find(rows, 'p3').friends).toEqual([]);
+  });
+
+  test('subSelectWithOne — .one() keeps the full friends array incl. null-hobby Jinx', async () => {
+    if (!fusekiAvailable) return;
+    const row = (await runSel('subSelectWithOne')) as Row;
+    expect(row.id).toContain('p1');
+    expect(
+      row.friends
+        .map((f: Row) => ({name: f.name, hobby: f.hobby}))
+        .sort((a: Row, b: Row) => (a.name as string).localeCompare(b.name as string)),
+    ).toEqual([
+      {name: 'Jinx', hobby: null},
+      {name: 'Moa', hobby: 'Jogging'},
+    ]);
+  });
 });
 
 // =========================================================================

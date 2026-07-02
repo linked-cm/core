@@ -156,6 +156,14 @@ export class FieldSet<R = any, Source = any> {
   readonly shapeType?: any;
 
   /**
+   * For sub-select FieldSets: inline `.where()` filter found on the parent
+   * traversal chain (e.g. `p.friends.where(...).select(...)`), plus the index
+   * into `parentSegments` of the segment it scopes.
+   */
+  readonly parentWherePath?: WherePath;
+  readonly parentWherePathIndex?: number;
+
+  /**
    * For sub-select FieldSets: inner LIMIT/OFFSET/ORDER BY carried from
    * `.limit()`/`.offset()`/`.orderBy()` chained on the nested select.
    * These bound the related collection per parent (single-subject only).
@@ -215,6 +223,7 @@ export class FieldSet<R = any, Source = any> {
     shapeClass: any,
     fn: (p: any) => R,
     parentSegments: PropertyShape[],
+    source?: QueryBuilderObjectLike,
   ): FieldSet<R, Source> {
     const nodeShape = shapeClass.shape || shapeClass;
     // Trace once: get both the raw response (for type carriers) and the entries
@@ -223,10 +232,23 @@ export class FieldSet<R = any, Source = any> {
     const entries = FieldSet.extractSubSelectEntries(nodeShape, traceResponse);
     const fs = new FieldSet(nodeShape, entries) as FieldSet<R, Source>;
     // Writable cast — these readonly fields are initialised once here at construction time
-    const w = fs as {-readonly [K in 'traceResponse' | 'parentSegments' | 'shapeType']: FieldSet<R, Source>[K]};
+    const w = fs as {-readonly [K in 'traceResponse' | 'parentSegments' | 'shapeType' | 'parentWherePath' | 'parentWherePathIndex']: FieldSet<R, Source>[K]};
     w.traceResponse = traceResponse;
     w.parentSegments = parentSegments;
     w.shapeType = shapeClass;
+    // Carry an inline `.where()` from the parent traversal chain (walked
+    // leaf→root, same convention as convertTraceResult for plain paths).
+    let current = source;
+    let leafDistance = 0;
+    while (current) {
+      if (current.wherePath) {
+        w.parentWherePath = current.wherePath as WherePath;
+        w.parentWherePathIndex = parentSegments.length - 1 - leafDistance;
+        break;
+      }
+      current = current.subject;
+      leafDistance++;
+    }
     return fs;
   }
 
@@ -348,6 +370,8 @@ export class FieldSet<R = any, Source = any> {
       traceResponse: this.traceResponse,
       parentSegments: this.parentSegments,
       shapeType: this.shapeType,
+      parentWherePath: this.parentWherePath,
+      parentWherePathIndex: this.parentWherePathIndex,
       innerLimit: this.innerLimit,
       innerOffset: this.innerOffset,
       innerOrderBy: this.innerOrderBy,
@@ -728,6 +752,12 @@ export class FieldSet<R = any, Source = any> {
         path: new PropertyPath(rootShape, obj.parentSegments),
         subSelect: subSelect as FieldSet | undefined,
       };
+      // Carry an inline `.where()` from the parent traversal chain
+      // (e.g. `p.friends.where(...).select(...)`).
+      if (obj.parentWherePath) {
+        entry.scopedFilter = obj.parentWherePath;
+        entry.scopedFilterIndex = obj.parentWherePathIndex;
+      }
       // Carry inner LIMIT/OFFSET/ORDER BY from `.limit()`/`.offset()`/`.orderBy()`.
       if (typeof obj.innerLimit === 'number') entry.innerLimit = obj.innerLimit;
       if (typeof obj.innerOffset === 'number') entry.innerOffset = obj.innerOffset;
