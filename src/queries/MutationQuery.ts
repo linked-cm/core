@@ -178,7 +178,6 @@ export class MutationQueryFactory extends QueryFactory {
     value,
     propShape: PropertyShape,
   ): UpdateNodePropertyValue {
-    // let value = obj[propShape.label];
     return {
       prop: propShape,
       val: this.convertUpdateValue(value, propShape),

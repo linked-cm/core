@@ -6,7 +6,6 @@
 import {type NodeReferenceValue, toNodeReference} from '../utils/NodeReference.js';
 import {Shape, type ShapeConstructor} from './Shape.js';
 import {shacl} from '../ontologies/shacl.js';
-import {URI} from '../utils/URI.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import {normalizePropertyPath, type PropertyPathDecoratorInput} from '../paths/normalizePropertyPath.js';

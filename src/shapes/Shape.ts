@@ -7,7 +7,6 @@ import type {NodeShape, PropertyShape} from './SHACL.js';
 import type {
   QueryBuildFn,
   QueryResponseToResultType,
-  QueryShape,
   SelectAllQueryResponse,
   WhereClause,
 } from '../queries/SelectQuery.js';

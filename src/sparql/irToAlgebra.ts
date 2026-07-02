@@ -20,7 +20,6 @@ import type {
   SparqlSelectPlan,
   SparqlInsertDataPlan,
   SparqlDeleteInsertPlan,
-  SparqlDeleteWherePlan,
   SparqlAlgebraNode,
   SparqlBGP,
   SparqlTriple,
@@ -37,7 +36,6 @@ import {
   selectPlanToSparql,
   insertDataPlanToSparql,
   deleteInsertPlanToSparql,
-  deleteWherePlanToSparql,
 } from './algebraToString.js';
 import {rdf} from '../ontologies/rdf.js';
 import {shacl} from '../ontologies/shacl.js';

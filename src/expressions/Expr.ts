@@ -86,7 +86,6 @@ export const Expr = {
     if (parts.length < 2) {
       throw new Error('Expr.concat() requires at least 2 arguments');
     }
-    const [first, ...rest] = parts;
     return new ExpressionNode(
       {
         kind: 'function_expr',

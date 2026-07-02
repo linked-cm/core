@@ -135,7 +135,8 @@ Validation (quick gate = full gate):
 - `npm test` → 1444 passed / 117 skipped / 5 snapshots — **exact match** to baseline.
 - Structural: `npx tsc -p tsconfig-esm.json` then assert `lib/esm/test-helpers` does **not** exist and `lib/esm/index.js` does; assert no `__metadata(` string appears in `lib/esm/shapes/List.js` (decorator-metadata no longer emitted).
 
-### Phase 2 — Internal dead code + unused imports
+### Phase 2 — Internal dead code + unused imports ✅ DONE
+Result: compile exit 0 (proves no dangling refs); `npm test` = 1444/117/5 (exact baseline). Structural: no `utils/Types` refs, dead `irToAlgebra` imports gone. No deviations.
 Tasks: delete `src/utils/Types.ts`; strip the five unused imports/comment listed in the plan.
 Validation:
 - `npm run compile` → exit 0 (compilation failure here would prove a symbol was NOT dead — treat as a stop-and-report deviation).
