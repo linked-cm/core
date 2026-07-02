@@ -1301,13 +1301,26 @@ function collectRequiredBindingKeys(expr: IRExpression): Set<string> {
         collectRequiredBindingKeys(expr.left),
         collectRequiredBindingKeys(expr.right),
       );
-    case 'function_expr':
+    case 'function_expr': {
+      const fn = expr.name.toUpperCase();
       // BOUND explicitly tests boundness — forcing its argument into a
       // required (inner-join) pattern would make !BOUND unsatisfiable.
-      if (expr.name.toUpperCase() === 'BOUND') {
+      // COALESCE is unbound-tolerant by design — requiring its arguments
+      // would make the fallback unreachable.
+      if (fn === 'BOUND' || fn === 'COALESCE') {
         return new Set<string>();
       }
+      // IF: an unbound variable in the condition errors the row out either
+      // way, so the condition may keep its requirements — but the then/else
+      // branches must stay optional (the untaken branch may reference a
+      // property the entity doesn't have).
+      if (fn === 'IF') {
+        return expr.args.length > 0
+          ? collectRequiredBindingKeys(expr.args[0])
+          : new Set<string>();
+      }
       return mergeKeySets(...expr.args.map((arg) => collectRequiredBindingKeys(arg)));
+    }
     case 'not_expr':
       return collectRequiredBindingKeys(expr.expression);
     case 'logical_expr': {

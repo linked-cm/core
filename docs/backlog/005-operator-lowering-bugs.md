@@ -45,15 +45,29 @@ real person returns `'fake'`.
 (Passing a raw property as the condition instead of a comparison throws
 `Invalid expression input` — separate, lower priority.)
 
-## Residual (not yet covered by a failing test)
+## Residual: `COALESCE`/`IF` args in a where-filter marked required — ✅ FIXED
 
-`COALESCE`/`IF` arguments in a **where** filter are still marked required by
+`COALESCE`/`IF` arguments in a **where** filter were marked required by
 `collectRequiredBindingKeys` — e.g. `p.hobby.defaultTo('none').equals('none')`
-would inner-join `hobby` and miss rows lacking it. Same bug family as Bug 6;
-fix would be to treat null-tolerant functions' args as non-required. Low
-priority until a use case hits it.
+inner-joined `hobby` and returned `[]` instead of the persons lacking it (the
+fallback was unreachable, same bug family as Bug 6). Both forms were reachable
+from the DSL and failed silently.
+
+> Fixed in `src/sparql/irToAlgebra.ts` (`collectRequiredBindingKeys`):
+> `COALESCE` contributes no required binding keys (unbound-tolerant by design);
+> `IF` keeps only its **condition's** requirements (an unbound condition
+> variable errors the row out either way) while the then/else branches stay
+> optional — the untaken branch may reference a property the entity doesn't
+> have. Covered by fixtures `whereExprDefaultTo` (→ `p3,p4,p5`) and
+> `whereExprIfThen` (Quinn matched via the taken branch while the untaken
+> `STR(hobby)` branch references her missing property → `p4`).
+
+Still open (separate, lower priority): passing a **bare** proxy property (e.g.
+`p.hobby` instead of `p.hobby.str()`) as an `Expr.ifThen`/`Expr.firstDefined`
+argument throws `Invalid expression input` — the proxy is not an
+ExpressionNode. Method-wrapped forms work.
 
 ## Status
 
-Both bugs fixed and un-quarantined; coverage suite asserts exact results
-against live Fuseki.
+Both bugs and the where-filter residual fixed and un-quarantined; coverage
+suite asserts exact results against live Fuseki.

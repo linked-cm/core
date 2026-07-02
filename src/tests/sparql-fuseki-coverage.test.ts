@@ -440,6 +440,15 @@ describe('coverage §2 — null / introspection / hash', () => {
       p1: 'Reading', p2: 'Jogging', p3: 'none', p4: 'none', p5: 'none',
     });
   });
+  test('defaultTo (coalesce) in a where-filter matches persons missing the property', async () => {
+    if (!fusekiAvailable) return;
+    expect(await filterIds(queryFactories.whereExprDefaultTo())).toEqual(['p3', 'p4', 'p5']);
+  });
+  test('Expr.ifThen in a where-filter — taken branch matches even when the untaken branch references a missing property', async () => {
+    if (!fusekiAvailable) return;
+    // p4 (Quinn) has no hobby; the else-branch STR(hobby) must not inner-join it away
+    expect(await filterIds(queryFactories.whereExprIfThen())).toEqual(['p4']);
+  });
   test('str / datatype (introspection)', async () => {
     if (!fusekiAvailable) return;
     expect(await projVal(Person.select((p: any) => ({r: p.name.str()})).for(P1))).toBe('Semmy');

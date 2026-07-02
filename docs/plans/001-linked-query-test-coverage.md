@@ -419,3 +419,14 @@ was emitted at top level with a potentially-unbound subject alias. Fixed in
 `irToAlgebra.ts` §5b (two-pass block assembly; child filtered blocks nest
 inside their parent's block). Coverage suite now **88 passing**; full suite
 **1440 passed, 0 failed**. Remaining known residual: backlog 005 COALESCE/IF.
+
+### Addendum — backlog 005 residual fixed
+Probing confirmed both forms were DSL-reachable with silent wrong results:
+`p.hobby.defaultTo('none').equals('none')` in a where returned `[]` (hobby
+inner-joined, fallback unreachable), and `Expr.ifThen(...)` in a where
+inner-joined its branch properties. Fixed `collectRequiredBindingKeys`:
+COALESCE contributes no required keys; IF keeps only its condition's keys.
+New fixtures `whereExprDefaultTo`/`whereExprIfThen` + E2E tests (exact ids).
+Coverage suite **90 passing**; full suite **1444 passed, 0 failed**. Last
+noted limitation (unchanged, errors loudly rather than silently): a bare proxy
+property as an `Expr.*` argument throws `Invalid expression input`.

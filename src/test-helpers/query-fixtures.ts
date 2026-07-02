@@ -342,6 +342,13 @@ export const queryFactories = {
     ),
   whereNeq: () =>
     Person.select((p) => p.name).where(((p: any) => p.name.neq('Alice')) as any),
+  // Unbound-tolerant functions in a where-filter: their arguments must not be
+  // inner-joined, or the fallback/untaken branch can never match
+  whereExprDefaultTo: () =>
+    Person.select().where(((p: any) => p.hobby.defaultTo('none').equals('none')) as any),
+  whereExprIfThen: () =>
+    Person.select().where(((p: any) =>
+      Expr.ifThen(p.name.equals('Quinn'), 'quinn', p.hobby.str()).equals('quinn')) as any),
   whereExprNot: () =>
     Person.select((p) => p.name).where((p) =>
       Expr.not(p.name.equals('Alice').and((p as any).hobby.equals('Chess'))),
