@@ -183,8 +183,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
           Person.update({bestFriend: entity('p2')}).for(entity('p1')).toJSON(),
         ),
       );
-      const field = json.data.fields.find((f: any) => f.prop === 'bestFriend');
-      field.value = {kind: 'ctxRef', name: 'ctx-v'};
+      json.data.bestFriend = {$ctx: 'ctx-v'};
 
       // unresolved → lowering throws (a mutation must hit a concrete node)
       expect(() => lowerMutationJSON(json)).toThrow(UnresolvedContextError);
@@ -203,8 +202,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       // The live builder now carries the context as a {$ctx} marker on the wire
       // (it is no longer silently collapsed to a malformed {id: undefined} ref).
       const json: any = JSON.parse(JSON.stringify(b.toJSON()));
-      const field = json.data.fields.find((f: any) => f.prop === 'bestFriend');
-      expect(field.value).toEqual({kind: 'ctxRef', name: 'ctx-fv'});
+      expect(json.data.bestFriend).toEqual({$ctx: 'ctx-fv'});
 
       // Unresolved → BOTH the live-builder path and the wire path throw (a
       // mutation must hit a concrete node — no silent undefined ref).
@@ -230,8 +228,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       expect(() => lower(del)).not.toThrow();
 
       const upd: any = Person.update({bestFriend: getQueryContext('ctx-set')} as any).for(entity('p1'));
-      const field = upd.toJSON().data.fields.find((f: any) => f.prop === 'bestFriend');
-      expect(field.value).toEqual({kind: 'ctxRef', name: 'ctx-set'});
+      expect(upd.toJSON().data.bestFriend).toEqual({$ctx: 'ctx-set'});
       expect(() => lower(upd)).not.toThrow();
 
       setQueryContext('ctx-set', undefined);
@@ -283,6 +280,11 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
     // missing v is tolerated
     const {v, ...noV} = json;
     expect(() => fromJSON(noV)).not.toThrow();
+  });
+
+  test('fromJSON rejects an unrecognized op (kind detection)', () => {
+    const json: any = queryFactories.createSimple().toJSON();
+    expect(() => fromJSON({...json, op: 'frobnicate'})).toThrow();
   });
 
   test('date value survives the wire as a Date', () => {

@@ -339,9 +339,9 @@ describe('FieldSet — extended serialization', () => {
       fields: [{path: 'friends', subSelect: inner.toJSON()}],
     });
     const json = fs.toJSON();
-    expect(json.fields[0].subSelect).toBeDefined();
-    expect(json.fields[0].subSelect!.fields).toHaveLength(1);
-    expect(json.fields[0].subSelect!.fields[0].path).toBe('name');
+    expect((json.fields[0] as any).subSelect).toBeDefined();
+    expect((json.fields[0] as any).subSelect.fields).toHaveLength(1);
+    expect((json.fields[0] as any).subSelect.fields[0]).toBe("name");
   });
 
   test('toJSON — entry with aggregation', () => {
@@ -350,7 +350,7 @@ describe('FieldSet — extended serialization', () => {
       fields: [{path: 'friends', aggregation: 'count'}],
     });
     const json = fs.toJSON();
-    expect(json.fields[0].aggregation).toBe('count');
+    expect((json.fields[0] as any).aggregation).toBe('count');
   });
 
   test('toJSON — entry with customKey', () => {
@@ -359,7 +359,7 @@ describe('FieldSet — extended serialization', () => {
       fields: [{path: 'friends', customKey: 'numFriends'}],
     });
     const json = fs.toJSON();
-    expect(json.fields[0].customKey).toBe('numFriends');
+    expect((json.fields[0] as any).customKey).toBe('numFriends');
   });
 
   test('fromJSON — round-trip subSelect', () => {

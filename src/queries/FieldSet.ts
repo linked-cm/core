@@ -1,11 +1,16 @@
 import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
 import type {Shape, ShapeConstructor} from '../shapes/Shape.js';
 import {PropertyPath, walkPropertyPath} from './PropertyPath.js';
-import {getShapeClass} from '../utils/ShapeClass.js';
+import {getShapeClass, getAllShapeClasses} from '../utils/ShapeClass.js';
 import type {WherePath} from './SelectQuery.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
-import {isExpressionNode} from '../expressions/ExpressionNode.js';
-import type {ExpressionNode} from '../expressions/ExpressionNode.js';
+import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
+import {encodeValueExpr, decodeValueExpr, type ZcValue} from './ZcExpression.js';
+import {
+  serializeWherePath,
+  deserializeWherePath,
+  type WherePathJSON,
+} from './QueryBuilderSerialization.js';
 
 // Duck-type helpers for runtime detection.
 // These check structural shape since the classes live in SelectQuery.ts (runtime circular dep).
@@ -88,14 +93,28 @@ export type FieldSetInput =
   | FieldSet
   | Record<string, string[] | FieldSet>;
 
-/** JSON representation of a FieldSet field entry. */
-export type FieldSetFieldJSON = {
-  path: string;
+/** The object form of a field entry (used when a plain-string leaf isn't enough). */
+export type FieldSetObjectFieldJSON = {
+  /** A dotted label path. Omitted for a computed field (carries `value` instead). */
+  path?: string;
   as?: string;
   subSelect?: FieldSetJSON;
   aggregation?: string;
   customKey?: string;
+  /** A computed projection (e.g. `{k: p.x.strlen()}`) — a Z-c value; no path. */
+  value?: ZcValue;
+  /** A scoped filter on a relation segment (`p.friends.where(...)`). */
+  where?: WherePathJSON;
+  /** Which path segment the scoped `where` applies to (defaults to the last). */
+  whereIndex?: number;
 };
+
+/**
+ * JSON representation of a FieldSet field entry: a bare dotted-path string for a
+ * plain leaf (`"name"`, `"friends.friends.name"`), or the object form for
+ * anything with extras (alias, sub-select, aggregation, computed value, filter).
+ */
+export type FieldSetFieldJSON = string | FieldSetObjectFieldJSON;
 
 /** JSON representation of a FieldSet. */
 export type FieldSetJSON = {
@@ -458,7 +477,10 @@ export class FieldSet<R = any, Source = any> {
     return {
       shape: this.shape.id,
       fields: (this.entries as FieldSetEntry[]).map((entry) => {
-        const field: FieldSetFieldJSON = {path: entry.path.toString()};
+        const field: FieldSetObjectFieldJSON = {};
+        if (!entry.expressionNode) {
+          field.path = FieldSet.pathToStringWithCasts(this.shape, entry.path.segments);
+        }
         if (entry.alias) {
           field.as = entry.alias;
         }
@@ -474,9 +496,36 @@ export class FieldSet<R = any, Source = any> {
         if (entry.customKey) {
           field.customKey = entry.customKey;
         }
+        if (entry.expressionNode) {
+          // Computed projection — no path; carry the Z-c value.
+          field.value = encodeValueExpr(
+            entry.expressionNode.ir,
+            entry.expressionNode._refs,
+          );
+        }
+        if (entry.scopedFilter) {
+          const idx =
+            entry.scopedFilterIndex ?? entry.path.segments.length - 1;
+          field.where = serializeWherePath(
+            entry.scopedFilter,
+            this.scopedShapeAt(entry, idx),
+          );
+          field.whereIndex = idx;
+        }
+        // Bare-string shorthand for a plain leaf path with no extras.
+        const keys = Object.keys(field);
+        if (keys.length === 1 && keys[0] === 'path') return field.path as string;
         return field;
       }),
     };
+  }
+
+  /** The shape a scoped filter at segment `idx` is evaluated against (the segment's value shape). */
+  private scopedShapeAt(entry: FieldSetEntry, idx: number): NodeShape {
+    const seg = entry.path.segments[idx] as PropertyShape | undefined;
+    const valueShapeId = (seg as unknown as {valueShape?: {id: string}})
+      ?.valueShape?.id;
+    return (valueShapeId && getShapeClass(valueShapeId)?.shape) || this.shape;
   }
 
   /**
@@ -485,20 +534,39 @@ export class FieldSet<R = any, Source = any> {
    */
   static fromJSON(json: FieldSetJSON): FieldSet {
     const resolvedShape = FieldSet.resolveShape(json.shape);
-    const entries: FieldSetEntry[] = json.fields.map((field) => {
-      const entry: FieldSetEntry = {
-        path: walkPropertyPath(resolvedShape, field.path),
-        alias: field.as,
-      };
-      if (field.subSelect) {
-        entry.subSelect = FieldSet.fromJSON(field.subSelect);
+    const entries: FieldSetEntry[] = json.fields.map((raw) => {
+      // Bare-string shorthand → the object form with just a path.
+      const field: FieldSetObjectFieldJSON =
+        typeof raw === 'string' ? {path: raw} : raw;
+      let entry: FieldSetEntry;
+      if (field.value !== undefined) {
+        // Computed projection — empty path + the expression rebuilt from the value.
+        const {ir, refs} = decodeValueExpr(field.value, resolvedShape);
+        entry = {
+          path: new PropertyPath(resolvedShape, []),
+          expressionNode: new ExpressionNode(ir, refs),
+        };
+      } else {
+        entry = {path: FieldSet.walkPathWithCasts(resolvedShape, field.path)};
+        if (field.subSelect) {
+          entry.subSelect = FieldSet.fromJSON(field.subSelect);
+        }
+        if (field.aggregation) {
+          entry.aggregation = field.aggregation as 'count';
+        }
+        if (field.where) {
+          const idx = field.whereIndex ?? entry.path.segments.length - 1;
+          const seg = entry.path.segments[idx] as PropertyShape | undefined;
+          const valueShapeId = (seg as unknown as {valueShape?: {id: string}})
+            ?.valueShape?.id;
+          const scopedShape =
+            (valueShapeId && getShapeClass(valueShapeId)?.shape) || resolvedShape;
+          entry.scopedFilter = deserializeWherePath(scopedShape, field.where);
+          entry.scopedFilterIndex = idx;
+        }
       }
-      if (field.aggregation) {
-        entry.aggregation = field.aggregation as 'count';
-      }
-      if (field.customKey) {
-        entry.customKey = field.customKey;
-      }
+      if (field.as) entry.alias = field.as;
+      if (field.customKey) entry.customKey = field.customKey;
       return entry;
     });
     return new FieldSet(resolvedShape, entries);
@@ -730,6 +798,79 @@ export class FieldSet<R = any, Source = any> {
       current = current.subject;
     }
     return segments;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cast-aware path (de)serialization — carries `.as(Shape)` narrowing inline as
+  // an `as(<ShapeLabel>)` path segment (documentation/dsl-json.md, backlog 002 G5).
+  // ---------------------------------------------------------------------------
+
+  private static shapeById(id: string): NodeShape | undefined {
+    return getShapeClass(id)?.shape;
+  }
+
+  private static shapeByLabel(label: string): NodeShape | undefined {
+    for (const cls of getAllShapeClasses().values()) {
+      const shape = (cls as unknown as {shape?: NodeShape}).shape;
+      if (shape && (shape.label === label || FieldSet.labelOfId(shape.id) === label)) {
+        return shape;
+      }
+    }
+    return undefined;
+  }
+
+  private static labelOfId(id: string): string {
+    const i = id.lastIndexOf('/');
+    return i >= 0 ? id.slice(i + 1) : id;
+  }
+
+  /**
+   * Render a segment chain as a dotted label path, inserting `as(<ShapeLabel>)`
+   * wherever a segment is not resolvable by label from the natural (walked) shape
+   * — i.e. a `.as(Shape)` narrowing happened before it.
+   */
+  static pathToStringWithCasts(rootShape: NodeShape, segments: readonly PropertyShape[]): string {
+    const parts: string[] = [];
+    let current: NodeShape | undefined = rootShape;
+    for (const seg of segments) {
+      const label = FieldSet.labelOfId(seg.id);
+      const natural = current?.getPropertyShape(label);
+      if (!natural || natural.id !== seg.id) {
+        // A cast narrowed the context to the segment's owner shape.
+        const ownerId = seg.id.slice(0, seg.id.lastIndexOf('/'));
+        const owner = FieldSet.shapeById(ownerId);
+        parts.push(`as(${owner?.label ?? FieldSet.labelOfId(ownerId)})`);
+        current = owner ?? current;
+      }
+      parts.push(label);
+      const vs = (seg as unknown as {valueShape?: {id: string}}).valueShape;
+      current = vs ? FieldSet.shapeById(vs.id) ?? current : current;
+    }
+    return parts.join('.');
+  }
+
+  /** Inverse of {@link pathToStringWithCasts}: resolve a dotted path with `as(X)` casts. */
+  static walkPathWithCasts(rootShape: NodeShape, path: string): PropertyPath {
+    if (!path.includes('as(')) return walkPropertyPath(rootShape, path);
+    const segments: PropertyShape[] = [];
+    let current: NodeShape | undefined = rootShape;
+    for (const token of path.split('.')) {
+      const cast = /^as\((.+)\)$/.exec(token);
+      if (cast) {
+        current = FieldSet.shapeByLabel(cast[1]) ?? current;
+        continue;
+      }
+      const ps = current?.getPropertyShape(token);
+      if (!ps) {
+        throw new Error(
+          `Property '${token}' not found on shape '${current?.label || current?.id}' while resolving path '${path}'`,
+        );
+      }
+      segments.push(ps);
+      const vs = (ps as unknown as {valueShape?: {id: string}}).valueShape;
+      current = vs ? FieldSet.shapeById(vs.id) ?? current : current;
+    }
+    return new PropertyPath(rootShape, segments);
   }
 
   /**
