@@ -27,7 +27,6 @@ export {
 } from './queries/ContextRef.js';
 export type {ContextRefJSON} from './queries/ContextRef.js';
 export {PropertyPath, walkPropertyPath} from './queries/PropertyPath.js';
-export type {WhereCondition, WhereOperator} from './queries/WhereCondition.js';
 
 // Phase 3a — FieldSet
 export {FieldSet} from './queries/FieldSet.js';

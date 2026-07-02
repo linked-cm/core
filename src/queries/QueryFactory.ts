@@ -182,25 +182,3 @@ export function isSetModificationValue(
   );
 }
 
-/**
- * Checks if the new count of values for a property is within the min and max count of the property shape.
- * Throws an error if the count is not within the range.
- * @param propShape
- * @param numValues
- */
-export function checkNewCount(propShape: PropertyShape, numValues: number) {
-  if (propShape.maxCount) {
-    if (numValues > propShape.maxCount) {
-      throw new Error(
-        `Too many values for property: ${propShape.label}. Max count is: ${propShape.maxCount}, updated count would be ${numValues}`,
-      );
-    }
-  }
-  if (propShape.minCount) {
-    if (numValues < propShape.minCount) {
-      throw new Error(
-        `Too few values for property: ${propShape.label}. Min count is: ${propShape.minCount}, updated count would be ${numValues}`,
-      );
-    }
-  }
-}
