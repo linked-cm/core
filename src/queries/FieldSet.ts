@@ -5,7 +5,7 @@ import {getShapeClass, getAllShapeClasses} from '../utils/ShapeClass.js';
 import type {WherePath} from './SelectQuery.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
-import {encodeValueExpr, decodeValueExpr, type ZcValue} from './ZcExpression.js';
+import {encodeValueExpr, decodeValueExpr, type DslJsonValue} from './DslJsonExpression.js';
 import {
   serializeWherePath,
   deserializeWherePath,
@@ -101,8 +101,8 @@ export type FieldSetObjectFieldJSON = {
   subSelect?: FieldSetJSON;
   aggregation?: string;
   customKey?: string;
-  /** A computed projection (e.g. `{k: p.x.strlen()}`) — a Z-c value; no path. */
-  value?: ZcValue;
+  /** A computed projection (e.g. `{k: p.x.strlen()}`) — a DSL-JSON value; no path. */
+  value?: DslJsonValue;
   /** A scoped filter on a relation segment (`p.friends.where(...)`). */
   where?: WherePathJSON;
   /** Which path segment the scoped `where` applies to (defaults to the last). */
@@ -154,6 +154,14 @@ export class FieldSet<R = any, Source = any> {
    * For sub-select FieldSets: the shape class (ShapeType) of the sub-select's target.
    */
   readonly shapeType?: any;
+
+  /**
+   * For sub-select FieldSets: inline `.where()` filter found on the parent
+   * traversal chain (e.g. `p.friends.where(...).select(...)`), plus the index
+   * into `parentSegments` of the segment it scopes.
+   */
+  readonly parentWherePath?: WherePath;
+  readonly parentWherePathIndex?: number;
 
   /**
    * For sub-select FieldSets: inner LIMIT/OFFSET/ORDER BY carried from
@@ -215,6 +223,7 @@ export class FieldSet<R = any, Source = any> {
     shapeClass: any,
     fn: (p: any) => R,
     parentSegments: PropertyShape[],
+    source?: QueryBuilderObjectLike,
   ): FieldSet<R, Source> {
     const nodeShape = shapeClass.shape || shapeClass;
     // Trace once: get both the raw response (for type carriers) and the entries
@@ -223,10 +232,23 @@ export class FieldSet<R = any, Source = any> {
     const entries = FieldSet.extractSubSelectEntries(nodeShape, traceResponse);
     const fs = new FieldSet(nodeShape, entries) as FieldSet<R, Source>;
     // Writable cast — these readonly fields are initialised once here at construction time
-    const w = fs as {-readonly [K in 'traceResponse' | 'parentSegments' | 'shapeType']: FieldSet<R, Source>[K]};
+    const w = fs as {-readonly [K in 'traceResponse' | 'parentSegments' | 'shapeType' | 'parentWherePath' | 'parentWherePathIndex']: FieldSet<R, Source>[K]};
     w.traceResponse = traceResponse;
     w.parentSegments = parentSegments;
     w.shapeType = shapeClass;
+    // Carry an inline `.where()` from the parent traversal chain (walked
+    // leaf→root, same convention as convertTraceResult for plain paths).
+    let current = source;
+    let leafDistance = 0;
+    while (current) {
+      if (current.wherePath) {
+        w.parentWherePath = current.wherePath as WherePath;
+        w.parentWherePathIndex = parentSegments.length - 1 - leafDistance;
+        break;
+      }
+      current = current.subject;
+      leafDistance++;
+    }
     return fs;
   }
 
@@ -348,6 +370,8 @@ export class FieldSet<R = any, Source = any> {
       traceResponse: this.traceResponse,
       parentSegments: this.parentSegments,
       shapeType: this.shapeType,
+      parentWherePath: this.parentWherePath,
+      parentWherePathIndex: this.parentWherePathIndex,
       innerLimit: this.innerLimit,
       innerOffset: this.innerOffset,
       innerOrderBy: this.innerOrderBy,
@@ -497,7 +521,7 @@ export class FieldSet<R = any, Source = any> {
           field.customKey = entry.customKey;
         }
         if (entry.expressionNode) {
-          // Computed projection — no path; carry the Z-c value.
+          // Computed projection — no path; carry the DSL-JSON value.
           field.value = encodeValueExpr(
             entry.expressionNode.ir,
             entry.expressionNode._refs,
@@ -728,6 +752,12 @@ export class FieldSet<R = any, Source = any> {
         path: new PropertyPath(rootShape, obj.parentSegments),
         subSelect: subSelect as FieldSet | undefined,
       };
+      // Carry an inline `.where()` from the parent traversal chain
+      // (e.g. `p.friends.where(...).select(...)`).
+      if (obj.parentWherePath) {
+        entry.scopedFilter = obj.parentWherePath;
+        entry.scopedFilterIndex = obj.parentWherePathIndex;
+      }
       // Carry inner LIMIT/OFFSET/ORDER BY from `.limit()`/`.offset()`/`.orderBy()`.
       if (typeof obj.innerLimit === 'number') entry.innerLimit = obj.innerLimit;
       if (typeof obj.innerOffset === 'number') entry.innerOffset = obj.innerOffset;

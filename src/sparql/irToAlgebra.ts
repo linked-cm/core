@@ -702,12 +702,23 @@ export function selectToAlgebra(
   // stays scoped — otherwise an empty window leaves ?childVar unbound and the
   // outer property OPTIONAL leaks across the whole graph.
   const subSelectChildPropertyTriplesByAlias = new Map<string, SparqlTriple[]>();
+  // Same scoping rule for filtered traversals (`.where(...)`): anything anchored
+  // on the filtered alias must live inside its filtered OPTIONAL block — when
+  // the filter matches nothing, the alias is unbound and a top-level OPTIONAL
+  // would range over the whole graph.
+  const filteredTraverseAliases = new Set(filteredTraverseBlocks.map((b) => b.toAlias));
+  const filteredChildPropertyTriplesByAlias = new Map<string, SparqlTriple[]>();
   for (const propTriple of optionalPropertyTriples) {
     if (propTriple.subject.kind === 'variable' &&
       subSelectAliases.has(propTriple.subject.name)) {
       const triples = subSelectChildPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
       triples.push(propTriple);
       subSelectChildPropertyTriplesByAlias.set(propTriple.subject.name, triples);
+    } else if (propTriple.subject.kind === 'variable' &&
+      filteredTraverseAliases.has(propTriple.subject.name)) {
+      const triples = filteredChildPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
+      triples.push(propTriple);
+      filteredChildPropertyTriplesByAlias.set(propTriple.subject.name, triples);
     } else if (propTriple.subject.kind === 'variable' &&
       optionalTraversalAliases.has(propTriple.subject.name)) {
       const triples = nestedOptionalPropertyTriplesByAlias.get(propTriple.subject.name) ?? [];
@@ -729,7 +740,9 @@ export function selectToAlgebra(
   const rootOptionalTraversalAliases = traversePatternsInOrder
     .filter((pattern) =>
       optionalTraversalAliases.has(pattern.to) &&
-      !optionalTraversalAliases.has(pattern.from),
+      !optionalTraversalAliases.has(pattern.from) &&
+      // Children of a filtered traversal nest inside its filtered block (5b)
+      !filteredTraverseAliases.has(pattern.from),
     )
     .map((pattern) => pattern.to);
 
@@ -811,6 +824,12 @@ export function selectToAlgebra(
   //     Each block contains: traverse triple + OPTIONAL property triples + FILTER.
   //     Filter property triples are nested as OPTIONALs so that OR filters work
   //     even when some entities lack certain properties.
+  // First pass: build each filtered block's inner group and filter expression.
+  const filteredBlockInners: SparqlAlgebraNode[] = [];
+  const filteredBlockExprs: SparqlExpression[] = [];
+  const filteredBlockIdxByAlias = new Map<string, number>(
+    filteredTraverseBlocks.map((block, i) => [block.toAlias, i]),
+  );
   for (let i = 0; i < filteredTraverseBlocks.length; i++) {
     const block = filteredTraverseBlocks[i];
     const filterPropertyTriples = filterPropertyTriplesMap.get(i) || [];
@@ -821,7 +840,51 @@ export function selectToAlgebra(
     for (const propTriple of filterPropertyTriples) {
       blockInner = wrapOptional(blockInner, {type: 'bgp', triples: [propTriple]});
     }
-    const filteredBlock: SparqlFilter = {type: 'filter', expression: filterExpr, inner: blockInner};
+    // Projected property triples on the filtered alias that aren't part of the
+    // filter (e.g. `.where(name=...).select(pp => [pp.hobby])`)
+    for (const propTriple of filteredChildPropertyTriplesByAlias.get(block.toAlias) ?? []) {
+      blockInner = wrapOptional(blockInner, {type: 'bgp', triples: [propTriple]});
+    }
+    // Optional child traversal subtrees (nested sub-selects below the filtered
+    // alias) — kept inside the block so an empty filter match leaves them unbound
+    for (const childAlias of childOptionalAliasesByParent.get(block.toAlias) ?? []) {
+      blockInner = wrapOptional(
+        blockInner,
+        buildOptionalTraversalSubtree(
+          childAlias,
+          traversePatternMap,
+          childOptionalAliasesByParent,
+          nestedOptionalPropertyTriplesByAlias,
+        ),
+      );
+    }
+    filteredBlockInners.push(blockInner);
+    filteredBlockExprs.push(filterExpr);
+  }
+  // Second pass, children first (blocks are created parent-before-child):
+  // finish each block and either nest it inside its parent's filtered block —
+  // a filtered sub-select inside another filtered sub-select must stay scoped
+  // to the parent alias, or an empty parent match leaves the alias unbound and
+  // the block cross-products over the whole graph — or attach it at top level.
+  const rootFilteredBlocks: SparqlAlgebraNode[] = [];
+  for (let i = filteredTraverseBlocks.length - 1; i >= 0; i--) {
+    const block = filteredTraverseBlocks[i];
+    const finished: SparqlFilter = {
+      type: 'filter',
+      expression: filteredBlockExprs[i],
+      inner: filteredBlockInners[i],
+    };
+    const subject = block.traverseTriple.subject;
+    const parentIdx = subject.kind === 'variable'
+      ? filteredBlockIdxByAlias.get(subject.name)
+      : undefined;
+    if (parentIdx !== undefined && parentIdx !== i) {
+      filteredBlockInners[parentIdx] = wrapOptional(filteredBlockInners[parentIdx], finished);
+    } else {
+      rootFilteredBlocks.unshift(finished);
+    }
+  }
+  for (const filteredBlock of rootFilteredBlocks) {
     algebra = wrapOptional(algebra, filteredBlock);
   }
 
@@ -946,7 +1009,18 @@ export function selectToAlgebra(
       } else if (!varName) {
         // Non-variable expression (binary_expr, function_expr, etc.)
         // → project as (expr AS ?alias)
-        projection.push({kind: 'expression', expression: sparqlExpr, alias: item.alias});
+        let exprAlias = item.alias;
+        if (traversalAliasSet.has(exprAlias)) {
+          // The output alias collides with a traversal target variable — e.g. a
+          // computed expression over a traversed path lowers to
+          // (UCASE(?a1_name) AS ?a1), and ?a1 is already bound by the traverse
+          // triple. Rename the output so SPARQL doesn't reuse an in-scope var.
+          exprAlias = `${exprAlias}_expr`;
+          for (const rm of query.resultMap) {
+            if (rm.alias === item.alias) rm.alias = exprAlias;
+          }
+        }
+        projection.push({kind: 'expression', expression: sparqlExpr, alias: exprAlias});
       }
     }
   }
@@ -989,13 +1063,29 @@ export function selectToAlgebra(
     }));
   }
 
+  // `.one()` lowers to limit=1 + singleResult, but LIMIT bounds ROWS, not
+  // entities. When the query yields multiple rows per root entity (traversals
+  // or plural properties), a row-level LIMIT would truncate the entity's own
+  // nested data — omit it and let the result mapper pick the single entity.
+  const multiRowPerEntity =
+    query.patterns.some((p) => p.kind === 'traverse') ||
+    query.projection.some(
+      (item) =>
+        item.expression.kind === 'property_expr' &&
+        !(typeof item.expression.maxCount === 'number' && item.expression.maxCount <= 1),
+    );
+  const limit =
+    query.singleResult && query.limit === 1 && multiRowPerEntity
+      ? undefined
+      : query.limit;
+
   return {
     type: 'select',
     algebra,
     projection,
     distinct: !hasAggregates ? true : undefined,
     orderBy,
-    limit: query.limit,
+    limit,
     offset: query.offset,
     groupBy,
     having: havingExpr,
@@ -1211,8 +1301,26 @@ function collectRequiredBindingKeys(expr: IRExpression): Set<string> {
         collectRequiredBindingKeys(expr.left),
         collectRequiredBindingKeys(expr.right),
       );
-    case 'function_expr':
+    case 'function_expr': {
+      const fn = expr.name.toUpperCase();
+      // BOUND explicitly tests boundness — forcing its argument into a
+      // required (inner-join) pattern would make !BOUND unsatisfiable.
+      // COALESCE is unbound-tolerant by design — requiring its arguments
+      // would make the fallback unreachable.
+      if (fn === 'BOUND' || fn === 'COALESCE') {
+        return new Set<string>();
+      }
+      // IF: an unbound variable in the condition errors the row out either
+      // way, so the condition may keep its requirements — but the then/else
+      // branches must stay optional (the untaken branch may reference a
+      // property the entity doesn't have).
+      if (fn === 'IF') {
+        return expr.args.length > 0
+          ? collectRequiredBindingKeys(expr.args[0])
+          : new Set<string>();
+      }
       return mergeKeySets(...expr.args.map((arg) => collectRequiredBindingKeys(arg)));
+    }
     case 'not_expr':
       return collectRequiredBindingKeys(expr.expression);
     case 'logical_expr': {
@@ -1829,13 +1937,36 @@ export function updateToAlgebra(
   const subjectTerm = iriTerm(query.id);
   const result = processUpdateFields(query.data, subjectTerm, options);
 
+  // Partition old-value/optional triples into subject-anchored ones and those
+  // anchored on a traversal target variable (e.g. `?a1 <name> ?a1_name` from a
+  // `p.bestFriend.name.ucase()` expression). Traversal-anchored triples MUST be
+  // nested inside the same OPTIONAL group as their traversal edge — otherwise,
+  // when the subject has no such edge, the leaf variable is unbound and the
+  // property triple matches every entity in the graph (data-corruption bug).
+  const travTos = new Set(
+    (query.traversalPatterns ?? []).map((t) => t.to),
+  );
+  const travAnchoredByTo = new Map<string, SparqlTriple[]>();
+  const subjectAnchored: SparqlTriple[] = [];
+  for (const triple of result.oldValueTriples) {
+    if (triple.subject.kind === 'variable' && travTos.has(triple.subject.name)) {
+      const list = travAnchoredByTo.get(triple.subject.name) ?? [];
+      list.push(triple);
+      travAnchoredByTo.set(triple.subject.name, list);
+    } else {
+      subjectAnchored.push(triple);
+    }
+  }
+
   let whereAlgebra = wrapOldValueOptionals(
     {type: 'bgp', triples: []},
-    result.oldValueTriples,
+    subjectAnchored,
   );
 
-  // Add traversal OPTIONAL patterns (for multi-segment expression refs)
-  // These must come BEFORE expression BINDs since the BINDs reference traversal variables.
+  // Add traversal OPTIONAL patterns (for multi-segment expression refs). The
+  // traversal edge and its dependent leaf property triples share one OPTIONAL
+  // group so the leaf variable is scoped to the traversal target. These come
+  // BEFORE expression BINDs since the BINDs reference the traversal variables.
   if (query.traversalPatterns) {
     for (const trav of query.traversalPatterns) {
       const fromTerm =
@@ -1845,11 +1976,19 @@ export function updateToAlgebra(
         iriTerm(trav.property),
         varTerm(trav.to),
       );
-      whereAlgebra = {
-        type: 'left_join',
-        left: whereAlgebra,
-        right: {type: 'bgp', triples: [traversalTriple]},
-      };
+      // The traversal edge binds the target var; each dependent leaf property is
+      // a nested OPTIONAL *within* that scope, so a missing optional property
+      // (e.g. a bestFriend with no hobby) doesn't drop the whole group, while an
+      // absent edge still leaves every leaf var unbound (no cross-entity match).
+      let travNode: SparqlAlgebraNode = {type: 'bgp', triples: [traversalTriple]};
+      for (const leaf of travAnchoredByTo.get(trav.to) ?? []) {
+        travNode = {
+          type: 'left_join',
+          left: travNode,
+          right: {type: 'bgp', triples: [leaf]},
+        };
+      }
+      whereAlgebra = {type: 'left_join', left: whereAlgebra, right: travNode};
     }
   }
 

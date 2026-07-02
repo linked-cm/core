@@ -1,10 +1,25 @@
 import {ExpressionNode, toIRExpression} from './ExpressionNode.js';
-import type {ExpressionInput} from './ExpressionNode.js';
+import type {ExpressionInput, PropertyRefMap} from './ExpressionNode.js';
 
 function wrap(input: ExpressionInput): ExpressionNode {
   return input instanceof ExpressionNode
     ? input
     : new ExpressionNode(toIRExpression(input));
+}
+
+/**
+ * Merge the unresolved property-ref maps of all ExpressionNode inputs, so
+ * proxy-traced references (e.g. `p.name`) inside a directly-constructed
+ * function expression still resolve to real aliases during lowering.
+ */
+function mergedRefs(inputs: readonly ExpressionInput[]): PropertyRefMap {
+  const merged = new Map<string, readonly string[]>();
+  for (const input of inputs) {
+    if (input instanceof ExpressionNode) {
+      for (const [k, v] of input._refs) merged.set(k, v);
+    }
+  }
+  return merged;
 }
 
 export const Expr = {
@@ -72,11 +87,14 @@ export const Expr = {
       throw new Error('Expr.concat() requires at least 2 arguments');
     }
     const [first, ...rest] = parts;
-    return new ExpressionNode({
-      kind: 'function_expr',
-      name: 'CONCAT',
-      args: parts.map(toIRExpression),
-    });
+    return new ExpressionNode(
+      {
+        kind: 'function_expr',
+        name: 'CONCAT',
+        args: parts.map(toIRExpression),
+      },
+      mergedRefs(parts),
+    );
   },
   contains(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
     return wrap(a).contains(b);
@@ -182,22 +200,28 @@ export const Expr = {
     if (args.length < 2) {
       throw new Error('Expr.firstDefined() requires at least 2 arguments');
     }
-    return new ExpressionNode({
-      kind: 'function_expr',
-      name: 'COALESCE',
-      args: args.map(toIRExpression),
-    });
+    return new ExpressionNode(
+      {
+        kind: 'function_expr',
+        name: 'COALESCE',
+        args: args.map(toIRExpression),
+      },
+      mergedRefs(args),
+    );
   },
   ifThen(
     cond: ExpressionInput,
     thenVal: ExpressionInput,
     elseVal: ExpressionInput,
   ): ExpressionNode {
-    return new ExpressionNode({
-      kind: 'function_expr',
-      name: 'IF',
-      args: [toIRExpression(cond), toIRExpression(thenVal), toIRExpression(elseVal)],
-    });
+    return new ExpressionNode(
+      {
+        kind: 'function_expr',
+        name: 'IF',
+        args: [toIRExpression(cond), toIRExpression(thenVal), toIRExpression(elseVal)],
+      },
+      mergedRefs([cond, thenVal, elseVal]),
+    );
   },
   bound(a: ExpressionInput): ExpressionNode {
     return wrap(a).isDefined();

@@ -9,7 +9,7 @@
  *   mutations: sanitize(lowerMutationJSON(wire(m.toJSON())))≡ sanitize(lower(m))
  *
  * This is format-agnostic — it asserts only semantic (IR) equivalence, so it
- * holds across the Z-c wire migration and is the authoritative guard for it.
+ * holds across the DSL-JSON wire migration and is the authoritative guard for it.
  */
 import {describe, expect, test, beforeAll} from '@jest/globals';
 import {queryFactories, Person, tmpEntityBase} from '../test-helpers/query-fixtures';
@@ -32,7 +32,7 @@ const wire = (json: unknown) => JSON.parse(JSON.stringify(json));
  *   - scoped-filter relations  `p.friends.where(f => …)`
  *   - `.as(Shape)` type casts
  *   - computed / custom-key projections  `{k: p.x.strlen()}`
- * The Z-c projection rewrite (plan 001, Phase 4) carries these, so each is
+ * The DSL-JSON projection rewrite (plan 001, Phase 4) carries these, so each is
  * RE-INCLUDED as that phase lands. Preload component refs stay excluded (backlog
  * 002, G1). Keeping them out now makes the gate pass on current code and grow
  * monotonically as the migration adds capability.

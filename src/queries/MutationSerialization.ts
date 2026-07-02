@@ -15,10 +15,10 @@
  * Property keys are serialized as **labels** (shape-relative, lightweight); decoding
  * resolves them back via the registered shape.
  *
- * Values use the Z-c grammar (documentation/dsl-json.md): a bare scalar is a
+ * Values use the DSL-JSON grammar (documentation/dsl-json.md): a bare scalar is a
  * literal; objects tag the kinds `JSON.stringify` can't represent natively
  * (`{date}`, `{id}`, `{$ctx}`, `{list}`, `{node}`, `{add,remove}`, `{unset}`);
- * and a computed value is an S-expr array via the shared `ZcExpression` codec —
+ * and a computed value is an S-expr array via the shared `DslJsonExpression` codec —
  * so the wire carries no IR.
  */
 import {
@@ -38,15 +38,15 @@ import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
 import {
   encodeValueExpr,
   decodeValueExpr,
-  type ZcValue,
-} from './ZcExpression.js';
+  type DslJsonValue,
+} from './DslJsonExpression.js';
 
 // =============================================================================
 // JSON types
 // =============================================================================
 
 /**
- * A mutation field value in the Z-c grammar. A bare scalar is a literal; objects
+ * A mutation field value in the DSL-JSON grammar. A bare scalar is a literal; objects
  * tag the non-JSON-native kinds; a computed value is an S-expr array (no IR); a
  * nested-node create is a bare path-keyed object ({@link MutationNodeDataJSON}),
  * disambiguated from the tagged forms by having no reserved value-key.
@@ -63,7 +63,7 @@ export type MutationValueJSON =
   | {add?: MutationValueJSON[]; remove?: string[]}
   | {unset: true}
   | MutationNodeDataJSON // nested-node create (bare, path-keyed)
-  | ZcValue; // computed expression (S-expr) / {path}
+  | DslJsonValue; // computed expression (S-expr) / {path}
 
 /**
  * A node description in **path-keyed** form: `label → value`, plus two reserved
@@ -194,7 +194,7 @@ export function encodeNodeData(
 // =============================================================================
 
 /**
- * Decode a Z-c value back to a raw DSL value (the form `.set()` accepts).
+ * Decode a DSL-JSON value back to a raw DSL value (the form `.set()` accepts).
  * `currentShape` resolves computed `{path}`/S-expr; `prop` gives a nested node's shape.
  */
 function decodeValueToRaw(
@@ -204,7 +204,7 @@ function decodeValueToRaw(
 ): unknown {
   // S-expr computed value
   if (Array.isArray(json)) {
-    const {ir, refs} = decodeValueExpr(json as ZcValue, requireShapeForExpr(currentShape));
+    const {ir, refs} = decodeValueExpr(json as DslJsonValue, requireShapeForExpr(currentShape));
     return new ExpressionNode(ir, refs);
   }
   if (json === null) return null;
@@ -228,7 +228,7 @@ function decodeValueToRaw(
   }
   // A computed-path value (`{path}`) used as a value.
   if ('path' in o) {
-    const {ir, refs} = decodeValueExpr(json as ZcValue, requireShapeForExpr(currentShape));
+    const {ir, refs} = decodeValueExpr(json as DslJsonValue, requireShapeForExpr(currentShape));
     return new ExpressionNode(ir, refs);
   }
   // Otherwise: a bare path-keyed nested-node create.
