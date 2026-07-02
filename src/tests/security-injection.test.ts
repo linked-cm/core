@@ -4,7 +4,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 import {describe, expect, test} from '@jest/globals';
-import {formatUri, assertSafeIri, assertSafeCallName} from '../sparql/sparqlUtils';
+import {formatUri, assertSafeIri, assertSafeCallName, sanitizeVarName} from '../sparql/sparqlUtils';
+import '../utils/Package';
+import {NodeShape} from '../shapes/SHACL';
+import {decodeValueExpr} from '../queries/DslJsonExpression';
+import {decodeNodeDataToRaw} from '../queries/MutationSerialization';
 
 // Report 021 §2 — SPARQL-injection hardening regression tests.
 
@@ -54,5 +58,35 @@ describe('SEC2 — function/aggregate name allowlist', () => {
     expect(() => assertSafeCallName('DROP')).toThrow(/Unsupported SPARQL/);
     expect(() => assertSafeCallName('')).toThrow(/Unsupported SPARQL/);
     expect(() => assertSafeCallName(undefined as unknown as string)).toThrow(/Unsupported SPARQL/);
+  });
+});
+
+describe('SEC3 — variable-name sanitization', () => {
+  test('valid names unchanged; breakout chars neutralized', () => {
+    expect(sanitizeVarName('friends_0')).toBe('friends_0');
+    expect(sanitizeVarName('name')).toBe('name');
+    // A crafted alias cannot escape the ?var position: no special chars survive.
+    const cleaned = sanitizeVarName('x} ?s ?p ?o {');
+    expect(cleaned.startsWith('x')).toBe(true);
+    expect(/[^A-Za-z0-9_]/.test(cleaned)).toBe(false);
+    expect(/[^A-Za-z0-9_]/.test(sanitizeVarName('a b.c-d:e'))).toBe(false);
+  });
+});
+
+describe('SEC5 — decode recursion depth cap', () => {
+  test('a pathologically nested S-expr is rejected, not a stack overflow', () => {
+    // Build ["not", ["not", ... true ...]] far deeper than the 128 cap.
+    let expr: unknown = true;
+    for (let i = 0; i < 500; i++) expr = ['not', expr];
+    expect(() => decodeValueExpr(expr as never, NodeShape.shape as never)).toThrow(/nested too deeply/);
+  });
+});
+
+describe('SEC7 — prototype-pollution hygiene in mutation decode', () => {
+  test('__proto__ / constructor keys are skipped, prototype not polluted', () => {
+    const payload = JSON.parse('{"__proto__": {"polluted": true}, "constructor": {"x": 1}, "name": "ok"}');
+    const out = decodeNodeDataToRaw(payload, NodeShape.shape);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(out, 'polluted')).toBe(false);
   });
 });

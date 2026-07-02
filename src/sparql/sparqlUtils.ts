@@ -52,6 +52,16 @@ const SPARQL_CALL_NAMES = new Set([
 ]);
 
 /**
+ * Sanitize a string for use as a SPARQL variable name (`?name`). Replaces any
+ * character outside `[A-Za-z0-9_]` with `_`, so an alias/projection name derived
+ * from untrusted input cannot break out of the `?...` variable position. Valid
+ * names (already `[A-Za-z0-9_]`) are returned unchanged.
+ */
+export function sanitizeVarName(name: string): string {
+  return String(name).replace(/[^A-Za-z0-9_]/g, '_');
+}
+
+/**
  * Assert that a function or aggregate name is a known SPARQL 1.1 builtin before
  * it is emitted verbatim into query text. Throws on anything else (e.g. an
  * attacker-supplied S-expr head), which is the SPARQL-injection guard for the

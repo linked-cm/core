@@ -193,11 +193,33 @@ export function encodeNodeData(
 // JSON → raw UpdatePartial (for builder rehydration / fromJSON)
 // =============================================================================
 
+// Bound the DSL-JSON decode recursion (rehydration path) against a deeply-nested
+// payload exhausting the stack. Mirrors the cap in lowerMutationJSON.
+const MAX_DECODE_DEPTH = 128;
+let _decodeDepth = 0;
+
 /**
  * Decode a DSL-JSON value back to a raw DSL value (the form `.set()` accepts).
  * `currentShape` resolves computed `{path}`/S-expr; `prop` gives a nested node's shape.
+ * Depth-guarded wrapper around {@link decodeValueToRawInner}.
  */
 function decodeValueToRaw(
+  json: MutationValueJSON,
+  currentShape: NodeShape | undefined,
+  prop?: PropertyShape,
+): unknown {
+  if (++_decodeDepth > MAX_DECODE_DEPTH) {
+    _decodeDepth = 0;
+    throw new Error('DSL-JSON value nested too deeply');
+  }
+  try {
+    return decodeValueToRawInner(json, currentShape, prop);
+  } finally {
+    _decodeDepth--;
+  }
+}
+
+function decodeValueToRawInner(
   json: MutationValueJSON,
   currentShape: NodeShape | undefined,
   prop?: PropertyShape,
@@ -259,6 +281,8 @@ export function decodeNodeDataToRaw(
   if (typeof json[NODE_ID_KEY] === 'string') obj.id = json[NODE_ID_KEY];
   for (const [key, val] of Object.entries(json)) {
     if (key === NODE_ID_KEY || key === NODE_SHAPE_KEY || val === undefined) continue;
+    // Skip prototype-polluting keys from untrusted DSL-JSON input.
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
     const prop = nodeShape?.getPropertyShape(key);
     obj[key] = decodeValueToRaw(val as MutationValueJSON, nodeShape, prop);
   }

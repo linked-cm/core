@@ -1,6 +1,6 @@
 ---
 summary: Security hardening from report 021 §2 — SPARQL-injection fixes (IRI validation, function-name allowlist, variable-name sanitization) plus decoder recursion cap and prototype-key hygiene. All fixes reject only malicious input at the SPARQL-emission chokepoint, so valid queries stay byte-identical and golden tests pass. New security tests lock each fix.
-status: Plan
+status: Implementation
 source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 2)
 packages: [core]
 ---
@@ -25,8 +25,12 @@ Deferred: SEC4 (property-path prefixed-name grammar check) — partly covered by
 No `docs/architecture`. The SPARQL-emission layer (`sparqlUtils.ts` `formatUri`, `algebraToString.ts`) is the single trust boundary to query text; validating there covers every input path (typed DSL and `fromJSON`). Golden SPARQL tests are the byte-identical contract for valid input.
 
 ## Phases
-- **Phase 1 — SEC1 IRI validation** (`sparqlUtils.formatUri`) + `src/tests/security-injection.test.ts`.
-- **Phase 2 — SEC2 function/aggregate allowlist** (`algebraToString`) + tests.
-- **Phase 3 — SEC3 var sanitize + SEC5 recursion cap + SEC7 proto hygiene** + tests.
+- **Phase 1 — SEC1 IRI validation** (`sparqlUtils.formatUri`) + `src/tests/security-injection.test.ts`. ✅ DONE (jest 1441, golden byte-identical).
+- **Phase 2 — SEC2 function/aggregate allowlist** (`algebraToString`) + tests. ✅ DONE (jest 1443; all legit builtins pass).
+- **Phase 3 — SEC3 var sanitize + SEC5 recursion cap + SEC7 proto hygiene** + tests. ✅ DONE (jest 1446 / typecheck 0).
 
-Each phase: `npm test` (jest + typecheck) stays green; new security tests assert malicious input throws and valid input is unchanged. One commit per phase.
+All three: `npm test` (jest + typecheck) green; malicious input throws, valid input byte-identical. Net: 8 new security tests, 6 production files touched (`sparqlUtils`, `algebraToString`, `lowerMutationJSON`, `MutationSerialization`, `DslJsonExpression`), 0 existing tests changed.
+
+## Still deferred
+- **SEC4** (MED) property-path prefixed-name grammar validation — IRI refs in paths now go through the hardened `formatUri` (SEC1), but a raw prefixed-name path token is still emitted verbatim; needs a `PN_PREFIX:PN_LOCAL` grammar check. Backlog.
+- **SEC6** (LOW) `loadStores` dynamic `import()` of a config specifier — trusted-config; doc note only.

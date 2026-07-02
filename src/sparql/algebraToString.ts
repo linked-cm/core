@@ -15,6 +15,7 @@ import {
   escapeSparqlString,
   collectPrefixes,
   assertSafeCallName,
+  sanitizeVarName,
 } from './sparqlUtils.js';
 
 // ---------------------------------------------------------------------------
@@ -38,7 +39,7 @@ export function serializeTerm(
 ): string {
   switch (term.kind) {
     case 'variable':
-      return `?${term.name}`;
+      return `?${sanitizeVarName(term.name)}`;
     case 'iri':
       if (collector) collectUri(collector, term.value);
       return formatUri(term.value);
@@ -92,7 +93,7 @@ export function serializeExpression(
 ): string {
   switch (expr.kind) {
     case 'variable_expr':
-      return `?${expr.name}`;
+      return `?${sanitizeVarName(expr.name)}`;
 
     case 'iri_expr':
       if (collector) collectUri(collector, expr.value);
@@ -149,7 +150,7 @@ export function serializeExpression(
     }
 
     case 'bound_expr':
-      return `BOUND(?${expr.variable})`;
+      return `BOUND(?${sanitizeVarName(expr.variable)})`;
   }
 }
 
@@ -207,7 +208,7 @@ export function serializeAlgebraNode(
     case 'extend': {
       const inner = serializeAlgebraNode(node.inner, collector);
       const expr = serializeExpression(node.expression, collector);
-      return `${inner}\nBIND(${expr} AS ?${node.variable})`;
+      return `${inner}\nBIND(${expr} AS ?${sanitizeVarName(node.variable)})`;
     }
 
     case 'graph': {
@@ -223,12 +224,12 @@ export function serializeAlgebraNode(
           return formatUri(iri);
         })
         .join(' ');
-      return `VALUES ?${node.variable} { ${values} }`;
+      return `VALUES ?${sanitizeVarName(node.variable)} { ${values} }`;
     }
 
     case 'subselect': {
       const innerBody = serializeAlgebraNode(node.inner, collector);
-      const projection = node.projection.map((v) => `?${v}`).join(' ');
+      const projection = node.projection.map((v) => `?${sanitizeVarName(v)}`).join(' ');
       const lines: string[] = [`SELECT ${projection} WHERE {`];
       lines.push(indent(innerBody));
       lines.push('}');
@@ -290,11 +291,11 @@ export function selectPlanToSparql(
   // 2. Build SELECT line
   const projectionParts = plan.projection.map((item) => {
     if (item.kind === 'variable') {
-      return `?${item.name}`;
+      return `?${sanitizeVarName(item.name)}`;
     } else {
       // aggregate or expression projection: (expr AS ?alias)
       const expr = serializeExpression(item.expression, collector);
-      return `(${expr} AS ?${item.alias})`;
+      return `(${expr} AS ?${sanitizeVarName(item.alias)})`;
     }
   });
 
@@ -309,7 +310,7 @@ export function selectPlanToSparql(
 
   if (plan.groupBy && plan.groupBy.length > 0) {
     clauses.push(
-      `GROUP BY ${plan.groupBy.map((v) => `?${v}`).join(' ')}`,
+      `GROUP BY ${plan.groupBy.map((v) => `?${sanitizeVarName(v)}`).join(' ')}`,
     );
   }
 

@@ -149,8 +149,29 @@ export function encodeValueExpr(
   }
 }
 
+// Bound S-expr decode recursion so a deeply-nested expression from `fromJSON()`
+// cannot exhaust the stack (RangeError DoS). Real expressions nest a handful of
+// levels; 128 is far beyond any legitimate query.
+const MAX_EXPR_DEPTH = 128;
+let _exprDepth = 0;
+
 /** Decode a DSL-JSON value back into an IR expression + its placeholder refs. */
 export function decodeValueExpr(
+  json: DslJsonValue,
+  shape: NodeShape,
+): {ir: IRExpression; refs: PropertyRefMap} {
+  if (++_exprDepth > MAX_EXPR_DEPTH) {
+    _exprDepth = 0;
+    throw new Error('DSL-JSON expression nested too deeply');
+  }
+  try {
+    return decodeValueExprInner(json, shape);
+  } finally {
+    _exprDepth--;
+  }
+}
+
+function decodeValueExprInner(
   json: DslJsonValue,
   shape: NodeShape,
 ): {ir: IRExpression; refs: PropertyRefMap} {

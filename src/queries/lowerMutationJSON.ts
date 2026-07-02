@@ -62,11 +62,34 @@ function requireShape(shapeId: string): NodeShape {
   return shape;
 }
 
+// Bound the DSL-JSON decode recursion so a deeply-nested payload from
+// `fromJSON()` cannot exhaust the stack (RangeError DoS). Normal mutation data
+// nests only a handful of levels; 128 is far above any real query.
+const MAX_DECODE_DEPTH = 128;
+let _decodeDepth = 0;
+
 /**
  * Decode a DSL-JSON value to the normalized form the canonical-IR builders consume.
  * `currentShape` resolves computed `{path}`/S-expr; `prop` gives a nested node's shape.
+ * Depth-guarded wrapper around {@link decodeValueInner}.
  */
 function decodeValue(
+  json: MutationValueJSON,
+  currentShape: NodeShape,
+  prop?: PropertyShape,
+): PropUpdateValue {
+  if (++_decodeDepth > MAX_DECODE_DEPTH) {
+    _decodeDepth = 0;
+    throw new Error('DSL-JSON value nested too deeply');
+  }
+  try {
+    return decodeValueInner(json, currentShape, prop);
+  } finally {
+    _decodeDepth--;
+  }
+}
+
+function decodeValueInner(
   json: MutationValueJSON,
   currentShape: NodeShape,
   prop?: PropertyShape,
