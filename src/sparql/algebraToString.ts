@@ -87,6 +87,42 @@ function serializeTriples(
 // Expression serialization
 // ---------------------------------------------------------------------------
 
+// SPARQL binary-operator precedence (higher binds tighter): multiplicative >
+// additive > relational. Used to parenthesize nested `binary_expr` operands so
+// arithmetic groups correctly (`(a+b)*c`, not `a+b*c`) and relational chains
+// (`a=b=c`, a non-associative syntax error) get parenthesized.
+const RELATIONAL_OPS = new Set(['=', '!=', '<', '>', '<=', '>=']);
+function binaryPrecedence(op: string): number {
+  if (op === '*' || op === '/') return 3;
+  if (op === '+' || op === '-') return 2;
+  if (RELATIONAL_OPS.has(op)) return 1;
+  return 0;
+}
+
+/**
+ * Serialize a `binary_expr` operand, wrapping it in parens when omitting them
+ * would change how SPARQL parses the expression.
+ */
+function wrapBinaryOperand(
+  operand: SparqlExpression,
+  parentOp: string,
+  side: 'left' | 'right',
+  collector?: UriCollector,
+): string {
+  const s = serializeExpression(operand, collector);
+  // Logical (&&/||) binds looser than any binary operator → always parenthesize.
+  if (operand.kind === 'logical_expr') return `(${s})`;
+  if (operand.kind !== 'binary_expr') return s;
+  const parentIsRel = RELATIONAL_OPS.has(parentOp);
+  const childIsRel = RELATIONAL_OPS.has(operand.op);
+  // Relational is non-associative in SPARQL: any relational-in-relational needs parens.
+  if (parentIsRel && childIsRel) return `(${s})`;
+  const pc = binaryPrecedence(operand.op);
+  const pp = binaryPrecedence(parentOp);
+  const needs = side === 'left' ? pc < pp : pc <= pp;
+  return needs ? `(${s})` : s;
+}
+
 export function serializeExpression(
   expr: SparqlExpression,
   collector?: UriCollector,
@@ -105,8 +141,8 @@ export function serializeExpression(
     }
 
     case 'binary_expr': {
-      const left = serializeExpression(expr.left, collector);
-      const right = serializeExpression(expr.right, collector);
+      const left = wrapBinaryOperand(expr.left, expr.op, 'left', collector);
+      const right = wrapBinaryOperand(expr.right, expr.op, 'right', collector);
       return `${left} ${expr.op} ${right}`;
     }
 
