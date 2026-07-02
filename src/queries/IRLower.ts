@@ -23,7 +23,6 @@ import type {
   IRShapeScanPattern,
   IRTraversePattern,
 } from './IntermediateRepresentation.js';
-import {canonicalizeWhere} from './IRCanonicalize.js';
 import {lowerSelectionPathExpression, projectionKeyFromPath} from './IRProjection.js';
 import {IRAliasScope} from './IRAliasScope.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
@@ -429,8 +428,7 @@ export const lowerSelectQuery = (
   // Inline filter handler: when a property step has `.where()`, canonicalize
   // and lower the where predicate, then attach it to the traverse pattern.
   const inlineFilterHandler = (traverseAlias: string, where: DesugaredWhere) => {
-    const canonical = canonicalizeWhere(where);
-    const filterExpr = lowerWhere(canonical, ctx, {
+    const filterExpr = lowerWhere(where, ctx, {
       rootAlias: traverseAlias,
       resolveTraversal: pathOptions.resolveTraversal,
     });

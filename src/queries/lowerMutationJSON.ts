@@ -29,7 +29,6 @@ import {
   type WherePathJSON,
 } from './QueryBuilderSerialization.js';
 import {toWhere} from './IRDesugar.js';
-import {canonicalizeWhere} from './IRCanonicalize.js';
 import {lowerWhereToIR} from './IRLower.js';
 import {
   buildCanonicalCreateMutationIR,
@@ -146,8 +145,7 @@ function lowerWhere(
   json: WherePathJSON,
 ): {where: IRExpression; wherePatterns: IRGraphPattern[]} {
   const wherePath = deserializeWherePath(shape, json);
-  const canonical = canonicalizeWhere(toWhere(wherePath));
-  return lowerWhereToIR(canonical);
+  return lowerWhereToIR(toWhere(wherePath));
 }
 
 /**

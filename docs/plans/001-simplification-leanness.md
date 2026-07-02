@@ -143,7 +143,9 @@ Validation:
 - `npm test` → exact baseline match.
 - Structural: `grep -rn "utils/Types" src/` → zero hits; `git grep -n "SparqlDeleteWherePlan\|deleteWherePlanToSparql" src/sparql/irToAlgebra.ts` → zero hits.
 
-### Phase 3 — Remove `canonicalizeWhere` no-op
+### Phase 3 — Remove `canonicalizeWhere` no-op ✅ DONE
+Result: compile exit 0; `canonicalizeWhere` fully removed (0 refs); `npm test` = 1444/117/5 (exact baseline, incl. `ir-canonicalize`/`lower`/all golden suites green).
+**Deviation (minor):** a **4th** call site existed beyond the planned three — `IRLower.ts:432` (`inlineFilterHandler`), where `where: DesugaredWhere` is passed straight to `lowerWhere`. Handled identically (identity inline + import drop); behavior-preserving. Original grep scoped to lower/lowerMutationJSON/IRPipeline missed it; the compile gate surfaced it.
 Tasks: delete `canonicalizeWhere`, inline its 3 call sites, drop 2 now-unused imports, keep the 3 types + `canonicalizeDesugaredSelectQuery` (with its minusEntries reshaping).
 Validation:
 - `npm run compile` → exit 0.

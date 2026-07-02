@@ -30,7 +30,6 @@ import {
   buildCanonicalDeleteWhereMutationIR,
 } from './IRMutation.js';
 import {toWhere} from './IRDesugar.js';
-import {canonicalizeWhere} from './IRCanonicalize.js';
 import {lowerWhereToIR} from './IRLower.js';
 import type {WherePath} from './SelectQuery.js';
 import type {IRSelectQuery} from './IntermediateRepresentation.js';
@@ -57,7 +56,7 @@ export type LowerableQuery =
 
 /** Lower a pre-evaluated where path to its canonical IR fragment. */
 function lowerWherePath(where: WherePath) {
-  return lowerWhereToIR(canonicalizeWhere(toWhere(where)));
+  return lowerWhereToIR(toWhere(where));
 }
 
 /**
