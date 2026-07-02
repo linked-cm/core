@@ -6,7 +6,7 @@ or JavaScript to any other language. If you are building an endpoint, a cache, a
 non-JS backend, or anything that needs to send, store, or inspect a Linked query, this is
 the structure you target.
 
-> **Status.** This document specifies the **Z-c** grammar — the compact, DSL-shaped wire format
+> **Status.** This document specifies the compact, DSL-shaped wire format
 > (`v:"1.0"`) — and the JavaScript serializer emits it: where-clauses, mutation values,
 > path-keyed **mutation node data** (`__id`/`__shape`), projections (incl. computed/scoped/casts),
 > and the select envelope (`sortBy` ordered array, `one`). Remaining edges are tracked in

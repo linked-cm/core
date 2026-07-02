@@ -1,5 +1,5 @@
 /**
- * Path-keyed mutation node data (Z-c) — shape wire form and the `__shape`/`__id`
+ * Path-keyed mutation node data (DSL-JSON) — shape wire form and the `__shape`/`__id`
  * escape hatches, including the polymorphism case (a subclass instance nested
  * under a superclass-typed relation).
  */

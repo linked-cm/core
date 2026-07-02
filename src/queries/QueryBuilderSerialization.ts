@@ -2,8 +2,8 @@
  * Serialization helpers for QueryBuilder fields that contain live object
  * references (where-clauses, sort paths, minus entries).
  *
- * Where-clauses serialize through the Z-c expression codec
- * (`ZcExpression.ts`) — the wire form carries no IR. This module wires that
+ * Where-clauses serialize through the DSL-JSON expression codec
+ * (`DslExpression.ts`) — the wire form carries no IR. This module wires that
  * codec into the select/mutation envelopes and handles sort + minus.
  */
 
@@ -14,16 +14,16 @@ import type {RawMinusEntry, PropertyPathSegment} from './IRDesugar.js';
 import {
   encodeCondition,
   decodeCondition,
-  type ZcCondition,
-} from './ZcExpression.js';
+  type DslCondition,
+} from './DslExpression.js';
 import type {ExpressionNode, ExistsCondition} from '../expressions/ExpressionNode.js';
 
 // =============================================================================
 // JSON types
 // =============================================================================
 
-/** A where-clause on the wire is a Z-c condition (see documentation/dsl-json.md). */
-export type WherePathJSON = ZcCondition;
+/** A where-clause on the wire is a DSL-JSON condition (see documentation/dsl-json.md). */
+export type WherePathJSON = DslCondition;
 
 /** An ordered list of `{path: direction}` — element order is sort precedence. */
 export type SortByPathJSON = Array<{[path: string]: 'ASC' | 'DESC'}>;
@@ -38,7 +38,7 @@ export type RawMinusEntryJSON = {
 // Serialization
 // =============================================================================
 
-/** Serialize a runtime where-clause to its Z-c condition form. */
+/** Serialize a runtime where-clause to its DSL-JSON condition form. */
 export function serializeWherePath(
   where: WherePath,
   shape: NodeShape,
@@ -73,7 +73,7 @@ export function serializeRawMinusEntry(
 // Deserialization
 // =============================================================================
 
-/** Rebuild a runtime where-clause from its Z-c condition form. */
+/** Rebuild a runtime where-clause from its DSL-JSON condition form. */
 export function deserializeWherePath(
   shape: NodeShape,
   json: WherePathJSON,

@@ -56,7 +56,7 @@
     at shape registration.
 
   See the full [DSL-JSON specification](./documentation/dsl-json.md). Deferred edge items are tracked
-  in `docs/backlog/002-dsl-json-zc-open-items.md`.
+  in `docs/backlog/002-dsl-json-open-items.md`.
 
 ## 2.10.0
 
