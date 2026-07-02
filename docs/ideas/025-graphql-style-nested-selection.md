@@ -1,5 +1,5 @@
 ---
-summary: Compare the Linked query DSL with the GraphQL spec (October 2021 edition + current working draft, graphql-js 17) feature by feature, and propose a GraphQL-style declarative selection syntax — a nested object-literal query form (`Shape.query({...})`), an optional tagged-template GraphQL parser, and a longer-term GraphQL endpoint generated from SHACL shapes — all lowering to the existing DSL-JSON wire format.
+summary: Compare the Linked query DSL with GraphQL (working-draft spec + graphql-js 17, released June 2026) feature by feature, and propose a GraphQL-style declarative selection syntax as a NEW OVERLOAD of `Shape.select(...)` — a nested object-literal query tree where fields are bare keys, verbs are `$`-prefixed options, and filters reuse the existing DSL-JSON condition grammar — plus an optional in-house (no-dependency) GraphQL-text parser and a longer-term GraphQL endpoint generated from SHACL shapes. Everything lowers to the existing DSL-JSON wire format.
 packages: [core]
 ---
 
@@ -16,14 +16,28 @@ result*. This document compares the two feature-by-feature and proposes how to
 get GraphQL's ergonomics without giving up the things the Linked DSL does that
 GraphQL cannot (filters, expressions, nested pagination, typed mutations).
 
-Reference points for the comparison:
+Reference points for the comparison (two things carry "GraphQL" version numbers
+and it's worth keeping them apart):
 
-- **GraphQL spec, October 2021 edition** — the latest published release.
-- **GraphQL spec, current working draft** (graphql/graphql-spec `main`, fetched
-  2026-07) — adds `@oneOf` input objects, schema coordinates, type-system
-  descriptions.
-- **graphql-js 17.0.1** (latest on npm) — ships incremental delivery
-  (`@defer` / `@stream` execution), which is still an RFC in the spec.
+- **graphql-js** — the reference JS implementation. `17.0.0` shipped
+  **2026-06-15**, `17.0.1` on **2026-06-16** (weeks old at time of writing;
+  `16.14.x` still patched in parallel). v17's headline is that **incremental
+  delivery (`@defer` / `@stream`) is now in the stable release**, plus a
+  rewritten executor. The query *language* it implements is essentially stable.
+- **The spec editions** — the dated formal releases (the "October 2021"-style
+  tags) lag the library. New language lands in the **working draft**
+  (graphql/graphql-spec `main`, fetched 2026-07 — `@oneOf` input objects, schema
+  coordinates, type-system descriptions) before an edition is cut. Subscriptions
+  are in the ratified spec (§6.3); `@defer`/`@stream` are still RFC-stage there
+  despite shipping in graphql-js 17.
+
+GraphQL's own design principles (from the spec Overview) frame why this proposal
+exists — two of them are exactly our motivation:
+
+> **Hierarchical**: a GraphQL request is structured hierarchically — *the request
+> is shaped just like the data in its response.*
+> **Client-specified response**: the client specifies exactly what it consumes,
+> at field-level granularity.
 
 ## Part 1 — Feature comparison: GraphQL vs `@_linked/core`
 
@@ -172,16 +186,22 @@ the chainable builder to produce it.
 Three tiers, independent, each lowering to DSL-JSON. Tier 1 is the
 recommendation; Tiers 2–3 are follow-ups that reuse Tier 1's machinery.
 
-### Tier 1 (recommended): typed object-literal selection — `Shape.query({...})`
+### Tier 1 (recommended): typed object-literal selection — a NEW OVERLOAD of `Shape.select(...)`
 
-A new static method (working name `query`; `select` stays untouched) that
-accepts a nested selection object shaped like the result. Field keys mirror the
-shape's decorated properties; `$`-prefixed keys carry options — the sigil keeps
-options unambiguous from property names (mirroring how MongoDB/Prisma solve the
-same collision) and maps 1:1 onto DSL-JSON's option keys.
+**Decision (resolved): overload `select`, do not add a new method.** The two
+forms are runtime-distinguishable — `typeof arg === 'function'` is today's
+callback form, a plain object is the new declarative form — and the `$`-sigil
+rule below guarantees the object form's keys never collide with property names,
+so the overloaded typings stay tractable. `select(fn)` is 100% unchanged.
+
+`select(selection)` accepts a nested selection object shaped like the result.
+Field keys mirror the shape's decorated properties; `$`-prefixed keys carry
+options — the sigil keeps options unambiguous from property names (mirroring how
+MongoDB/Prisma solve the same collision) and maps 1:1 onto DSL-JSON's option
+keys.
 
 ```typescript
-const result = await Person.query({
+const result = await Person.select({
   $where: { name: { startsWith: 'A' } },
   $limit: 20,
 
@@ -266,6 +286,86 @@ No new condition language; one grammar shared by the wire format and the typed
 surface. (Typed helpers for the expression tier can come later; the chainable
 `select` remains the fully-typed home for heavy expression work.)
 
+#### Disambiguation: how selection, options, and filters never collide
+
+The obvious worry: `name: { startsWith: 'A' }` — is `{ startsWith: 'A' }` a
+*sub-selection* of `name`, or a *filter* on `name`? (`name` is a string, and
+`startsWith` is one of its filter methods.) Three rules keep every position
+unambiguous, and they're why overloading `select` is safe:
+
+**Rule 1 — the `$` sigil splits fields from verbs.** In a selection object, any
+key starting with `$` is an *option/verb* (`$where`, `$limit`, `$orderBy`,
+`$as`, `$if`, `$count`, …); every other key is a *field name* that must be a
+decorated property of the shape. A SHACL property can never start with `$`, so
+there is zero collision between the two namespaces.
+
+**Rule 2 — in *selection* position a field value is `true` or a nested
+selection, never a filter.** `name: true` selects the leaf. `name: { … }` is
+only legal when `name` is an *object* property (then `{…}` is its sub-selection);
+for a string leaf it is a compile-time type error. **Filters never appear in
+selection position** — they live only under the reserved `$where` key:
+
+```typescript
+Person.select({
+  name: true,                            // selection: leaf → `true`
+  $where: { name: { startsWith: 'A' } }, // filter: under the reserved $where key
+});
+```
+
+Because the filter is namespaced under `$where`, `name: true` (project) and
+`name: { startsWith }` (filter) sit in disjoint subtrees. Nothing to confuse.
+
+**Rule 3 — inside `$where`, the existing DSL-JSON condition grammar
+disambiguates path-vs-operator by a reserved vocabulary** (reused verbatim, see
+`documentation/dsl-json.md`):
+
+- the **outer** key is a *path* or a combinator (`and`/`or`/`not`);
+- the **value** is a bare scalar (implicit `equals`) or an **operator/method
+  map** whose keys are a reserved set — comparison **symbols** (`=`, `!=`, `>`,
+  `>=`, `<`, `<=`) and **method names** (`equals`, `startsWith`, `contains`,
+  `strlen`, quantifiers…).
+
+So `{ name: { startsWith: 'A' } }` reads as *path `name` → method `startsWith`
+with arg `'A''`* — `startsWith` is a reserved operator, not a sub-path. Genuine
+nested-*path* conditions use **dotted** keys (`{ 'bestFriend.name': 'Moa' }`, or
+the quantifier form `{ 'knows.some': { name: 'Moa' } }`), so a nested-object
+condition is always visibly a dotted path, never bare method words. The only way
+to collide is a SHACL property literally named `startsWith`, which is unlikely
+and independently resolvable.
+
+Net: **projection = bare keys → `true`/nested-objects; verbs = `$`-options;
+filtering = `$where` + operator-keyed maps.** The `$` sigil keeps verbs out of
+the field namespace, and `$where` keeps conditions out of the projection.
+
+#### `and` / `or` / `not`
+
+Reuse the condition combinators directly — they are reserved keys inside
+`$where`:
+
+```typescript
+// implicit AND — multiple keys in one condition object
+$where: { hobby: 'Chess', age: { '>': 18 } }
+
+// explicit OR
+$where: { or: [ { name: 'Alice' }, { name: 'Moa' } ] }
+
+// explicit AND — needed when keys would otherwise collide (two filters, one relation)
+$where: { and: [
+  { 'knows.some': { name: 'Alice' } },
+  { 'knows.some': { name: 'Bob' } },
+] }
+
+// NOT, and a nested boolean tree
+$where: { not: { hobby: 'Chess' } }
+$where: { and: [
+  { age: { '>': 18, '<': 65 } },                     // range = AND on one path
+  { or: [ { hobby: 'Chess' }, { hobby: 'Go' } ] },
+] }
+```
+
+Same grammar the wire format already speaks — nothing new to learn, and it
+round-trips through `toJSON()` / `fromJSON()` unchanged.
+
 #### Aliases (GraphQL §2.7)
 
 GraphQL allows the same field twice under different keys. Object literals can't
@@ -273,7 +373,7 @@ repeat a key, so aliases go the other way — alias key, `$path` pointing at the
 property:
 
 ```typescript
-const r = await Person.query({
+const r = await Person.select({
   name: true,
   chessFriends:  { $path: 'knows', $where: { hobby: 'Chess' },  name: true },
   soccerFriends: { $path: 'knows', $where: { hobby: 'Soccer' }, name: true },
@@ -289,7 +389,7 @@ This also delivers "duplicate projection fields" (idea 023) for free.
 ```typescript
 const personCard = FieldSet.for(Person, ['name', 'hobby']);
 
-const r = await Person.query({
+const r = await Person.select({
   ...personCard.spread(),          // like ...PersonCard in GraphQL
   knows: { ...personCard.spread(), $limit: 5 },
 });
@@ -305,7 +405,7 @@ The one genuinely new wire-format feature this proposal needs. `$var` markers
 parallel to the existing `{$ctx}` markers, plus a `vars` envelope key:
 
 ```typescript
-const friendsOf = Person.query({
+const friendsOf = Person.select({
   $where: { name: { $var: 'name' } },
   knows: { name: true, $limit: { $var: 'max' } },
 });
@@ -329,7 +429,7 @@ stage `$ctx` resolves today.
 #### Conditional inclusion (`@include` / `@skip`) — `$if`
 
 ```typescript
-const r = await Person.query({
+const r = await Person.select({
   name: true,
   birthDate: { $if: { $var: 'withDetails' } },   // @include(if: $withDetails)
   knows: { $if: { $var: 'withFriends' }, name: true },
@@ -391,7 +491,7 @@ datatype cases — this reuses it with a different input encoding.
 
 #### Implementation shape
 
-`query(selection)` does **not** grow a second pipeline. It compiles the
+`select(selection)` does **not** grow a second pipeline. It compiles the
 selection object directly to DSL-JSON (it is nearly isomorphic already) and
 hands it to `fromJSON(...)` → existing builder → existing IR/lowering. New code
 is: the selection→DSL-JSON normalizer, the `Selection`/`QueryResult` types, and
@@ -399,10 +499,11 @@ is: the selection→DSL-JSON normalizer, the `Selection`/`QueryResult` types, an
 IRDesugar handling. Everything downstream — IR, SPARQL, result mapping,
 `LinkedStorage` routing — is untouched.
 
-### Tier 2 (optional): GraphQL text via tagged template
+### Tier 2 (optional, no dependency): GraphQL text via an in-house parser
 
 For people/tools that want to write *actual* GraphQL syntax — LLMs emit it
-fluently, editors highlight it, and a CMS can store it as text:
+fluently, editors highlight it, and a CMS can store it as text. **This stays
+dependency-free: we parse the subset ourselves, we do not pull in `graphql`.**
 
 ```typescript
 import { gql } from '@_linked/core/graphql';
@@ -424,12 +525,15 @@ const result = await gql`{
 - Root field name resolves to a registered shape (label or IRI); arguments map
   to the same `$`-options; `... on Dog` → `cast`; named fragments → `FieldSet`;
   GraphQL variables → the Tier-1 `vars` envelope; `@include`/`@skip` → `$if`.
-- Parse with `graphql@17`'s parser (`parse()` from `graphql/language` — the
-  tarball is ~small and tree-shakes to just the parser) or a minimal in-house
-  parser for the subset; **output is DSL-JSON**, so execution is Tier 1's path.
+- A small in-house recursive-descent parser for the query subset we support
+  (selection sets, arguments, aliases, inline fragments, named fragments,
+  variables, `@include`/`@skip`) emits **DSL-JSON**, so execution is Tier 1's
+  path. No `graphql` dependency — the trade-off is that we track only the subset
+  we choose, not the whole evolving spec.
 - Trade-off, stated honestly: template strings lose result-type inference
   (GraphQL clients need codegen for this; we would too). Tier 2 is therefore a
-  *convenience/interop* surface, not a replacement for Tier 1.
+  *convenience/interop* surface, not a replacement for Tier 1 — which is exactly
+  why Tier 1 (typed, no parser) is the recommended primary surface.
 
 ### Tier 3 (later): a real GraphQL endpoint from SHACL shapes
 
@@ -442,13 +546,17 @@ federation):
    condition grammar (the Hasura pattern, but derived from SHACL instead of
    hand-written).
 2. **Executor** — implement one root resolver that converts an entire GraphQL
-   selection set (via `graphql-js`'s `resolveInfo`) into a single DSL-JSON
+   selection set (from the resolver's `resolveInfo` AST) into a single DSL-JSON
    query — *not* per-field resolvers, so the no-N+1 property is preserved and
    the whole tree still becomes one SPARQL query.
 3. Introspection, GraphiQL, persisted queries then come for free from the
    ecosystem.
 
-This belongs in a separate package (`@_linked/graphql`) and needs Tiers 1's
+Serving *real* GraphQL-over-HTTP is the one place a `graphql`(-js) server
+dependency is unavoidable — so it is **quarantined to this separate,
+opt-in `@_linked/graphql` package**. `@_linked/core` itself stays
+dependency-free; nobody pays for graphql-js unless they install Tier 3. This
+package needs Tier 1's
 variables work first. It is the full answer to "GraphQL support"; Tiers 1–2
 are the answer to "GraphQL ergonomics."
 
@@ -466,9 +574,9 @@ Person.select((p) => [
 ]).where((p) => p.name.startsWith('A'));
 ```
 
-**Object-literal `query` (Tier 1 — proposed)**
+**Object-literal `select` overload (Tier 1 — proposed)**
 ```typescript
-Person.query({
+Person.select({
   $where: { name: { startsWith: 'A' } },
   name: true,
   knows: {
@@ -506,20 +614,29 @@ Person.query({
 - IR / SPARQL pipeline: untouched. Everything lowers through DSL-JSON.
 - No subscriptions / `@defer` / `@stream` in this proposal.
 
+## Resolved decisions
+
+1. **Overload `select`, don't add a new method.** (Confirmed.) `select(fn)` stays
+   the callback form; `select(obj)` is the declarative form — dispatched at
+   runtime on `typeof arg === 'function'`. The `$`-sigil rule keeps the object
+   form's key namespace disjoint from options, so the overloaded typings stay
+   tractable.
+2. **No dependency on the `graphql` package.** (Confirmed.) The typed
+   object-literal form (Tier 1) is the primary surface and needs no parser — it
+   compiles straight to DSL-JSON. Tier 2, *if* pursued, is a small in-house
+   subset parser (accepting spec-drift risk), never an external dep.
+
 ## Open questions
 
-1. **Naming**: `Person.query({...})` vs overloading `Person.select({...})`
-   (distinguishable at runtime since selections are objects, not functions —
-   but the overloaded typings get hairy; separate name recommended).
-2. **`$` sigil vs reserved words**: `$where` can never collide with a property
-   label; bare `where` could. Is `$` acceptable aesthetically? (Prisma/Mongo
-   precedent says yes.)
-3. **`true` vs `1` vs nested-only**: allow `name: {}` as synonym for
+1. **`$` sigil vs reserved words**: `$where` can never collide with a property
+   label; bare `where` could. Acceptable aesthetically? (Prisma/Mongo precedent
+   says yes.)
+2. **`true` vs `1` vs nested-only**: allow `name: {}` as synonym for
    `name: true`? Recommend no — keep one spelling.
-4. **Wire version bump**: variables, `$if`, `$path` aliasing, and `introspect`
+3. **Wire version bump**: variables, `$if`, `$path` aliasing, and `introspect`
    are DSL-JSON additions → `"v": "1.1"`, additive only.
-5. **Expression tier typing in `$where`**: ship untyped S-expressions first
+4. **Expression tier typing in `$where`**: ship untyped S-expressions first
    (validated at runtime against the shape), add typed builders later?
-6. **Tier 2 parser**: depend on `graphql` (battle-tested, heavier) or write a
-   ~500-line subset parser (no external dep, spec-drift risk)?
-7. **`selectAll` spelling**: `'*'` key, `$all: true`, or `...FieldSet.all(Person).spread()`?
+5. **Tier 2 in-house parser**: worth building at all, or is the typed
+   object-literal form enough? (No `graphql` dep either way.)
+6. **`selectAll` spelling**: `'*'` key, `$all: true`, or `...FieldSet.all(Person).spread()`?
