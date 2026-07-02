@@ -208,9 +208,10 @@ Result: compile 0 (incl. `query-builder.types`/`intermediate-representation.type
 - New `src/queries/MutationThenable.ts`; `Create/Update/DeleteBuilder` extend it (add `super()` to constructors, a `protected readonly _tag`), remove the three duplicated blocks.
 - Validation: compile 0 (esp. `query-builder.types.test.ts`, `intermediate-representation.types.test.ts`); suite exact baseline (+ new from P5).
 
-**Phase 7 — Gap 3.b/3.c mechanical dedups**
-- `resultMapping.ts`: `mapSparqlUpdateResult` reuses `populateRowFromNodeData` (guarded by type-fit; skip+note if not clean).
-- `irToAlgebra.ts`: extract `buildPredicateTerm(pattern)`; replace the 4 ternaries.
+**Phase 7 — Gap 3.b/3.c mechanical dedups** ✅ DONE
+Result: compile 0; suite = 1449 passed (unchanged) / 117 skipped / 5 snapshots; golden SPARQL byte-identical; `npm run build` exit 0, clean artifact.
+- `irToAlgebra.ts`: extracted `buildPredicateTerm(spec)`; replaced all **4** ternaries (`buildTraverseTriple`, paginated sub-select, extend-triple, exists-triple).
+- **3.b SKIPPED (as planned):** `mapSparqlUpdateResult` reuse of `populateRowFromNodeData` — `ResultRow` vs `UpdateResult` are distinct imported types and the helper takes `IRNodeData` vs the mutation's `data`; reusing it would introduce type coupling for a 5-line gain. Left as-is; noted for a future typing-cleanup thread.
 - Validation: compile 0; suite exact; golden SPARQL byte-identical.
 
 Deferred → backlog at wrapup: decoder unification, lower.ts/lowerMutationJSON merge, Gap 2 public-surface prune, Gap 1 has no remainder, Gap 4 CI/Fuseki integrity.

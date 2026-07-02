@@ -144,6 +144,22 @@ function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
   return iriTerm(propertyId);
 }
 
+/**
+ * Resolve the predicate term for a traversal/property node: a structured
+ * property-path when an explicit `pathExpr` is present, otherwise the
+ * registry-resolved predicate for `property`. Centralizes the invariant that
+ * these two branches stay in lockstep across every triple-building site.
+ */
+function buildPredicateTerm(spec: {pathExpr?: PathExpr; property: string}): SparqlTerm {
+  return spec.pathExpr
+    ? {
+        kind: 'path',
+        value: pathExprToSparql(spec.pathExpr),
+        uris: collectPathUris(spec.pathExpr),
+      }
+    : resolvePropertyPredicateTerm(spec.property);
+}
+
 /** Produce variable name suffix from the last segment of a property URI. */
 function propertySuffix(propertyUri: string): string {
   const hashIdx = propertyUri.lastIndexOf('#');
@@ -267,13 +283,7 @@ function collectTraversalAliases(patterns: IRGraphPattern[]): string[] {
 }
 
 function buildTraverseTriple(pattern: IRTraversePattern): SparqlTriple {
-  const predicate = pattern.pathExpr
-    ? {
-        kind: 'path' as const,
-        value: pathExprToSparql(pattern.pathExpr),
-        uris: collectPathUris(pattern.pathExpr),
-      }
-    : resolvePropertyPredicateTerm(pattern.property);
+  const predicate = buildPredicateTerm(pattern);
   return tripleOf(
     varTerm(pattern.from),
     predicate,
@@ -781,13 +791,7 @@ export function selectToAlgebra(
   // Every pattern here is a root→child paginated traversal (the deep-pagination
   // guard above rejected anything else), so each maps 1:1 to a sub-SELECT.
   for (const pattern of paginatedTraversePatterns) {
-    const predicate = pattern.pathExpr
-      ? {
-          kind: 'path' as const,
-          value: pathExprToSparql(pattern.pathExpr),
-          uris: collectPathUris(pattern.pathExpr),
-        }
-      : resolvePropertyPredicateTerm(pattern.property);
+    const predicate = buildPredicateTerm(pattern);
     const innerTriple = tripleOf(
       iriTerm(singleSubjectIri!),
       predicate,
@@ -1197,9 +1201,7 @@ function processExpressionForProperties(
     case 'property_expr': {
       if (!registry.has(expr.sourceAlias, expr.property)) {
         const varName = registry.getOrCreate(expr.sourceAlias, expr.property);
-        const predicate = expr.pathExpr
-          ? {kind: 'path' as const, value: pathExprToSparql(expr.pathExpr), uris: collectPathUris(expr.pathExpr)}
-          : resolvePropertyPredicateTerm(expr.property);
+        const predicate = buildPredicateTerm(expr);
         const triple = tripleOf(
           varTerm(expr.sourceAlias),
           predicate,
@@ -1513,9 +1515,7 @@ function convertExistsPattern(
 ): SparqlAlgebraNode {
   switch (pattern.kind) {
     case 'traverse': {
-      const existsPredicate = pattern.pathExpr
-        ? {kind: 'path' as const, value: pathExprToSparql(pattern.pathExpr), uris: collectPathUris(pattern.pathExpr)}
-        : resolvePropertyPredicateTerm(pattern.property);
+      const existsPredicate = buildPredicateTerm(pattern);
       const triple = tripleOf(
         varTerm(pattern.from),
         existsPredicate,
