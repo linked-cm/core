@@ -174,7 +174,7 @@ const r = await store.selectQuery(Person.select(p => p.name).where(p => p.bestFr
 ## Ideation findings (explored)
 
 - **Aggregates `sum/avg/min/max`: NOT reachable from the DSL** (only `count`).
-  IR + SPARQL support them generically; deferred to backlog 002.
+  IR + SPARQL support them generically; deferred to backlog 006.
 - **Property paths through the DSL: pipeline sound E2E**, but no result-asserting
   test exists yet.
 - **All untested operators lower to valid SPARQL** — none broken (`power`
@@ -195,7 +195,7 @@ const r = await store.selectQuery(Person.select(p => p.name).where(p => p.bestFr
   field); existing `Person` graph extended only with new edges.
 - Assert exact results; mutations run against the throwaway test graph.
 - Language tags out of scope.
-- Aggregates `sum/avg/min/max` deferred → backlog 002 (count only here).
+- Aggregates `sum/avg/min/max` deferred → backlog 006 (count only here).
 - Deep-nesting RISKY group: investigate-first, then fix surfaced bugs
   immediately; pause + report only if a fix truly balloons.
 
@@ -315,7 +315,7 @@ regressions). One core bug fixed (`exprNestedPath` alias collision).
   `subSelectWithCount` (nested aggregate mis-scoped), `subSelectWithOne`
   (null-property row dropped under `.one()`).
 - backlog 005: `isNotDefined` (never matches), `Expr.ifThen` (wrong branch).
-- backlog 002: `sum`/`avg`/`min`/`max` not reachable from the DSL (count only).
+- backlog 006: `sum`/`avg`/`min`/`max` not reachable from the DSL (count only).
 
 ### Remaining coverage gaps (not bugs — candidates for an iteration)
 - Operator tail not yet asserted: `hours/minutes/seconds`, `encodeForUri`,
