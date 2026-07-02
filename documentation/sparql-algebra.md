@@ -195,7 +195,7 @@ Converts an `IRSelectQuery` to a `SparqlSelectPlan`. The algorithm:
 7. **Projection** — root alias + property variables + aggregate/expression projections.
 8. **Traversal aliases** — traversal target variables (`?a1`, `?a2`, etc.) are auto-included in the SELECT for result grouping.
 9. **GROUP BY inference** — if any aggregate is present, all non-aggregate projected variables become GROUP BY targets.
-10. **ORDER BY / LIMIT / OFFSET** — passed through from the IR.
+10. **ORDER BY / LIMIT / OFFSET** — passed through from the IR, with one exception: `.one()` lowers to `limit: 1` + `singleResult`, but a SPARQL `LIMIT` bounds *result rows*, not entities — an entity reached via a traversal or a plural property projection spans one row per related value. Emitting `LIMIT 1` there would truncate that entity's own nested/multi-valued data to a single row instead of picking one entity. So when `singleResult && limit === 1` and the query yields multiple rows per root entity, the `LIMIT` is omitted; the result mapper (which already groups bindings by root id) returns the single entity with its data intact. A flat single-valued `.one()` query keeps its `LIMIT 1`.
 
 #### Example: flat select
 
@@ -230,6 +230,8 @@ WHERE {
 
 For `OR` filters, only bindings required by every branch are promoted. For example, `p.name.equals('Jinx').or(p.hobby.equals('Jogging'))` keeps both bindings optional because either branch can satisfy the filter on its own.
 
+**Unbound-tolerant functions are exempt from promotion.** `BOUND(...)` and `COALESCE(...)` are explicitly designed to observe or paper over an unbound variable, so their arguments never contribute required binding keys — promoting them to a required (inner-join) triple would make `p.hobby.isNotDefined()` or `p.hobby.defaultTo('none').equals('none')` unsatisfiable (the rows the filter exists for are exactly the ones the inner join would drop). `IF(cond, then, else)` promotes only `cond`'s keys — an unbound condition variable fails the row either way, so requiring it is harmless — while `then`/`else` stay optional, since the untaken branch may reference a property the matched entities don't have.
+
 Serialized SPARQL:
 ```sparql
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -255,6 +257,32 @@ WHERE {
   OPTIONAL {
     ?a0 <hobby> ?a1 .
     FILTER(?a1 = "Jogging")
+  }
+}
+```
+
+#### Example: filtered sub-select, including nested filters
+
+DSL: `p.friends.where(f => f.name.equals('Moa')).select(f => [f.name, f.friends.where(g => g.name.equals('Jinx')).select(g => [g.name, g.hobby])])`
+
+A `.where()` immediately before a `.select()` on a plural traversal scopes the filter to that traversal's alias (carried from the source query object's `wherePath` into the sub-select's `FieldSet`, see `FieldSet.forSubSelect`). The filtered block's own children — its projected properties and any nested sub-select traversals — must be built *inside* that block, not emitted as separate top-level OPTIONALs: if the filter matches nothing, the block's subject alias (`?a1`) is unbound, and a sibling top-level OPTIONAL referencing `?a1` would silently cross-product over every matching edge in the graph instead of contributing nothing for that root entity.
+
+When a filtered sub-select is itself nested inside another filtered sub-select, the same rule applies one level deeper: the inner filtered block must nest inside the outer one, or an empty outer match leaves the inner block's subject unbound with the same cross-product risk. `irToAlgebra` assembles filtered blocks in two passes to get this right — build each block's own inner group first (traverse triple + filter properties + child properties + child traversal subtrees), then attach each finished block either inside its parent's block (if its subject alias is itself a filtered traversal target) or at the top level (if it's a root filter):
+
+```sparql
+SELECT DISTINCT ?a0 ?a1_name ?a2_name ?a2_hobby ?a1 ?a2
+WHERE {
+  ?a0 rdf:type <Person> .
+  OPTIONAL {
+    ?a0 <friends> ?a1 .
+    OPTIONAL { ?a1 <name> ?a1_name . }
+    OPTIONAL {
+      ?a1 <friends> ?a2 .
+      OPTIONAL { ?a2 <name> ?a2_name . }
+      OPTIONAL { ?a2 <hobby> ?a2_hobby . }
+      FILTER(?a2_name = "Jinx")
+    }
+    FILTER(?a1_name = "Moa")
   }
 }
 ```
@@ -384,6 +412,8 @@ Maps SPARQL JSON result bindings back to `SelectResult` (array of `ResultRow` or
    - `property_expr(a0, prop:name)` → `a0_name`
    - `alias_expr(a1)` → `a1`
    - `aggregate_expr` → projection alias
+
+   The nesting descriptor also decides *which* entity group an `aggregate_expr` field belongs to: it is anchored to its property argument's `sourceAlias` (the entity the aggregate is grouped by in the SPARQL `GROUP BY`), not unconditionally to the root. A nested aggregate like `p.friends.select(f => ({numFriends: f.friends.size()}))` is grouped per friend (`sourceAlias: 'a1'`) and lands inside each friend object; a root-level `p.friends.size()` has `sourceAlias` equal to the root and lands on the root row. Getting this wrong silently misattributes the count to the wrong entity rather than erroring — see report 020 bug 4 for the concrete case that surfaced it.
 
 4. **Value coercion** — converts SPARQL binding values to JS types based on XSD datatype:
    - `xsd:boolean` → `boolean`

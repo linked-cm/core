@@ -114,6 +114,102 @@ export class Person extends Shape {
   }
 }
 
+export const metricClass = type('Metric');
+export const metricScore = prop('metricScore');
+export const metricRating = prop('metricRating');
+export const metricViews = prop('metricViews');
+export const metricCount = prop('metricCount');
+export const metricJoinedOn = prop('metricJoinedOn');
+export const metricScores = prop('metricScores');
+
+/**
+ * Datatype-coverage shape: one single-valued field per numeric/date xsd type,
+ * plus a multi-valued numeric field (scores) for array coercion/dedup/ordering.
+ */
+@linkedShape
+export class Metric extends Shape {
+  static targetClass = metricClass;
+
+  @literalProperty({path: metricScore, maxCount: 1, datatype: xsd.decimal})
+  get score(): number {
+    return null;
+  }
+
+  @literalProperty({path: metricRating, maxCount: 1, datatype: xsd.double})
+  get rating(): number {
+    return null;
+  }
+
+  @literalProperty({path: metricViews, maxCount: 1, datatype: xsd.long})
+  get views(): number {
+    return null;
+  }
+
+  @literalProperty({path: metricCount, maxCount: 1, datatype: xsd.integer})
+  get count(): number {
+    return null;
+  }
+
+  @literalProperty({path: metricJoinedOn, maxCount: 1, datatype: xsd.date})
+  get joinedOn(): Date {
+    return null;
+  }
+
+  @literalProperty({path: metricScores, datatype: xsd.decimal})
+  get scores(): number[] {
+    return [];
+  }
+}
+
+/**
+ * Property-path coverage shape. Uses complex decorator paths (sequence,
+ * alternative, inverse, transitive) so Shape.select(...) lowers them end-to-end.
+ * Paths use explicit raw IRIs; seed data is keyed on those same IRIs.
+ */
+const PP = 'linked://pp/';
+export const pathNodeClass: NodeReferenceValue = {id: `${PP}Node`};
+
+@linkedShape
+export class PathNode extends Shape {
+  static targetClass = pathNodeClass;
+
+  // sequence: knows / name → the name of who this node knows
+  @literalProperty({path: {seq: [{id: `${PP}knows`}, {id: `${PP}name`}]}, maxCount: 1})
+  get friendName(): string {
+    return '';
+  }
+
+  // alternative: email | phone
+  @literalProperty({path: {alt: [{id: `${PP}email`}, {id: `${PP}phone`}]}})
+  get contact(): string[] {
+    return [];
+  }
+
+  // inverse + sequence: ^knows / name → name of who knows this node
+  @literalProperty({path: {seq: [{inv: {id: `${PP}knows`}}, {id: `${PP}name`}]}, maxCount: 1})
+  get knownByName(): string {
+    return '';
+  }
+
+  // transitive sequence: manages+ / name → names of all transitive reports
+  @literalProperty({path: {seq: [{oneOrMore: {id: `${PP}manages`}}, {id: `${PP}name`}]}})
+  get reportNames(): string[] {
+    return [];
+  }
+
+  // zeroOrMore: knows* / name → self + all transitively-known names
+  @literalProperty({path: {seq: [{zeroOrMore: {id: `${PP}knows`}}, {id: `${PP}name`}]}})
+  get knowsChainNames(): string[] {
+    return [];
+  }
+
+  // zeroOrOne: knows? / name → self + directly-known name
+  @literalProperty({path: {seq: [{zeroOrOne: {id: `${PP}knows`}}, {id: `${PP}name`}]}})
+  get maybeKnownNames(): string[] {
+    return [];
+  }
+}
+
 @linkedShape
 export class Employee extends Person {
   static targetClass = employeeClass;
@@ -246,6 +342,13 @@ export const queryFactories = {
     ),
   whereNeq: () =>
     Person.select((p) => p.name).where(((p: any) => p.name.neq('Alice')) as any),
+  // Unbound-tolerant functions in a where-filter: their arguments must not be
+  // inner-joined, or the fallback/untaken branch can never match
+  whereExprDefaultTo: () =>
+    Person.select().where(((p: any) => p.hobby.defaultTo('none').equals('none')) as any),
+  whereExprIfThen: () =>
+    Person.select().where(((p: any) =>
+      Expr.ifThen(p.name.equals('Quinn'), 'quinn', p.hobby.str()).equals('quinn')) as any),
   whereExprNot: () =>
     Person.select((p) => p.name).where((p) =>
       Expr.not(p.name.equals('Alice').and((p as any).hobby.equals('Chess'))),
@@ -325,6 +428,18 @@ export const queryFactories = {
         .select((pp) => [
           pp.name,
           pp.friends.select((f) => [f.name, f.hobby]),
+        ]),
+    ),
+  // A filtered sub-select nested INSIDE another filtered sub-select
+  nestedFilteredSubSelects: () =>
+    Person.select((p) =>
+      p.pluralTestProp
+        .where((pp) => pp.name.equals('Moa'))
+        .select((pp) => [
+          pp.name,
+          pp.friends
+            .where((f) => f.name.equals('Jinx'))
+            .select((f) => [f.name, f.hobby]),
         ]),
     ),
   selectDuplicatePaths: () =>
