@@ -6,12 +6,33 @@ export interface SparqlOptions {
   prefixes?: Record<string, string>;
 }
 
+// Characters that must never appear inside a SPARQL IRIREF (`<...>`) per the
+// SPARQL 1.1 grammar: angle brackets, quote, braces, pipe, caret, backtick,
+// backslash, and all control chars + space (U+0000–U+0020). Any of these would
+// let a crafted `id`/IRI break out of the `<...>` and inject raw SPARQL.
+const FORBIDDEN_IRI_CHARS = /[\x00-\x20<>"{}|^`\\]/;
+
+/**
+ * Assert that a string is safe to emit as a SPARQL IRI. Throws on any character
+ * that could terminate the IRIREF and inject query text. Applied to the raw IRI
+ * before prefixing so the prefixed branch can't be used to smuggle a breakout.
+ */
+export function assertSafeIri(uri: string): void {
+  if (typeof uri !== 'string' || FORBIDDEN_IRI_CHARS.test(uri)) {
+    throw new Error(
+      `Invalid IRI for SPARQL output: ${JSON.stringify(uri)}. IRIs must not contain angle brackets, quotes, braces, whitespace, or control characters.`,
+    );
+  }
+}
+
 /**
  * Format a URI for SPARQL output.
  * Returns prefixed form (e.g. `rdf:type`) if a prefix is registered and the
  * suffix doesn't contain `/`. Otherwise returns `<full-uri>`.
+ * Throws if the IRI contains characters that could break out of the IRIREF.
  */
 export function formatUri(uri: string): string {
+  assertSafeIri(uri);
   const prefixed = Prefix.toPrefixed(uri);
   if (prefixed) return prefixed;
   return `<${uri}>`;
