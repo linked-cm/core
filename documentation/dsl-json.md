@@ -12,6 +12,12 @@ the structure you target.
 > and the select envelope (`sortBy` ordered array, `one`). Remaining edges are tracked in
 > docs/backlog/002 (`preload`, `in`/`nin`, cross-shape context property). See report 019 for the
 > implementation record.
+>
+> **Examples are tested.** The JSON examples in this document are mirrored as executable
+> fixtures in `src/tests/dsl-json-spec-fixtures.ts` and driven through `fromJSON → lower →
+> SPARQL` by `src/tests/dsl-json-spec.test.ts`. That fixtures file is the source of truth:
+> when you change an example here, update the fixture (and vice-versa) so the two cannot
+> silently drift. (A generator + CI check to automate this is a future improvement.)
 
 A Linked query exists in three tiers:
 

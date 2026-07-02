@@ -57,8 +57,11 @@ Regenerate the round-trip fixtures and the doc. (See before/after examples in th
 **D2 (Q2) — word-operator aliases in conditions.**
 `equals`→`=`, `notEquals`→`!=`, `gt`→`>`, `gte`→`>=`, `lt`→`<`, `lte`→`<=` recognized by `isOpMap`/decode alongside the symbols. Removes the current silent-wrong decode of `{name:{equals:"x"}}`.
 
-**D3 (Q3) — membership operator `oneOf` / `noneOf`.**
-New feature top-to-bottom (no membership operator exists in the DSL today). Naming `oneOf`/`noneOf` (clearest read; avoids the `includes`/`excludes` "collection-contains" ambiguity, which we reserve for a future real collection op).
+**D3 (Q3) — membership operator `oneOf` / `notOneOf`.**
+New feature top-to-bottom (no membership operator exists in the DSL today). Naming **`oneOf` / `notOneOf`** — `notOneOf` is the literal negation of `oneOf` (obvious matched pair, reads "is not one of"), beating `noneOf` (clunky) and `in`/`notIn` (would regress the preferred positive). Avoids `includes`/`excludes`, reserved for a future collection-contains op.
+- **Empty list:** `oneOf([])` → constant-false (matches nothing); `notOneOf([])` → constant-true. Do not emit `IN ()`.
+- **Single element:** keep as `IN ("x")` (predictable, round-trips), do not collapse to `=`.
+- **Wire:** operator-map keys `{ "hobby": { "oneOf": [...] } }` / `{ ..: { "notOneOf": [...] } }`, array-valued, next to the `{ ">": 18 }` tier.
 - **Placement:** a boolean predicate — lives in `where` and inside `.some()`/`.every()`; **not** a projection field. (Confirmed: it resolves to a filter.)
 - **Element types:** literals **and** named nodes — mirrors SPARQL `IN`, which takes both. Element type follows the property type: literal property → literal list; object property → node-reference list (`{id}`/Shape).
 - **Lowering:** IR membership op → SPARQL `?x IN (…)` / `NOT IN (…)`.
@@ -68,7 +71,7 @@ New feature top-to-bottom (no membership operator exists in the DSL today). Nami
 No generator/CI. Add a `dsl-json` spec-fixtures test that feeds the *documented* JSON examples through `fromJSON` and asserts they decode/lower correctly; manually keep `dsl-json.md` matching those fixtures; add a note in the doc pointing at the fixtures file as the source of truth. (Generator + CI check is a later improvement — backlog.)
 
 ### Phases (G2)
-- **2a — spec-fixtures harness (D4):** `src/tests/dsl-json-spec.test.ts` + a fixtures file mirroring the doc's *currently-working* examples; doc note. Small, low-risk, lands first as scaffolding.
+- **2a — spec-fixtures harness (D4):** ✅ DONE. `src/tests/dsl-json-spec-fixtures.ts` (source of truth) + `dsl-json-spec.test.ts` driver (`fromJSON → lower → selectToSparql`, asserts documented examples decode); doc note added to `dsl-json.md`. Seeded with 5 currently-working forms. Suite 1457 / typecheck green.
 - **2b — word-operator aliases (D2):** decode + fixtures.
 - **2c — relation-keyed projection (D1):** `FieldSet.toJSON`/`fromJSON` rewrite, doc rewrite, round-trip + spec fixtures.
 - **2d — `oneOf`/`noneOf` (D3):** DSL method + IR op + SPARQL lowering + encode/decode + round-trip + spec fixtures.
