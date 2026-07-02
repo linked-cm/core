@@ -329,3 +329,29 @@ Local Fuseki runs from the Apache Jena 5.5.0 standalone distribution (the docker
 image registry host is egress-blocked). Helper: `bash
 /home/user/fuseki-dist/run-fuseki-tests.sh '<jest-pattern>'`. This is local-only
 scaffolding, not committed to the repo.
+
+## Iteration 1 — bug fix + coverage tails
+
+Selected after the review pause: fix the high-priority data-corruption bug and
+close the coverage tails.
+
+### Gap 1 — backlog 003 Bug 2 (UPDATE expression-over-traversal) — FIXED
+`updateToAlgebra` now nests each traversal-anchored leaf property triple as an
+OPTIONAL inside its traversal-edge group (instead of flat LEFT JOINs applied
+before the edge). The target var is scoped to the subject's traversal target, so
+an absent edge no longer matches every entity, and a missing optional property
+no longer drops sibling fields. `updateExprTraversal` / `updateExprSharedTraversal`
+un-quarantined with positive (target-with-bestFriend) and no-corruption tests.
+
+### Gap 2 — coverage tails — ADDED
+- Operators: `hours`/`minutes`/`seconds` (timed birthDate), `encodeForUri`,
+  `isLiteral`/`isNumeric` (filters).
+- Property paths: `zeroOrMore` (`knows*`) and `zeroOrOne` (`knows?`) via two new
+  `PathNode` properties.
+- DSL-JSON: delete round-trip via `fromJSON` (deleteWhere).
+- `{$ctx}`: update-target and mutation field-value.
+
+### Result
+**82 passing, 5 skipped** in the coverage suite; **full suite 1433 passed, 0
+failed**. Remaining skips are backlog 004 (nested sub-select: 3) and backlog 005
+(operators: 2). Bug 1 (`exprNestedPath`) and backlog 003 are now fixed.

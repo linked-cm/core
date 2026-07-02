@@ -51,7 +51,7 @@ const BASE_DATA = `
 <${ENT}p1> <${RDF_TYPE}> <${P}> .
 <${ENT}p1> <${P}/name> "Semmy" .
 <${ENT}p1> <${P}/hobby> "Reading" .
-<${ENT}p1> <${P}/birthDate> "1990-01-01T00:00:00.000Z"^^<${XSD}dateTime> .
+<${ENT}p1> <${P}/birthDate> "1990-01-01T13:45:30.000Z"^^<${XSD}dateTime> .
 <${ENT}p1> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
 <${ENT}p1> <${P}/friends> <${ENT}p2> .
 <${ENT}p1> <${P}/friends> <${ENT}p3> .
@@ -157,6 +157,76 @@ const runSel = (name: keyof typeof queryFactories) =>
 
 const find = (rows: Row[], id: string): Row =>
   rows.find((r) => r.id.includes(id))!;
+
+// =========================================================================
+// §2/§4 — operator & property-path tails
+// =========================================================================
+describe('coverage tails — operators & paths', () => {
+  const P1 = {id: `${ENT}p1`}, PNA = {id: `${ENT}pna`};
+  const one = async (q: any, key: string) => ((await store.selectQuery(q)) as Row)[key];
+
+  test('date components hours/minutes/seconds (p1 13:45:30)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await one(Person.select((p: any) => ({r: p.birthDate.hours()})).for(P1), 'r')).toBe(13);
+    expect(await one(Person.select((p: any) => ({r: p.birthDate.minutes()})).for(P1), 'r')).toBe(45);
+    expect(await one(Person.select((p: any) => ({r: p.birthDate.seconds()})).for(P1), 'r')).toBe(30);
+  });
+
+  test('encodeForUri projection', async () => {
+    if (!fusekiAvailable) return;
+    expect(await one(Person.select((p: any) => ({r: p.name.encodeForUri()})).for(P1), 'r')).toBe('Semmy');
+  });
+
+  test('isLiteral / isNumeric introspection (filter)', async () => {
+    if (!fusekiAvailable) return;
+    expect(ids((await store.selectQuery(Person.select().where((p: any) => p.name.isLiteral()))) as Row[]))
+      .toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
+    expect((await store.selectQuery(Person.select().where((p: any) => p.name.isNumeric()))) as Row[]).toEqual([]);
+  });
+
+  test('zeroOrMore path knows*/name (pna → self + transitive)', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(PathNode.select((n: any) => n.knowsChainNames).for(PNA))) as Row;
+    expect([...(r.knowsChainNames as string[])].sort()).toEqual(['A', 'B', 'C']);
+  });
+
+  test('zeroOrOne path knows?/name (pna → self + direct)', async () => {
+    if (!fusekiAvailable) return;
+    const r = (await store.selectQuery(PathNode.select((n: any) => n.maybeKnownNames).for(PNA))) as Row;
+    expect([...(r.maybeKnownNames as string[])].sort()).toEqual(['A', 'B']);
+  });
+});
+
+// =========================================================================
+// §6/§7 — DSL-JSON delete round-trip + {$ctx} mutation tails
+// =========================================================================
+describe('coverage tails — DSL-JSON delete & {$ctx} mutations', () => {
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  test('delete round-trips via fromJSON (deleteWhere)', async () => {
+    if (!fusekiAvailable) return;
+    // give p2 hobby=Chess, then delete-where(hobby=Chess) over the wire
+    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${P}/hobby> ?o } INSERT { <${ENT}p2> <${P}/hobby> "Chess" } WHERE { <${ENT}p2> <${P}/hobby> ?o }`);
+    const dq = queryFactories.deleteWhere();
+    await store.deleteQuery(fromJSON((dq as any).toJSON()) as any);
+    expect(ids((await store.selectQuery(queryFactories.selectName())) as Row[]))
+      .toEqual(['p1', 'p3', 'p4', 'p5']);
+  });
+
+  test('{$ctx} as update target (user = p3)', async () => {
+    if (!fusekiAvailable) return;
+    await store.updateQuery(Person.update({hobby: 'CtxHobby'}).for(getQueryContext('user')));
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p3> <${P}/hobby> ?h }`);
+    expect(r.results.bindings.map((b: any) => b.h.value)).toEqual(['CtxHobby']);
+  });
+
+  test('{$ctx} as mutation field value (p1.bestFriend := user p3)', async () => {
+    if (!fusekiAvailable) return;
+    await store.updateQuery(Person.update({bestFriend: getQueryContext('user')} as any).for({id: `${ENT}p1`}));
+    const r = await executeSparqlQuery(`SELECT ?b WHERE { <${ENT}p1> <${P}/bestFriend> ?b }`);
+    expect(r.results.bindings.map((b: any) => b.b.value)).toEqual([`${ENT}p3`]);
+  });
+});
 
 // =========================================================================
 // §5 — Builder features (ordering / pagination)

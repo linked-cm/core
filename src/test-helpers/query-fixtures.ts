@@ -196,6 +196,18 @@ export class PathNode extends Shape {
   get reportNames(): string[] {
     return [];
   }
+
+  // zeroOrMore: knows* / name → self + all transitively-known names
+  @literalProperty({path: {seq: [{zeroOrMore: {id: `${PP}knows`}}, {id: `${PP}name`}]}})
+  get knowsChainNames(): string[] {
+    return [];
+  }
+
+  // zeroOrOne: knows? / name → self + directly-known name
+  @literalProperty({path: {seq: [{zeroOrOne: {id: `${PP}knows`}}, {id: `${PP}name`}]}})
+  get maybeKnownNames(): string[] {
+    return [];
+  }
 }
 
 @linkedShape
