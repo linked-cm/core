@@ -8,7 +8,6 @@ import * as LinkedErrorLogging from './utils/LinkedErrorLogging.js';
 import * as LinkedFileStorage from './utils/LinkedFileStorage.js';
 import * as LinkedStorage from './utils/LinkedStorage.js';
 import * as CoreSet from './collections/CoreSet.js';
-import * as CoreMap from './collections/CoreMap.js';
 import * as Shape from './shapes/Shape.js';
 import * as SHACLShapes from './shapes/SHACL.js';
 import * as ShapeSet from './collections/ShapeSet.js';
@@ -128,7 +127,6 @@ export function initModularApp() {
     LinkedFileStorage,
     LinkedStorage,
     CoreSet,
-    CoreMap,
     Shape,
     ShapeSet,
     Prefix,

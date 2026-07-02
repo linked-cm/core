@@ -3,11 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import {CoreMap} from '../collections/CoreMap.js';
-
 export class Prefix {
-  static uriToPrefix: CoreMap<string, string> = new CoreMap();
-  static prefixToUri: CoreMap<string, string> = new CoreMap();
+  static uriToPrefix: Map<string, string> = new Map();
+  static prefixToUri: Map<string, string> = new Map();
 
   static getUriToPrefixMap() {
     return this.uriToPrefix;
@@ -31,8 +29,8 @@ export class Prefix {
   }
 
   static clear() {
-    this.uriToPrefix = new CoreMap<string, string>();
-    this.prefixToUri = new CoreMap<string, string>();
+    this.uriToPrefix = new Map<string, string>();
+    this.prefixToUri = new Map<string, string>();
   }
 
   static getPrefix(fullURI: string): string {

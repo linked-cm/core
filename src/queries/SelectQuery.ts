@@ -4,7 +4,6 @@ import type {RawSelectInput} from './IRDesugar.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
 import {shacl} from '../ontologies/shacl.js';
 import {CoreSet} from '../collections/CoreSet.js';
-import {CoreMap} from '../collections/CoreMap.js';
 import {getPropertyShapeByLabel,getShapeClass} from '../utils/ShapeClass.js';
 import {NodeReferenceValue,type Prettify,type ShapeReferenceValue} from './QueryFactory.js';
 import {xsd} from '../ontologies/xsd.js';
@@ -241,8 +240,6 @@ export interface LinkedComponentInterface<S extends Shape = Shape, R = any> {
  * ####    QUERY RESULT TYPES     ####
  * ###################################
  */
-
-export type NodeResultMap = CoreMap<string, QResult<any, any>>;
 
 export type QResult<ShapeType extends Shape = Shape, Object = {}> = Object & {
   id: string;
