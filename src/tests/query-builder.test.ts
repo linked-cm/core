@@ -780,14 +780,14 @@ describe('where-clause context references', () => {
       p.bestFriend.equals(getQueryContext('wctx')),
     );
     // Pre-auth where-context no longer throws at build; the wire carries the
-    // context *name* (a reference_expr with contextName), not a baked/undefined id.
+    // context *name* as a `{$ctx}` marker, not a baked/undefined id.
     const json: any = JSON.parse(JSON.stringify(q.toJSON()));
-    expect(JSON.stringify(json.where)).toContain('"contextName":"wctx"');
-    expect(JSON.stringify(json.where)).not.toContain('"value"'); // no baked id while unset
+    expect(json.where).toEqual({bestFriend: {$ctx: 'wctx'}});
+    expect(JSON.stringify(json.where)).not.toContain('"id"'); // no baked id while unset
 
     // fromJSON → toJSON preserves the reference verbatim.
     const restored = QueryBuilder.fromJSON(json);
-    expect(JSON.stringify(restored.toJSON().where)).toBe(JSON.stringify(json.where));
+    expect(restored.toJSON().where).toEqual(json.where);
   });
 
   test('SET context: lower() resolves the name to the concrete id', () => {
