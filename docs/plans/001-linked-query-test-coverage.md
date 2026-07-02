@@ -411,3 +411,11 @@ mapper picks the single entity (`irToAlgebra.ts`). Flat `.one()` keeps LIMIT 1.
 coverage work (backlog 003/004/005) are fixed. Residuals documented in backlog
 004 (nested filtered-inside-filtered traversals) and 005 (COALESCE/IF args in
 where-filters marked required).
+
+### Addendum — backlog 004 residual fixed
+New fixture `nestedFilteredSubSelects` (outer `.where(name='Moa')`, inner
+`.where(name='Jinx')`) reproduced the cross-product: the inner filtered block
+was emitted at top level with a potentially-unbound subject alias. Fixed in
+`irToAlgebra.ts` §5b (two-pass block assembly; child filtered blocks nest
+inside their parent's block). Coverage suite now **88 passing**; full suite
+**1440 passed, 0 failed**. Remaining known residual: backlog 005 COALESCE/IF.

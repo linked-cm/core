@@ -824,6 +824,12 @@ export function selectToAlgebra(
   //     Each block contains: traverse triple + OPTIONAL property triples + FILTER.
   //     Filter property triples are nested as OPTIONALs so that OR filters work
   //     even when some entities lack certain properties.
+  // First pass: build each filtered block's inner group and filter expression.
+  const filteredBlockInners: SparqlAlgebraNode[] = [];
+  const filteredBlockExprs: SparqlExpression[] = [];
+  const filteredBlockIdxByAlias = new Map<string, number>(
+    filteredTraverseBlocks.map((block, i) => [block.toAlias, i]),
+  );
   for (let i = 0; i < filteredTraverseBlocks.length; i++) {
     const block = filteredTraverseBlocks[i];
     const filterPropertyTriples = filterPropertyTriplesMap.get(i) || [];
@@ -852,7 +858,33 @@ export function selectToAlgebra(
         ),
       );
     }
-    const filteredBlock: SparqlFilter = {type: 'filter', expression: filterExpr, inner: blockInner};
+    filteredBlockInners.push(blockInner);
+    filteredBlockExprs.push(filterExpr);
+  }
+  // Second pass, children first (blocks are created parent-before-child):
+  // finish each block and either nest it inside its parent's filtered block —
+  // a filtered sub-select inside another filtered sub-select must stay scoped
+  // to the parent alias, or an empty parent match leaves the alias unbound and
+  // the block cross-products over the whole graph — or attach it at top level.
+  const rootFilteredBlocks: SparqlAlgebraNode[] = [];
+  for (let i = filteredTraverseBlocks.length - 1; i >= 0; i--) {
+    const block = filteredTraverseBlocks[i];
+    const finished: SparqlFilter = {
+      type: 'filter',
+      expression: filteredBlockExprs[i],
+      inner: filteredBlockInners[i],
+    };
+    const subject = block.traverseTriple.subject;
+    const parentIdx = subject.kind === 'variable'
+      ? filteredBlockIdxByAlias.get(subject.name)
+      : undefined;
+    if (parentIdx !== undefined && parentIdx !== i) {
+      filteredBlockInners[parentIdx] = wrapOptional(filteredBlockInners[parentIdx], finished);
+    } else {
+      rootFilteredBlocks.unshift(finished);
+    }
+  }
+  for (const filteredBlock of rootFilteredBlocks) {
     algebra = wrapOptional(algebra, filteredBlock);
   }
 

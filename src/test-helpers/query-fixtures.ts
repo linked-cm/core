@@ -423,6 +423,18 @@ export const queryFactories = {
           pp.friends.select((f) => [f.name, f.hobby]),
         ]),
     ),
+  // A filtered sub-select nested INSIDE another filtered sub-select
+  nestedFilteredSubSelects: () =>
+    Person.select((p) =>
+      p.pluralTestProp
+        .where((pp) => pp.name.equals('Moa'))
+        .select((pp) => [
+          pp.name,
+          pp.friends
+            .where((f) => f.name.equals('Jinx'))
+            .select((f) => [f.name, f.hobby]),
+        ]),
+    ),
   selectDuplicatePaths: () =>
     Person.select((p) => [
       p.bestFriend.name,

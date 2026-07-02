@@ -89,14 +89,23 @@ Actual: only Moa — Jinx is dropped because its `hobby` is null. The
 single-subject `.one()` path appears to inner-join the optional property instead
 of left-joining it (the non-`.one()` variant `subSelectPluralCustom` keeps both).
 
-## Status
-
-All three bugs fixed and un-quarantined; the coverage suite asserts exact
-results against live Fuseki (14/14 deep-nesting fixtures correct, 0 skips).
-
-## Residual (noted, not covered by a failing test)
+## Residual: nested filtered-inside-filtered traversals — ✅ FIXED
 
 Nested filtered traversals (a `.where()` on a sub-select **inside** another
-filtered sub-select) still emit each filtered block flat at the top level, so
-the inner block's subject alias can be unbound — same cross-product family as
-the Bug 3 nesting defect, one level deeper. No fixture exercises this yet.
+filtered sub-select) emitted each filtered block flat at the top level, so the
+inner block's subject alias could be unbound — same cross-product family as the
+Bug 3 nesting defect, one level deeper.
+
+> Fixed in `src/sparql/irToAlgebra.ts` (section 5b): filtered blocks are now
+> built in two passes — inner groups first, then (children before parents, in
+> reverse creation order) each finished block is nested inside its parent's
+> filtered block when its subject alias is itself a filtered traversal target,
+> and only root blocks attach to the top-level algebra. Covered by the new
+> `nestedFilteredSubSelects` fixture + E2E test (outer filter Moa, inner filter
+> Jinx; asserts the exact nested result and no leak for non-matching persons).
+
+## Status
+
+All three bugs plus the nesting residual fixed and un-quarantined; the coverage
+suite asserts exact results against live Fuseki (15/15 deep-nesting fixtures
+correct, 0 skips).

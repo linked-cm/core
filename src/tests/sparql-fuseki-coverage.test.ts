@@ -639,6 +639,24 @@ describe('coverage §1 — deep nesting', () => {
     expect(find(rows, 'p5').pluralTestProp).toEqual([]);
   });
 
+  test('nestedFilteredSubSelects — a filtered sub-select inside a filtered sub-select', async () => {
+    if (!fusekiAvailable) return;
+    const rows = (await runSel('nestedFilteredSubSelects')) as Row[];
+    const p1 = find(rows, 'p1');
+    expect(p1.pluralTestProp).toHaveLength(1);
+    const moa = p1.pluralTestProp[0];
+    expect(moa.name).toBe('Moa');
+    // Inner filter keeps only Jinx out of Moa's friends [Jinx, Quinn]
+    expect(moa.friends.map((f: Row) => ({name: f.name, hobby: f.hobby}))).toEqual([
+      {name: 'Jinx', hobby: null},
+    ]);
+    // Persons without a Moa match keep an empty array — the inner filtered
+    // block must not cross-product over the graph when the outer alias is unbound
+    for (const other of ['p2', 'p3', 'p4', 'p5']) {
+      expect(find(rows, other).pluralTestProp).toEqual([]);
+    }
+  });
+
   test('subSelectWithCount — numFriends scoped to each friend, not the parent', async () => {
     if (!fusekiAvailable) return;
     const rows = (await runSel('subSelectWithCount')) as Row[];
