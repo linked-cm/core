@@ -1,16 +1,16 @@
 ---
-summary: Migrated the DSL-JSON wire format to the compact, IR-free "Z-c" grammar — query.toJSON() emits path-keyed conditions, dotted-string projections, an S-expr fallback, and path-keyed mutation node data (with __id/__shape), and fromJSON() rehydrates losslessly. A new pure ZcExpression codec bridges the expression IR and the wire; the builder→IR→store pipeline and lower() are unchanged. Round-trip-through-lower is the contract.
+summary: Migrated the DSL-JSON wire format to the compact, IR-free wire grammar — query.toJSON() emits path-keyed conditions, dotted-string projections, an S-expr fallback, and path-keyed mutation node data (with __id/__shape), and fromJSON() rehydrates losslessly. A new pure DslJsonExpression codec bridges the expression IR and the wire; the builder→IR→store pipeline and lower() are unchanged. Round-trip-through-lower is the contract.
 packages: [core]
 ---
 
-# 019 — DSL-JSON Z-c wire format
+# 019 — DSL-JSON wire format
 
 ## Outcome
 
 The DSL-JSON wire format ([documentation/dsl-json.md](../../documentation/dsl-json.md)) was migrated
 from the IR-embedding form (raw `IRExpression` in where-clauses, `{kind:…}` value tags and a
-`{shape,fields}` scaffold in mutations) to the **Z-c grammar** — compact, DSL-shaped, and **IR-free**.
-`query.toJSON()` now emits Z-c and `fromJSON()` reads it back, preserving:
+`{shape,fields}` scaffold in mutations) to the compact wire grammar — compact, DSL-shaped, and **IR-free**.
+`query.toJSON()` now emits DSL-JSON and `fromJSON()` reads it back, preserving:
 
 ```
 lower(fromJSON(query.toJSON())) ≡ lower(query)          // selects
@@ -23,17 +23,17 @@ Only the **middle tier** (the bytes exchanged) changed; the builder→IR→store
 
 ## Architecture
 
-A single new pure module, **`src/queries/ZcExpression.ts`**, is the codec. Everything else delegates
+A single new pure module, **`src/queries/DslJsonExpression.ts`**, is the codec. Everything else delegates
 to it. It depends only on IR types, `ExpressionNode`/`ExistsCondition`, `walkPropertyPath`, and the
 shape registry — no builder internals.
 
 ```
-toJSON:   builder → {ir,refs}/{existsCondition} ──ZcExpression.encode──▶ Z-c JSON
-fromJSON: Z-c JSON ──ZcExpression.decode──▶ {ir,refs}/{existsCondition} → builder → lower()
+toJSON:   builder → {ir,refs}/{existsCondition} ──DslJsonExpression.encode──▶ DSL-JSON
+fromJSON: DSL-JSON ──DslJsonExpression.decode──▶ {ir,refs}/{existsCondition} → builder → lower()
 ```
 
 The insight that made this tractable: a runtime `WherePath` is only `{expressionNode}` |
-`{existsCondition}`, and an `ExpressionNode` is just `(ir, refs)`. Converting Z-c ⇄ that pair leaves
+`{existsCondition}`, and an `ExpressionNode` is just `(ir, refs)`. Converting DSL-JSON ⇄ that pair leaves
 the rest of the pipeline alone. Property labels resolve deterministically because a PropertyShape id
 is `{shapeId}/{label}` — encode takes the last segment; decode re-walks via `walkPropertyPath`, which
 reconstructs identical segment IRIs, so `lower` of the round-trip is byte-identical.
@@ -76,9 +76,9 @@ reconstructs identical segment IRIs, so `lower` of the round-trip is byte-identi
 - **Reserved labels:** `and`/`or`/`not` may not be property labels (boolean combinators with no
   key-position escape) — enforced at shape registration.
 
-## IR ⇄ Z-c mapping
+## IR ⇄ DSL-JSON mapping
 
-| IR node | Z-c value tier | Z-c condition tier |
+| IR node | DSL-JSON value tier | DSL-JSON condition tier |
 |---|---|---|
 | `literal_expr` | bare scalar / `{date}` | — |
 | `reference_expr {value}` / `{contextName}` | `{id}` / `{$ctx}` | — |
@@ -95,10 +95,10 @@ reconstructs identical segment IRIs, so `lower` of the round-trip is byte-identi
 
 | File | Responsibility |
 |---|---|
-| `src/queries/ZcExpression.ts` | **NEW** — the codec: `encode/decodeValueExpr`, `encode/decodeCondition`, path helpers (`segmentsToPath`, `pathToSegmentIds`), the wire types (`ZcValue`, `ZcCondition`, …). |
-| `src/queries/QueryBuilderSerialization.ts` | `serialize/deserializeWherePath` delegate to the codec; `WherePathJSON = ZcCondition`; `sortBy` ordered array; minus. Legacy evaluation/andOr/QueryStep machinery removed. |
+| `src/queries/DslJsonExpression.ts` | **NEW** — the codec: `encode/decodeValueExpr`, `encode/decodeCondition`, path helpers (`segmentsToPath`, `pathToSegmentIds`), the wire types (`DslJsonValue`, `DslJsonCondition`, …). |
+| `src/queries/QueryBuilderSerialization.ts` | `serialize/deserializeWherePath` delegate to the codec; `WherePathJSON = DslJsonCondition`; `sortBy` ordered array; minus. Legacy evaluation/andOr/QueryStep machinery removed. |
 | `src/queries/FieldSet.ts` | Projection (de)serialization: bare-string leaves, `{as,value}` computed fields, scoped relation filters, and cast-aware paths (`pathToStringWithCasts` / `walkPathWithCasts`). |
-| `src/queries/MutationSerialization.ts` | Z-c value grammar + path-keyed node codec (`encodeNodeData`/`decodeNodeDataToRaw`, `valueShapeOf`, `__id`/`__shape`). |
+| `src/queries/MutationSerialization.ts` | DSL-JSON value grammar + path-keyed node codec (`encodeNodeData`/`decodeNodeDataToRaw`, `valueShapeOf`, `__id`/`__shape`). |
 | `src/queries/lowerMutationJSON.ts` | JSON→IR mirror of the mutation value/node codec. |
 | `src/queries/QueryBuilder.ts` | Envelope: `sortBy` array, `singleResult`→`one`, dropped `orderDirection`. |
 | `src/queries/{Create,Update,Delete}Builder.ts` | `toJSON`/`fromJSON` thread the shape into the node codec. |
@@ -106,7 +106,7 @@ reconstructs identical segment IRIs, so `lower` of the round-trip is byte-identi
 
 ## Public API / wire grammar
 
-`query.toJSON()` / `fromJSON(json)` are unchanged in signature; their **payload** is now Z-c. The
+`query.toJSON()` / `fromJSON(json)` are unchanged in signature; their **payload** is now DSL-JSON. The
 exported types `MutationValueJSON` and `MutationNodeDataJSON` changed shape. Representative wire:
 
 ```jsonc
@@ -125,8 +125,8 @@ exported types `MutationValueJSON` and `MutationNodeDataJSON` changed shape. Rep
 | Test file | Covers |
 |---|---|
 | `src/tests/dsl-json-roundtrip.test.ts` | The conformance **gate**: `lower(fromJSON(toJSON))≡lower` over all query fixtures (125 pass; 3 `preload` skipped). Wire-shape-agnostic — the authoritative semantic guard. |
-| `src/tests/zc-expression.test.ts` | Codec units: path helpers, value tier, condition tier, quantifier wire shapes, S-expr fallback shapes (~19). |
-| `src/tests/serialization.test.ts` | Select envelope + FieldSet + where explicit shapes (Z-c). |
+| `src/tests/dsl-json-expression.test.ts` | Codec units: path helpers, value tier, condition tier, quantifier wire shapes, S-expr fallback shapes (~19). |
+| `src/tests/serialization.test.ts` | Select envelope + FieldSet + where explicit shapes (DSL-JSON). |
 | `src/tests/mutation-serialization.test.ts` | Mutation round-trip, context resolution/throw parity, wire-version + unknown-op rejection. |
 | `src/tests/dsl-json-mutation-node.test.ts` | Path-keyed node form, `__id`, and `__shape` polymorphism round-trip (5). |
 | `src/tests/reserved-labels.test.ts` | `and`/`or`/`not` rejected at registration. |
@@ -134,7 +134,7 @@ exported types `MutationValueJSON` and `MutationNodeDataJSON` changed shape. Rep
 
 ## Known limitations / deferred work
 
-Tracked in [docs/backlog/002-dsl-json-zc-open-items.md](../backlog/002-dsl-json-zc-open-items.md):
+Tracked in [docs/backlog/002-dsl-json-open-items.md](../backlog/002-dsl-json-open-items.md):
 
 - **G1 — `preload` hints** have no wire form (3 fixtures excluded from the gate).
 - **G7 edge limitations:** `in`/`nin` is half-wired (recognized by the decoder but no IR operator /

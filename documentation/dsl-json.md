@@ -6,7 +6,7 @@ or JavaScript to any other language. If you are building an endpoint, a cache, a
 non-JS backend, or anything that needs to send, store, or inspect a Linked query, this is
 the structure you target.
 
-> **Status.** This document specifies the **Z-c** grammar — the compact, DSL-shaped wire format
+> **Status.** This document specifies the compact, DSL-shaped wire format
 > (`v:"1.0"`) — and the JavaScript serializer emits it: where-clauses, mutation values,
 > path-keyed **mutation node data** (`__id`/`__shape`), projections (incl. computed/scoped/casts),
 > and the select envelope (`sortBy` ordered array, `one`). Remaining edges are tracked in
@@ -341,6 +341,19 @@ path suffixes or option keys and do not collide with bare property labels.
 | JSON → builder | `fromJSON(json)` (kind-detecting) or `SelectBuilder.fromJSON` / `CreateBuilder.fromJSON` / … |
 | run an inbound query | `fromJSON(json).exec()` |
 | JSON → IR (a store that wants the algebra) | `lowerMutationJSON(json)` for mutations; `lower(fromJSON(json))` for selects |
+
+## Generating DSL-JSON with an LLM
+
+DSL-JSON is deliberately LLM-authorable: property **labels** (not IRIs), path-keyed conditions, and
+a shape that reads like the DSL. To have a model generate queries, hand it two things: a system
+prompt with the grammar + rules, and the **shape context** in scope (each shape's IRI and its
+properties as `label — literal(datatype) | relation(→ Target) [set]`).
+
+A ready, copy-paste system prompt (the condensed algebra + all caveats, minus the shapes) lives at
+**[dsl-json-llm-prompt.md](./dsl-json-llm-prompt.md)** — paste it, append your shapes, and the model
+emits a single DSL-JSON object. Validate the output with `fromJSON(json)` before executing; the
+receiver rejects unknown shapes/labels, unknown `op`, and bad wire versions, so generation mistakes
+fail loud.
 
 ## Implementing DSL-JSON in another language
 
