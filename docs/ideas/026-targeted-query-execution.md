@@ -27,6 +27,11 @@ exec(target?: IDataset): Promise<…>
   global — only an explicit `.exec(target)` overrides.
 - `target.<kind>Query(this)` hands over the **live (closed) query** — exactly the new `IDataset`
   contract; no `lower()`/IR at this layer (the store lowers it).
+- **Optional mutation methods.** `selectQuery` is required on `IDataset`, but `create/update/
+  deleteQuery` are optional, so a mutation `exec(target)` first checks the target implements the op
+  (shared `resolveMutationDispatch(kind, target)` helper) and rejects with a clear message if not.
+- **`exec` is `async`.** Every `exec` returns/rejects a promise — never a synchronous throw — so a
+  missing global dispatch or an unsupported-target error surfaces uniformly as a rejection.
 
 ```ts
 Person.select(p => p.name).exec(someStore);   // run on someStore, router untouched

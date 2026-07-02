@@ -2,6 +2,7 @@ import type {SelectQuery} from './SelectQuery.js';
 import type {CreateQuery} from './CreateQuery.js';
 import type {UpdateQuery} from './UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from './DeleteQuery.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 
 /**
  * Abstraction boundary between the DSL layer (Shape) and the storage layer
@@ -31,4 +32,27 @@ export function getQueryDispatch(): QueryDispatch {
     );
   }
   return dispatch;
+}
+
+/** The mutating query kinds — the `IDataset` methods that are optional per-store. */
+export type MutationKind = 'create' | 'update' | 'delete';
+
+/**
+ * Pick the object a mutation `exec(target?)` dispatches through: the explicit `target`
+ * dataset (validated to implement the op) when a target is given, otherwise the global
+ * dispatch. Unlike `selectQuery`, a store's mutation methods are optional on `IDataset`,
+ * so a target that can't perform `kind` is a caller error.
+ *
+ * Throws synchronously if the target lacks the method — callers invoke this from within an
+ * `async exec`, so the throw surfaces as a rejected promise rather than a synchronous throw.
+ */
+export function resolveMutationDispatch(
+  kind: MutationKind,
+  target?: IDataset,
+): QueryDispatch {
+  if (!target) return getQueryDispatch();
+  if (typeof target[`${kind}Query`] !== 'function') {
+    throw new Error(`The target dataset does not support ${kind} queries.`);
+  }
+  return target as unknown as QueryDispatch;
 }
