@@ -1,12 +1,12 @@
 ---
-'@_linked/core': minor
+'@_linked/core': patch
 ---
 
 DSL-JSON is now the compact, **IR-free "Z-c" wire grammar**. `query.toJSON()` no longer embeds
 `IRExpression` in where-clauses or `{kind:…}` value tags in mutations — the wire reads like the DSL,
 and `fromJSON()` rehydrates it losslessly (`lower(fromJSON(query.toJSON())) ≡ lower(query)`).
 
-(Pre-adoption, so this ships as a minor despite the wire-shape change — there are no published
+(Pre-adoption, so this ships as a patch despite the wire-shape change — there are no published
 consumers of the old format to protect.)
 
 **Where-clauses** are path-keyed conditions with an S-expr fallback:
