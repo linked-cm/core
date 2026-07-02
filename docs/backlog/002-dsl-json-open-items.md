@@ -1,9 +1,9 @@
 ---
-summary: Deferred, non-blocking design items for the DSL-JSON Z-c wire grammar (documentation/dsl-json.md). The grammar is settled and the hard-press findings are folded in; these are the remaining open questions that do not block the format or its migration.
+summary: Deferred, non-blocking design items for the DSL-JSON wire grammar (documentation/dsl-json.md). The grammar is settled and the hard-press findings are folded in; these are the remaining open questions that do not block the format or its migration.
 packages: [core]
 ---
 
-# 002 — DSL-JSON (Z-c) open items
+# 002 — DSL-JSON open items
 
 The [DSL-JSON spec](../../documentation/dsl-json.md) is settled for `v:"1.0"` and the six
 hard-press findings (sortBy array, reserved combinators, `one` naming, `selectAll` `"*"`,
@@ -83,8 +83,8 @@ proves **semantic** (lower-)equivalence across 125 fixtures; the items below are
 doesn't reach. Closed ones were added during the review.
 
 **Closed during review** (tests added):
-- Quantifier wire shapes (`{"friends.some":…}`, `.none`, `.every`) — `zc-expression.test.ts`.
-- S-expr fallback wire shape (function-LHS comparison, chained arithmetic) — `zc-expression.test.ts`.
+- Quantifier wire shapes (`{"friends.some":…}`, `.none`, `.every`) — `dsl-json-expression.test.ts`.
+- S-expr fallback wire shape (function-LHS comparison, chained arithmetic) — `dsl-json-expression.test.ts`.
 - `fromJSON` rejects an unrecognized `op` — `mutation-serialization.test.ts`.
 - Path-keyed mutation node + `__id` + `__shape` polymorphism — `dsl-json-mutation-node.test.ts`.
 

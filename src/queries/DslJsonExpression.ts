@@ -1,7 +1,7 @@
 /**
- * Z-c expression codec — the bidirectional bridge between the runtime
+ * DSL-JSON expression codec — the bidirectional bridge between the runtime
  * expression IR (`ExpressionNode` = `{ir, refs}`, `ExistsCondition`) and the
- * Z-c DSL-JSON grammar (documentation/dsl-json.md).
+ * DSL-JSON wire grammar (documentation/dsl-json.md).
  *
  * Two tiers:
  *  - VALUE   (`encodeValueExpr`/`decodeValueExpr`): a computed value or an
@@ -35,32 +35,32 @@ import {walkPropertyPath} from './PropertyPath.js';
 // Wire types
 // ---------------------------------------------------------------------------
 
-export type ZcScalar = string | number | boolean | null;
-export type ZcRef = {id: string};
-export type ZcCtx = {$ctx: string; path?: string};
-export type ZcDate = {date: string};
-export type ZcList = {list: ZcValue[]};
-export type ZcPath = {path: string};
-export type ZcSExpr = [string, ...ZcValue[]];
-export type ZcValue =
-  | ZcScalar
-  | ZcRef
-  | ZcCtx
-  | ZcDate
-  | ZcList
-  | ZcPath
-  | ZcSExpr;
+export type DslJsonScalar = string | number | boolean | null;
+export type DslJsonRef = {id: string};
+export type DslJsonCtx = {$ctx: string; path?: string};
+export type DslJsonDate = {date: string};
+export type DslJsonList = {list: DslJsonValue[]};
+export type DslJsonPath = {path: string};
+export type DslJsonSExpr = [string, ...DslJsonValue[]];
+export type DslJsonValue =
+  | DslJsonScalar
+  | DslJsonRef
+  | DslJsonCtx
+  | DslJsonDate
+  | DslJsonList
+  | DslJsonPath
+  | DslJsonSExpr;
 
-export type ZcOpMap = {[op: string]: ZcValue};
+export type DslJsonOpMap = {[op: string]: DslJsonValue};
 /**
- * A Z-c condition: an S-expr array, or a keyed object whose keys are property
+ * A DSL-JSON condition: an S-expr array, or a keyed object whose keys are property
  * paths (→ value / operator-map), quantifier keys like `rel.some` (→ a nested
  * condition), or combinators `and`/`or` (→ a condition array) / `not` (→ a
  * condition). The permissive index reflects the structural wire shape.
  */
-export type ZcCondition =
-  | ZcSExpr
-  | {[key: string]: ZcValue | ZcOpMap | ZcCondition | ZcCondition[]};
+export type DslJsonCondition =
+  | DslJsonSExpr
+  | {[key: string]: DslJsonValue | DslJsonOpMap | DslJsonCondition | DslJsonCondition[]};
 
 const COMPARISON_OPS = new Set<IRBinaryOperator>([
   '=',
@@ -105,16 +105,16 @@ function mergeRefs(into: Map<string, readonly string[]>, from: PropertyRefMap): 
 // VALUE tier
 // ---------------------------------------------------------------------------
 
-/** Encode an IR expression used as a value/operand into a Z-c value. */
+/** Encode an IR expression used as a value/operand into a DSL-JSON value. */
 export function encodeValueExpr(
   ir: IRExpression,
   refs: PropertyRefMap,
-): ZcValue {
+): DslJsonValue {
   switch (ir.kind) {
     case 'literal_expr': {
       const v = ir.value as unknown;
       if (v instanceof Date) return {date: v.toISOString()};
-      return v as ZcScalar;
+      return v as DslJsonScalar;
     }
     case 'reference_expr':
       if (ir.contextName !== undefined) return {$ctx: ir.contextName};
@@ -149,14 +149,14 @@ export function encodeValueExpr(
   }
 }
 
-/** Decode a Z-c value back into an IR expression + its placeholder refs. */
+/** Decode a DSL-JSON value back into an IR expression + its placeholder refs. */
 export function decodeValueExpr(
-  zc: ZcValue,
+  json: DslJsonValue,
   shape: NodeShape,
 ): {ir: IRExpression; refs: PropertyRefMap} {
   // S-expr array
-  if (Array.isArray(zc)) {
-    const [head, ...operands] = zc;
+  if (Array.isArray(json)) {
+    const [head, ...operands] = json;
     const refs = new Map<string, readonly string[]>();
     const args = operands.map((o) => {
       const {ir, refs: r} = decodeValueExpr(o, shape);
@@ -166,8 +166,8 @@ export function decodeValueExpr(
     return {ir: headToIR(head, args), refs};
   }
   // Objects: recognized value-objects
-  if (zc !== null && typeof zc === 'object') {
-    const o = zc as Record<string, unknown>;
+  if (json !== null && typeof json === 'object') {
+    const o = json as Record<string, unknown>;
     if ('id' in o) {
       return {ir: {kind: 'reference_expr', value: o.id as string}, refs: new Map()};
     }
@@ -192,7 +192,7 @@ export function decodeValueExpr(
     }
   }
   // bare scalar literal
-  return {ir: {kind: 'literal_expr', value: zc as never}, refs: new Map()};
+  return {ir: {kind: 'literal_expr', value: json as never}, refs: new Map()};
 }
 
 /**
@@ -236,18 +236,18 @@ const AGGREGATES = new Set(['count', 'sum', 'avg', 'min', 'max']);
 // CONDITION tier
 // ---------------------------------------------------------------------------
 
-/** Encode a where-clause node (boolean) into a Z-c condition. */
+/** Encode a where-clause node (boolean) into a DSL-JSON condition. */
 export function encodeCondition(
   node: ExpressionNode | ExistsCondition,
   shape: NodeShape,
-): ZcCondition {
+): DslJsonCondition {
   if (node instanceof ExistsCondition) {
     return encodeExists(node, shape);
   }
   return encodeBoolExpr(node.ir, node._refs, shape);
 }
 
-function encodeExists(ec: ExistsCondition, shape: NodeShape): ZcCondition {
+function encodeExists(ec: ExistsCondition, shape: NodeShape): DslJsonCondition {
   const rel = segmentsToPath(ec.pathSegmentIds);
   let quantifier: 'some' | 'none' | 'every';
   let predIr = ec.predicate.ir;
@@ -261,7 +261,7 @@ function encodeExists(ec: ExistsCondition, shape: NodeShape): ZcCondition {
   } else {
     quantifier = 'none';
   }
-  let base: ZcCondition = {
+  let base: DslJsonCondition = {
     [`${rel}.${quantifier}`]: encodeBoolExpr(predIr, predRefs, shape),
   };
   // Fold any chained and/or conditions into nested logical combinators.
@@ -270,24 +270,24 @@ function encodeExists(ec: ExistsCondition, shape: NodeShape): ZcCondition {
       condition instanceof ExistsCondition ? condition : (condition as ExpressionNode),
       shape,
     );
-    base = {[op]: [base, c]} as ZcCondition;
+    base = {[op]: [base, c]} as DslJsonCondition;
   }
   return base;
 }
 
-/** Encode a boolean IR expression into a Z-c condition (path-keyed where possible). */
+/** Encode a boolean IR expression into a DSL-JSON condition (path-keyed where possible). */
 function encodeBoolExpr(
   ir: IRExpression,
   refs: PropertyRefMap,
   shape: NodeShape,
-): ZcCondition {
+): DslJsonCondition {
   if (ir.kind === 'logical_expr') {
     const parts = ir.expressions.map((e) => encodeBoolExpr(e, refs, shape));
     if (ir.operator === 'and') {
       const merged = tryMergeAnd(parts);
       if (merged) return merged;
     }
-    return {[ir.operator]: parts} as ZcCondition;
+    return {[ir.operator]: parts} as DslJsonCondition;
   }
   if (ir.kind === 'not_expr') {
     return {not: encodeBoolExpr(ir.expression, refs, shape)};
@@ -301,7 +301,7 @@ function encodeBoolExpr(
     }
   }
   // Fallback: S-expr (boolean expression that isn't a simple path-keyed shape).
-  return encodeValueExpr(ir, refs) as ZcCondition;
+  return encodeValueExpr(ir, refs) as DslJsonCondition;
 }
 
 /** A path key for a left operand that is a single property/alias/context property. */
@@ -321,7 +321,7 @@ function pathKeyOf(ir: IRExpression, refs: PropertyRefMap): string | null {
 }
 
 /** Merge AND conjuncts into one path-keyed object iff all are distinct single-key path conditions. */
-function tryMergeAnd(parts: ZcCondition[]): ZcCondition | null {
+function tryMergeAnd(parts: DslJsonCondition[]): DslJsonCondition | null {
   const out: Record<string, unknown> = {};
   for (const p of parts) {
     if (Array.isArray(p) || typeof p !== 'object' || p === null) return null;
@@ -331,39 +331,39 @@ function tryMergeAnd(parts: ZcCondition[]): ZcCondition | null {
     if (COMBINATORS.has(k) || k in out) return null;
     out[k] = (p as Record<string, unknown>)[k];
   }
-  return out as ZcCondition;
+  return out as DslJsonCondition;
 }
 
-/** Decode a Z-c condition into a runtime WherePath (`{expressionNode}` | `{existsCondition}`). */
-export function decodeCondition(zc: ZcCondition, shape: NodeShape): WherePath {
-  const node = decodeConditionNode(zc, shape);
+/** Decode a DSL-JSON condition into a runtime WherePath (`{expressionNode}` | `{existsCondition}`). */
+export function decodeCondition(json: DslJsonCondition, shape: NodeShape): WherePath {
+  const node = decodeConditionNode(json, shape);
   return node instanceof ExistsCondition
     ? ({existsCondition: node} as WherePath)
     : ({expressionNode: node} as WherePath);
 }
 
 function decodeConditionNode(
-  zc: ZcCondition,
+  json: DslJsonCondition,
   shape: NodeShape,
 ): ExpressionNode | ExistsCondition {
   // S-expr fallback
-  if (Array.isArray(zc)) {
-    const {ir, refs} = decodeValueExpr(zc, shape);
+  if (Array.isArray(json)) {
+    const {ir, refs} = decodeValueExpr(json, shape);
     return new ExpressionNode(ir, refs);
   }
-  const o = zc as Record<string, unknown>;
+  const o = json as Record<string, unknown>;
   const keys = Object.keys(o);
 
   // Combinators
   if (keys.length === 1 && COMBINATORS.has(keys[0])) {
     const k = keys[0];
     if (k === 'not') {
-      const inner = decodeConditionNode(o.not as ZcCondition, shape);
+      const inner = decodeConditionNode(o.not as DslJsonCondition, shape);
       if (inner instanceof ExistsCondition) return inner.not();
       return new ExpressionNode({kind: 'not_expr', expression: inner.ir}, inner._refs);
     }
     // and / or
-    const elems = (o[k] as ZcCondition[]).map((c) => decodeConditionNode(c, shape));
+    const elems = (o[k] as DslJsonCondition[]).map((c) => decodeConditionNode(c, shape));
     // An exists-chain: first operand is an ExistsCondition → fold the rest as its chain.
     if (elems[0] instanceof ExistsCondition) {
       let ec = elems[0] as ExistsCondition;
@@ -384,7 +384,7 @@ function decodeConditionNode(
   if (keys.length === 1) {
     const q = matchQuantifier(keys[0]);
     if (q) {
-      const predicate = expressionNodeFromCondition(o[keys[0]] as ZcCondition, shape);
+      const predicate = expressionNodeFromCondition(o[keys[0]] as DslJsonCondition, shape);
       const segmentIds = pathToSegmentIds(shape, q.rel);
       if (q.kind === 'some') return new ExistsCondition(segmentIds, predicate, false);
       if (q.kind === 'none') return new ExistsCondition(segmentIds, predicate, true);
@@ -421,14 +421,14 @@ function comparisonsFor(
 ): IRExpression[] {
   // operator map: { ">": 18, "<": 65 }
   if (isOpMap(value)) {
-    return Object.entries(value as ZcOpMap).map(([op, v]) => {
-      const r = decodeValueExpr(v as ZcValue, shape);
+    return Object.entries(value as DslJsonOpMap).map(([op, v]) => {
+      const r = decodeValueExpr(v as DslJsonValue, shape);
       mergeRefs(refs, r.refs);
       return {kind: 'binary_expr', operator: op as IRBinaryOperator, left, right: r.ir};
     });
   }
   // implicit equals
-  const r = decodeValueExpr(value as ZcValue, shape);
+  const r = decodeValueExpr(value as DslJsonValue, shape);
   mergeRefs(refs, r.refs);
   return [{kind: 'binary_expr', operator: '=', left, right: r.ir}];
 }
@@ -459,8 +459,8 @@ function matchQuantifier(
 }
 
 /** A quantifier predicate decodes to an ExpressionNode (its inner boolean). */
-function expressionNodeFromCondition(zc: ZcCondition, shape: NodeShape): ExpressionNode {
-  const node = decodeConditionNode(zc, shape);
+function expressionNodeFromCondition(json: DslJsonCondition, shape: NodeShape): ExpressionNode {
+  const node = decodeConditionNode(json, shape);
   if (node instanceof ExistsCondition) {
     // Nested exists as a predicate is uncommon; wrap is not representable here.
     throw new Error('Nested exists inside a quantifier predicate is not supported');

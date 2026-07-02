@@ -105,7 +105,7 @@ describe('QueryBuilder — serialization', () => {
     expect(json.limit).toBe(5);
   });
 
-  test('toJSON — orderBy direction (Z-c ordered sortBy array)', () => {
+  test('toJSON — orderBy direction (DSL-JSON ordered sortBy array)', () => {
     const json = QueryBuilder.from(Person)
       .select(['name'])
       .orderBy((p) => p.name, 'DESC')
@@ -241,7 +241,7 @@ describe('QueryBuilder — serialization', () => {
 // =============================================================================
 
 describe('QueryBuilder — where clause serialization', () => {
-  test('toJSON — simple where equals (Z-c implicit equals)', () => {
+  test('toJSON — simple where equals (DSL-JSON implicit equals)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.name.equals('Bob'))
@@ -250,7 +250,7 @@ describe('QueryBuilder — where clause serialization', () => {
     expect(json.where).toEqual({name: 'Bob'});
   });
 
-  test('toJSON — where with nodeRef arg (Z-c {id} value)', () => {
+  test('toJSON — where with nodeRef arg (DSL-JSON {id} value)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.bestFriend.equals({id: `${tmpEntityBase}p1`}))
@@ -259,7 +259,7 @@ describe('QueryBuilder — where clause serialization', () => {
     expect(json.where).toEqual({bestFriend: {id: `${tmpEntityBase}p1`}});
   });
 
-  test('toJSON — where with AND (Z-c implicit-AND multi-key)', () => {
+  test('toJSON — where with AND (DSL-JSON implicit-AND multi-key)', () => {
     const json = QueryBuilder.from(Person)
       .select((p) => [p.name])
       .where((p) => p.name.equals('Bob').and(p.hobby.equals('Chess')))
