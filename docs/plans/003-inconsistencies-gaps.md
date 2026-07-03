@@ -134,5 +134,15 @@ Validation: `npm test` (jest + typecheck) green; new tests assert G4 throws, G6 
 - **G3:** implement-up the documented root API — added `export {Shape}` and `export {LinkedStorage}` to `index.ts` (were only in the deleted global dump); fixed README `setDefaultStore`→`setDefaultDataset` / `setStoreForShapes`→`setDatasetForShapes`; added an explicit `"./sparql"` package export so `@_linked/core/sparql` resolves to `sparql/index`.
 - Suite 1481 / typecheck green.
 
-## Still open (ideating) — G3+
-G4 (expr-in-create), G6/G7 (null / set-mod precedence), G9 (multi-key sort), G11 (aggregates + SetSize comparisons), G12/G13 (Expr drift / SHACL path reader) — not yet scoped.
+## Phase 6 — G8 (reserved value-tag names)  ✅ DONE
+The 7 DSL-JSON system value-tags used bare keys (`$ctx`, `id`, `date`, `list`, `add`/`remove`, `unset`, `path`) that collided with user property labels of the same name — a shape could not have a property literally named `date`/`id`/`path`/…, because those keys were reserved in **value position**.
+
+**Decision (locked):** sigil all seven with `@` — `@ctx`, `@id`, `@date`, `@list`, `@add`/`@remove`, `@unset`, `@path` (moving `$ctx`→`@ctx`). Chosen over rejecting the names at registration, because a user may legitimately want those accessors. The tags only ever appear in value position, so the `@` namespace can never collide with a label. Structural node-data keys stay `__id`/`__shape` — a *different axis* (record-metadata alongside labels, not a typed-value envelope), confirmed to keep with the user. Done now while nothing persists the wire format yet.
+
+- `ContextRef`: `WIRE_TAG` map; `CONTEXT_REF_KEY` `$ctx`→`@ctx`. `MutationSerialization`/`lowerMutationJSON`/`DslJsonExpression`: encode+decode `@`-tags. Builders carry `{@ctx}` markers.
+- Round-trip conformance suite already proved encode/decode symmetry; only format-assertion tests (exact wire shape) updated — wire positions → `@`-tags, DSL-API call positions (`.for({id})`, `.set({add})`) unchanged.
+- `reserved-value-tags.test.ts` (3): locks in that a user property named `date`/`path`/`list`/`unset`/`add` now round-trips as its own bare wire key, and that `@date`/`@list`/`@id` stay distinct.
+- `documentation/dsl-json.md` updated (value forms, context refs, reserved words). Suite 1484 (+3) / typecheck green.
+
+## Still open (ideating) — G5, G12/G13
+G5 (SHACL constraint serialization — min/max inclusive/exclusive, min/maxLength, pattern; no DSL-side enforcement; skip language) is next. G12 (Expr↔ExpressionNode naming drift, missing `Expr.oneOf`), G13 (SHACL negated-set throws at sync; no `sh:path`→PathExpr reader) — not yet scoped.
