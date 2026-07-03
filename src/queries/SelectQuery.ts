@@ -69,7 +69,8 @@ export type QueryBuildFn<T extends Shape, ResponseType> = (
 
 export type SortByPath = {
   paths: PropertyPath[];
-  direction: 'ASC' | 'DESC';
+  /** Per-path sort direction (parallel to `paths`). */
+  directions: ('ASC' | 'DESC')[];
 };
 
 /**
@@ -806,7 +807,9 @@ export const evaluateSortCallback = <S extends Shape>(
       }
     }
   }
-  return {paths, direction};
+  // The DSL callback carries a single direction for all its paths; per-path
+  // directions come from the wire form (deserializeSortByPath).
+  return {paths, directions: paths.map(() => direction)};
 };
 
 export class QueryShapeSet<
@@ -1374,19 +1377,30 @@ export class SetSize<Source = null> extends QueryPrimitive<number, Source> {
     super();
   }
 
-  // Build an aggregate_expr(count, ...) ExpressionNode for the counted property
-  equals(otherValue: any): ExpressionNode {
+  // Build an aggregate_expr(count, …) ExpressionNode for the counted property.
+  private toCountExpr(): ExpressionNode {
     const countedSegments = FieldSet.collectPropertySegments(this.subject);
-    const countedIds = countedSegments.map(s => s.id);
+    const countedIds = countedSegments.map((s) => s.id);
     const countedNode = tracedPropertyExpression(countedIds);
-    // Wrap in aggregate_expr(count)
-    const countExpr = new ExpressionNode({
-      kind: 'aggregate_expr',
-      name: 'count',
-      args: [countedNode.ir],
-    } as any, countedNode._refs);
-    return countExpr.eq(otherValue);
+    return new ExpressionNode(
+      {kind: 'aggregate_expr', name: 'count', args: [countedNode.ir]} as any,
+      countedNode._refs,
+    );
   }
+
+  // Comparisons on the count (lowered to a HAVING clause on COUNT(…)).
+  equals(v: any): ExpressionNode { return this.toCountExpr().eq(v); }
+  eq(v: any): ExpressionNode { return this.toCountExpr().eq(v); }
+  neq(v: any): ExpressionNode { return this.toCountExpr().neq(v); }
+  notEquals(v: any): ExpressionNode { return this.toCountExpr().neq(v); }
+  gt(v: any): ExpressionNode { return this.toCountExpr().gt(v); }
+  greaterThan(v: any): ExpressionNode { return this.toCountExpr().gt(v); }
+  gte(v: any): ExpressionNode { return this.toCountExpr().gte(v); }
+  greaterThanOrEqual(v: any): ExpressionNode { return this.toCountExpr().gte(v); }
+  lt(v: any): ExpressionNode { return this.toCountExpr().lt(v); }
+  lessThan(v: any): ExpressionNode { return this.toCountExpr().lt(v); }
+  lte(v: any): ExpressionNode { return this.toCountExpr().lte(v); }
+  lessThanOrEqual(v: any): ExpressionNode { return this.toCountExpr().lte(v); }
 
   as(label: string) {
     this.label = label;

@@ -544,7 +544,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     if (json.sortBy && json.sortBy.length > 0 && nodeShape) {
       const sortBy = deserializeSortByPath(nodeShape, json.sortBy);
       overrides._sortBy = sortBy;
-      overrides.sortDirection = sortBy.direction;
+      overrides.sortDirection = sortBy.directions[0];
     }
 
     // Restore minus entries

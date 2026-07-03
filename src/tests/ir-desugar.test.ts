@@ -266,14 +266,14 @@ describe('IR desugar conversion', () => {
     const query = await capture(() => queryFactories.sortByAsc());
     const desugared = desugarSelectQuery(query);
     expect(desugared.sortBy).toBeDefined();
-    expect(desugared.sortBy!.direction).toBe('ASC');
+    expect(desugared.sortBy!.directions).toEqual(['ASC']);
   });
 
   test('desugars sort by DESC', async () => {
     const query = await capture(() => queryFactories.sortByDesc());
     const desugared = desugarSelectQuery(query);
     expect(desugared.sortBy).toBeDefined();
-    expect(desugared.sortBy!.direction).toBe('DESC');
+    expect(desugared.sortBy!.directions).toEqual(['DESC']);
   });
 
   test('desugars limit', async () => {

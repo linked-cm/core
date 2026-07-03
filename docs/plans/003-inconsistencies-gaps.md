@@ -124,5 +124,10 @@ Three small behavior-fixes for silently-wrong / crashing mutation input; each wi
 
 Validation: `npm test` (jest + typecheck) green; new tests assert G4 throws, G6 no longer crashes (null → unset), G7 no longer drops sibling fields. No existing test changed without sign-off.
 
+## Phase 4 — G9 (per-path sort) + G11 (SetSize comparisons)  ✅ DONE
+- **G9:** `SortByPath`/`DesugaredSortBy` now carry per-path `directions[]` (were a single `direction` collapsing hand-authored `[{name:'ASC'},{age:'DESC'}]` to the first). Threaded through `evaluateSortCallback`, `toSortBy`, `IRLower` (per-item), and `serialize`/`deserializeSortByPath`. DSL callback still uniform; the wire now round-trips mixed directions. Updated 2 internal `ir-desugar` assertions (`direction`→`directions`, mechanical).
+- **G11 (SetSize comparisons):** `SetSize` gained `gt/gte/lt/lte/neq` (+ long aliases) via a shared `toCountExpr()` → `HAVING(count(…) <op> n)`. `.size().gt(2)` now works (was `.equals()`-only). The `sum/avg/min/max` aggregate DSL remains **backlog 006**.
+- Tests: `sort-and-aggregate.test.ts` (4). Suite 1480 (+4) / typecheck green.
+
 ## Still open (ideating) — G3+
 G4 (expr-in-create), G6/G7 (null / set-mod precedence), G9 (multi-key sort), G11 (aggregates + SetSize comparisons), G12/G13 (Expr drift / SHACL path reader) — not yet scoped.

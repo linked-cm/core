@@ -51,7 +51,7 @@ export function serializeWherePath(
 }
 
 export function serializeSortByPath(sort: SortByPath): SortByPathJSON {
-  return sort.paths.map((p) => ({[p.toString()]: sort.direction}));
+  return sort.paths.map((p, i) => ({[p.toString()]: sort.directions[i]}));
 }
 
 export function serializeRawMinusEntry(
@@ -85,11 +85,10 @@ export function deserializeSortByPath(
   shape: NodeShape,
   json: SortByPathJSON,
 ): SortByPath {
-  // The runtime SortByPath has one direction for all paths, so the encoder writes
-  // the same direction on every `{path: dir}` entry and only the first is read back.
+  // Per-path directions: each `{path: dir}` entry keeps its own direction.
   return {
     paths: json.map((e) => walkPropertyPath(shape, Object.keys(e)[0])),
-    direction: (json.length ? Object.values(json[0])[0] : 'ASC') as 'ASC' | 'DESC',
+    directions: json.map((e) => Object.values(e)[0]) as ('ASC' | 'DESC')[],
   };
 }
 

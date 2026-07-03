@@ -461,9 +461,9 @@ export const lowerSelectQuery = (
   const where = canonical.where ? lowerWhere(canonical.where, ctx, pathOptions) : undefined;
 
   const orderBy: IROrderByItem[] | undefined = canonical.sortBy
-    ? canonical.sortBy.paths.map((path) => ({
+    ? canonical.sortBy.paths.map((path, i) => ({
         expression: lowerPath(path, pathOptions),
-        direction: canonical.sortBy.direction,
+        direction: canonical.sortBy!.directions[i],
       }))
     : undefined;
 
