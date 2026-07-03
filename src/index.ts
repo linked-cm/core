@@ -6,6 +6,9 @@
 export {syncShapes, syncShape} from './shapes/syncShapes.js';
 export {rdfList} from './shapes/List.js';
 export {serializePathToNodeData} from './shapes/serializePathToNodeData.js';
+// Core public API surface (documented as root imports in the README).
+export {Shape} from './shapes/Shape.js';
+export {LinkedStorage} from './utils/LinkedStorage.js';
 // New dynamic query building API (Phase 2)
 export {SelectBuilder, QueryBuilder} from './queries/QueryBuilder.js';
 export {lower} from './queries/lower.js';

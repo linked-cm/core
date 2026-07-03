@@ -129,5 +129,10 @@ Validation: `npm test` (jest + typecheck) green; new tests assert G4 throws, G6 
 - **G11 (SetSize comparisons):** `SetSize` gained `gt/gte/lt/lte/neq` (+ long aliases) via a shared `toCountExpr()` → `HAVING(count(…) <op> n)`. `.size().gt(2)` now works (was `.equals()`-only). The `sum/avg/min/max` aggregate DSL remains **backlog 006**.
 - Tests: `sort-and-aggregate.test.ts` (4). Suite 1480 (+4) / typecheck green.
 
+## Phase 5 — G3 (README/API) + G10 (nested-select pagination on the wire)  ✅ DONE
+- **G10:** `FieldSet.toJSON`/`serializeEntry` now emit `limit`/`offset`/`orderBy` relation options (were dropped — `p.friends.select(...).limit(5)` silently returned the unbounded set after round-trip); `parseField` reads them back onto the entry. `nested-pagination-wire.test.ts` locks it.
+- **G3:** implement-up the documented root API — added `export {Shape}` and `export {LinkedStorage}` to `index.ts` (were only in the deleted global dump); fixed README `setDefaultStore`→`setDefaultDataset` / `setStoreForShapes`→`setDatasetForShapes`; added an explicit `"./sparql"` package export so `@_linked/core/sparql` resolves to `sparql/index`.
+- Suite 1481 / typecheck green.
+
 ## Still open (ideating) — G3+
 G4 (expr-in-create), G6/G7 (null / set-mod precedence), G9 (multi-key sort), G11 (aggregates + SetSize comparisons), G12/G13 (Expr drift / SHACL path reader) — not yet scoped.

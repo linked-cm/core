@@ -23,6 +23,12 @@
       "import": "./lib/esm/index.js",
       "require": "./lib/cjs/index.js"
     },
+    "./sparql": {
+      "types": "./lib/esm/sparql/index.d.ts",
+      "development": "./src/sparql/index.ts",
+      "import": "./lib/esm/sparql/index.js",
+      "require": "./lib/cjs/sparql/index.js"
+    },
     "./*": {
       "types": "./lib/esm/*.d.ts",
       "development": "./src/*.ts",

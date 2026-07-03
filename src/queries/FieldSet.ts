@@ -109,6 +109,10 @@ export type FieldSetRelationOptionsJSON = {
   whereIndex?: number;
   aggregation?: string;
   customKey?: string;
+  /** Nested-select pagination (`p.friends.select(...).limit(5).offset(2).orderBy(...)`). */
+  limit?: number;
+  offset?: number;
+  orderBy?: Array<{[path: string]: 'ASC' | 'DESC'}>;
   /** Sub-projection of the related shape. */
   fields?: FieldSetFieldJSON[];
 };
@@ -145,6 +149,9 @@ const RELATION_OPTION_KEYS = new Set([
   'whereIndex',
   'aggregation',
   'customKey',
+  'limit',
+  'offset',
+  'orderBy',
   'fields',
 ]);
 
@@ -556,6 +563,14 @@ export class FieldSet<R = any, Source = any> {
       opts.where = serializeWherePath(entry.scopedFilter, this.scopedShapeAt(entry, idx));
       opts.whereIndex = idx;
     }
+    // Nested-select pagination (G10) — was previously dropped on the wire.
+    if (typeof entry.innerLimit === 'number') opts.limit = entry.innerLimit;
+    if (typeof entry.innerOffset === 'number') opts.offset = entry.innerOffset;
+    if (entry.innerOrderBy && entry.innerOrderBy.length > 0) {
+      opts.orderBy = entry.innerOrderBy.map((o) => ({
+        [FieldSet.labelOfId(o.propertyShapeId)]: o.direction,
+      }));
+    }
     const hasOpts = Object.keys(opts).length > 0;
     // Bare-string shorthand: a plain leaf/relation with no options or sub-fields.
     if (!subFields && !hasOpts) return pathStr;
@@ -628,6 +643,17 @@ export class FieldSet<R = any, Source = any> {
       const scopedShape = (valueShapeId && getShapeClass(valueShapeId)?.shape) || shape;
       entry.scopedFilter = deserializeWherePath(scopedShape, opts.where);
       entry.scopedFilterIndex = idx;
+    }
+    // Nested-select pagination (G10).
+    if (typeof opts.limit === 'number') entry.innerLimit = opts.limit;
+    if (typeof opts.offset === 'number') entry.innerOffset = opts.offset;
+    if (opts.orderBy && opts.orderBy.length > 0) {
+      const nested = FieldSet.nestedShapeOf(path) ?? shape;
+      entry.innerOrderBy = opts.orderBy.map((e) => {
+        const label = Object.keys(e)[0];
+        const ps = nested.getPropertyShape(label);
+        return {propertyShapeId: ps?.id ?? label, direction: Object.values(e)[0]};
+      });
     }
     if (subFields) {
       const nested = FieldSet.nestedShapeOf(path) ?? shape;
