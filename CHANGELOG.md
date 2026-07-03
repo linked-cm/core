@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.10.2
+
+### Patch Changes
+
+- [#130](https://github.com/linked-cm/core/pull/130) [`d1d435f`](https://github.com/linked-cm/core/commit/d1d435f85e93091ee795c363465c95b9760615ac) Thanks [@flyon](https://github.com/flyon)! - Fixed 9 correctness bugs in query lowering and result mapping (nested sub-select filters, `.one()` truncation, `isNotDefined`/`defaultTo`/`Expr.ifThen` in `.where()`, nested aggregates, expression-over-traversal projections and updates). Most previously returned silently wrong results rather than errors. No public API changes — see `docs/reports/020-linked-query-test-coverage.md` for details.
+
 ## 2.10.1
 
 ### Patch Changes
