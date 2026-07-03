@@ -72,7 +72,11 @@ export class MutationQueryFactory extends QueryFactory {
     let hasRemove = obj.remove;
     let numKeysExpected = (hasAdd ? 1 : 0) + (hasRemove ? 1 : 0);
     let numKeys = Object.getOwnPropertyNames(obj).length;
-    return hasAdd || (hasRemove && numKeysExpected === numKeys);
+    // A set modification is ONLY add/remove keys. Mixing them with other keys
+    // (e.g. {add:[…], name:'x'}) must NOT be silently treated as a set mod —
+    // that dropped the sibling fields. Require an exact key-count match for
+    // both add and remove (mirrors isSetModificationValue).
+    return (hasAdd || hasRemove) && numKeysExpected === numKeys;
   }
 
   protected convertSetModification(

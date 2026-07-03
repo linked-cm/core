@@ -169,7 +169,7 @@ export abstract class QueryFactory {}
 export function isSetModificationValue(
   value: any,
 ): value is SetModificationValue {
-  if (!(typeof value === 'object')) return false;
+  if (value === null || typeof value !== 'object') return false;
 
   let hasAddKey = value.$add;
   let hasRemoveKey = value.$remove;

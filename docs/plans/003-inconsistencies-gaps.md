@@ -113,5 +113,16 @@ Tasks:
 7. Tests: DSL→SPARQL golden (`IN`/`NOT IN`, empty-list constant), decode/encode round-trip, spec fixtures (literal + id-ref lists), type-probe that element type is checked.
 Validation: `npm test` green; new golden + round-trip + spec fixtures pass; typecheck (element-type inference) green.
 
+## Phase 3 — G4 / G6 / G7 mutation-input correctness  ✅ DONE
+Result: three fixes + `mutation-input-fixes.test.ts` (5 lock-ins). No existing test changed (none encoded the bugs). Suite 1476 (+5) / typecheck green.
+
+Three small behavior-fixes for silently-wrong / crashing mutation input; each with a lock-in test.
+
+- **G4** — `fieldValueToTerms` (`irToAlgebra.ts`) silently returns `[]` for a computed/expression value in `create`, dropping the field. Create lowers to **INSERT DATA** (ground triples, no WHERE) so expressions can't be evaluated there → **throw a clear error** (use a literal, or update) instead of dropping. Safe for all callers: an expression is never a ground term.
+- **G6** — `isSetModificationValue(null)` (`QueryFactory.ts`) throws `TypeError` (`typeof null === 'object'` then `null.$add`). Guard `value === null`. Matches the builder path (null → unset).
+- **G7** — `isSetModification` (`MutationQuery.ts`) `return hasAdd || (hasRemove && …)` short-circuits the key-count check, so `{add:[…], name:'x'}` is misclassified and `name` silently dropped. Fix to `(hasAdd || hasRemove) && numKeysExpected === numKeys` (mirrors the correct `isSetModificationValue`).
+
+Validation: `npm test` (jest + typecheck) green; new tests assert G4 throws, G6 no longer crashes (null → unset), G7 no longer drops sibling fields. No existing test changed without sign-off.
+
 ## Still open (ideating) — G3+
 G4 (expr-in-create), G6/G7 (null / set-mod precedence), G9 (multi-key sort), G11 (aggregates + SetSize comparisons), G12/G13 (Expr drift / SHACL path reader) — not yet scoped.

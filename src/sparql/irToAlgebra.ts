@@ -1657,6 +1657,19 @@ function fieldValueToTerms(
     return [literalTerm(value.toISOString(), XSD_DATETIME)];
   }
 
+  // Computed/expression value in create: create lowers to INSERT DATA (ground
+  // triples, no WHERE), so an expression can't be evaluated here. Fail loudly
+  // instead of silently emitting no triple (report 021 §3, G4).
+  if (
+    value &&
+    typeof value === 'object' &&
+    (isIRExpression(value) || 'ir' in (value as object))
+  ) {
+    throw new Error(
+      'Computed/expression values are not supported in create (INSERT DATA has no WHERE clause to evaluate them). Use a literal value, or use update.',
+    );
+  }
+
   // NodeReferenceValue
   if (typeof value === 'object' && 'id' in value && !('shape' in value) && !('fields' in value)) {
     return [iriTerm((value as NodeReferenceValue).id)];
