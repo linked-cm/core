@@ -67,4 +67,24 @@ export const specFixtures: SpecFixture[] = [
     }),
     sparqlIncludes: ['"Moa"'],
   },
+  {
+    doc: 'Condition — word-operator alias { "name": { "equals": "Alice" } }',
+    json: () => ({
+      v: '1.0',
+      shape: Person.shape.id,
+      fields: ['name'],
+      where: {name: {equals: 'Alice'}},
+    }),
+    sparqlIncludes: ['FILTER', '= "Alice"'],
+  },
+  {
+    doc: 'Condition — word-operator alias { "name": { "notEquals": "Bob" } }',
+    json: () => ({
+      v: '1.0',
+      shape: Person.shape.id,
+      fields: ['name'],
+      where: {name: {notEquals: 'Bob'}},
+    }),
+    sparqlIncludes: ['FILTER', '!= "Bob"'],
+  },
 ];

@@ -1,6 +1,6 @@
 ---
 summary: Chapter 3 of report 021 — inconsistencies & functional gaps. Fix the highest-impact items under the established "keep tests green + add lock-in tests" discipline, starting with G1 (arithmetic operator precedence in SPARQL serialization). G2+ explored in ideation before committing.
-status: Tasks
+status: Implementation
 source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 3)
 packages: [core]
 ---

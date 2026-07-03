@@ -71,6 +71,17 @@ const COMPARISON_OPS = new Set<IRBinaryOperator>([
   '<=',
 ]);
 
+// Word-operator aliases accepted on input (LLM/human-friendly). Symbols remain
+// the canonical/emitted form — these normalize to a symbol on decode.
+const OP_ALIASES: Record<string, IRBinaryOperator> = {
+  equals: '=',
+  notEquals: '!=',
+  gt: '>',
+  gte: '>=',
+  lt: '<',
+  lte: '<=',
+};
+
 const COMBINATORS = new Set(['and', 'or', 'not']);
 
 // ---------------------------------------------------------------------------
@@ -440,12 +451,13 @@ function comparisonsFor(
   shape: NodeShape,
   refs: Map<string, readonly string[]>,
 ): IRExpression[] {
-  // operator map: { ">": 18, "<": 65 }
+  // operator map: { ">": 18, "<": 65 } (symbols) or { "gt": 18 } (word aliases)
   if (isOpMap(value)) {
     return Object.entries(value as DslJsonOpMap).map(([op, v]) => {
       const r = decodeValueExpr(v as DslJsonValue, shape);
       mergeRefs(refs, r.refs);
-      return {kind: 'binary_expr', operator: op as IRBinaryOperator, left, right: r.ir};
+      const operator = (OP_ALIASES[op] ?? op) as IRBinaryOperator;
+      return {kind: 'binary_expr', operator, left, right: r.ir};
     });
   }
   // implicit equals
@@ -462,10 +474,11 @@ function isOpMap(value: unknown): boolean {
   if (keys.some((k) => k === 'id' || k === '$ctx' || k === 'path' || k === 'date' || k === 'list')) {
     return false;
   }
-  // Only comparison operators form an op-map. `in`/`nin` are intentionally NOT
-  // recognized here: there is no matching IR operator or encoder path yet, so
-  // accepting them would only produce a broken decode (backlog 002, G7).
-  return keys.every((k) => COMPARISON_OPS.has(k as IRBinaryOperator));
+  // Comparison operators (symbols) or their word aliases (`equals`/`gt`/…) form
+  // an op-map. `in`/`nin` are handled separately (oneOf/notOneOf, see decode).
+  return keys.every(
+    (k) => COMPARISON_OPS.has(k as IRBinaryOperator) || k in OP_ALIASES,
+  );
 }
 
 function matchQuantifier(
