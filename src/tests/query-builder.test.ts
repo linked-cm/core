@@ -725,25 +725,25 @@ describe('QueryBuilder — .for() with PendingQueryContext', () => {
     expect(qb.hasPendingContext()).toBe(false);
   });
 
-  test('toJSON().subject carries a {$ctx} reference, not the resolved id', () => {
+  test('toJSON().subject carries a {@ctx} reference, not the resolved id', () => {
     const pending = new PendingQueryContext('qbPending');
     const qb = Person.select((p) => p.name).for(pending as any);
 
     // The wire carries the context reference regardless of local resolution —
     // the receiver resolves it against its own context map at lowering time.
-    expect(qb.toJSON().subject).toEqual({$ctx: 'qbPending'});
+    expect(qb.toJSON().subject).toEqual({'@ctx': 'qbPending'});
 
     setQueryContext('qbPending', {id: `${tmpEntityBase}u1`}, Person);
-    expect(qb.toJSON().subject).toEqual({$ctx: 'qbPending'});
+    expect(qb.toJSON().subject).toEqual({'@ctx': 'qbPending'});
   });
 
-  test('toJSON/fromJSON round-trips a {$ctx} subject and resolves live', () => {
+  test('toJSON/fromJSON round-trips a {@ctx} subject and resolves live', () => {
     const pending = new PendingQueryContext('qbPending');
     const qb = Person.select((p) => p.name).for(pending as any);
     const restored = QueryBuilder.fromJSON(qb.toJSON());
 
     // Still a context reference after the round-trip.
-    expect(restored.toJSON().subject).toEqual({$ctx: 'qbPending'});
+    expect(restored.toJSON().subject).toEqual({'@ctx': 'qbPending'});
     expect(restored.hasPendingContext()).toBe(true);
 
     // And it resolves live once the context lands.
@@ -768,7 +768,7 @@ describe('QueryBuilder — .for() with PendingQueryContext', () => {
 });
 
 // =============================================================================
-// Where-clause context references ({$ctx} carried through the IR)
+// Where-clause context references ({@ctx} carried through the IR)
 // =============================================================================
 
 describe('where-clause context references', () => {
@@ -780,9 +780,9 @@ describe('where-clause context references', () => {
       p.bestFriend.equals(getQueryContext('wctx')),
     );
     // Pre-auth where-context no longer throws at build; the wire carries the
-    // context *name* as a `{$ctx}` marker, not a baked/undefined id.
+    // context *name* as a `{@ctx}` marker, not a baked/undefined id.
     const json: any = JSON.parse(JSON.stringify(q.toJSON()));
-    expect(json.where).toEqual({bestFriend: {$ctx: 'wctx'}});
+    expect(json.where).toEqual({bestFriend: {'@ctx': 'wctx'}});
     expect(JSON.stringify(json.where)).not.toContain('"id"'); // no baked id while unset
 
     // fromJSON → toJSON preserves the reference verbatim.

@@ -17,8 +17,8 @@
  *
  * Values use the DSL-JSON grammar (documentation/dsl-json.md): a bare scalar is a
  * literal; objects tag the kinds `JSON.stringify` can't represent natively
- * (`{date}`, `{id}`, `{$ctx}`, `{list}`, `{node}`, `{add,remove}`, `{unset}`);
- * and a computed value is an S-expr array via the shared `DslJsonExpression` codec —
+ * (`{@date}`, `{@id}`, `{@ctx}`, `{@list}`, `{@add,@remove}`, `{@unset}`); and a
+ * computed value is an S-expr array via the shared `DslJsonExpression` codec —
  * so the wire carries no IR.
  */
 import {
@@ -47,7 +47,7 @@ import {
 
 /**
  * A mutation field value in the DSL-JSON grammar. A bare scalar is a literal; objects
- * tag the non-JSON-native kinds; a computed value is an S-expr array (no IR); a
+ * tag the non-JSON-native kinds (`@`-sigiled); a computed value is an S-expr array (no IR); a
  * nested-node create is a bare path-keyed object ({@link MutationNodeDataJSON}),
  * disambiguated from the tagged forms by having no reserved value-key.
  */
@@ -56,12 +56,12 @@ export type MutationValueJSON =
   | number
   | boolean
   | null
-  | {date: string}
-  | {id: string}
-  | {$ctx: string}
-  | {list: MutationValueJSON[]}
-  | {add?: MutationValueJSON[]; remove?: string[]}
-  | {unset: true}
+  | {'@date': string}
+  | {'@id': string}
+  | {'@ctx': string}
+  | {'@list': MutationValueJSON[]}
+  | {'@add'?: MutationValueJSON[]; '@remove'?: string[]}
+  | {'@unset': true}
   | MutationNodeDataJSON // nested-node create (bare, path-keyed)
   | DslJsonValue; // computed expression (S-expr) / {path}
 
@@ -91,7 +91,7 @@ export type UpdateMutationJSON = {
   op: 'update';
   shape: string;
   mode: 'for' | 'forAll' | 'where';
-  /** A node id, or a `{$ctx: name}` context reference resolved at lowering. */
+  /** A node id, or a `{@ctx: name}` context reference resolved at lowering. */
   targetId?: string | ContextRefJSON;
   where?: WherePathJSON;
   data: MutationNodeDataJSON;
@@ -122,12 +122,12 @@ function encodeSingleValue(
   value: SinglePropertyUpdateValue,
   prop?: PropertyShape,
 ): MutationValueJSON {
-  if (value === undefined) return {unset: true};
+  if (value === undefined) return {'@unset': true};
   if (isExpressionNode(value)) {
-    // A computed value is an S-expr (or {path}) via the shared codec — no IR.
+    // A computed value is an S-expr (or {@path}) via the shared codec — no IR.
     return encodeValueExpr(value.ir, value._refs) as MutationValueJSON;
   }
-  if (value instanceof Date) return {date: value.toISOString()};
+  if (value instanceof Date) return {'@date': value.toISOString()};
   if (
     typeof value === 'string' ||
     typeof value === 'number' ||
@@ -139,13 +139,13 @@ function encodeSingleValue(
     // Query-context reference — carry the name, resolve at lowering (checked
     // before the generic `.id` branch since a PendingQueryContext has an `.id` getter).
     if (value instanceof PendingQueryContext) {
-      return {$ctx: value.contextName};
+      return {'@ctx': value.contextName};
     }
     if ('fields' in value) {
       // Nested-node create — bare path-keyed; expected shape = the relation's value shape.
       return encodeNodeData(value as NodeDescriptionValue, valueShapeOf(prop));
     }
-    if ('id' in value) return {id: (value as NodeReferenceValue).id};
+    if ('id' in value) return {'@id': (value as NodeReferenceValue).id};
   }
   throw new Error(`Cannot serialize mutation value: ${JSON.stringify(value)}`);
 }
@@ -155,15 +155,15 @@ export function encodeValue(
   value: PropUpdateValue,
   prop?: PropertyShape,
 ): MutationValueJSON {
-  if (value === undefined) return {unset: true};
+  if (value === undefined) return {'@unset': true};
   if (Array.isArray(value)) {
-    return {list: value.map((v) => encodeSingleValue(v, prop))};
+    return {'@list': value.map((v) => encodeSingleValue(v, prop))};
   }
   if (isSetModificationValue(value)) {
     const mod = value as SetModificationValue;
-    const json: {add?: MutationValueJSON[]; remove?: string[]} = {};
-    if (mod.$add) json.add = mod.$add.map((v) => encodeValue(v as PropUpdateValue, prop));
-    if (mod.$remove) json.remove = mod.$remove.map((r) => r.id);
+    const json: {'@add'?: MutationValueJSON[]; '@remove'?: string[]} = {};
+    if (mod.$add) json['@add'] = mod.$add.map((v) => encodeValue(v as PropUpdateValue, prop));
+    if (mod.$remove) json['@remove'] = mod.$remove.map((r) => r.id);
     return json;
   }
   return encodeSingleValue(value as SinglePropertyUpdateValue, prop);
@@ -232,24 +232,24 @@ function decodeValueToRawInner(
   if (json === null) return null;
   if (typeof json !== 'object') return json; // bare scalar literal
   const o = json as Record<string, unknown>;
-  if ('unset' in o) return undefined;
-  if ('date' in o) return new Date(o.date as string);
+  if ('@unset' in o) return undefined;
+  if ('@date' in o) return new Date(o['@date'] as string);
   // Rehydration path: preserve the live reference so it re-serializes as a
-  // `{$ctx}` marker and resolves at the rebuilt builder's own lowering.
-  if ('$ctx' in o) return new PendingQueryContext(o.$ctx as string);
-  if ('id' in o) return {id: o.id};
-  if ('list' in o) {
-    return (o.list as MutationValueJSON[]).map((i) => decodeValueToRaw(i, currentShape, prop));
+  // `{@ctx}` marker and resolves at the rebuilt builder's own lowering.
+  if ('@ctx' in o) return new PendingQueryContext(o['@ctx'] as string);
+  if ('@id' in o) return {id: o['@id']};
+  if ('@list' in o) {
+    return (o['@list'] as MutationValueJSON[]).map((i) => decodeValueToRaw(i, currentShape, prop));
   }
-  if ('add' in o || 'remove' in o) {
-    // Raw DSL set-modifications use `add`/`remove` (the normalized form uses $add/$remove).
+  if ('@add' in o || '@remove' in o) {
+    // Raw DSL set-modifications use `@add`/`@remove` on the wire.
     const mod: {add?: unknown[]; remove?: {id: string}[]} = {};
-    if (o.add) mod.add = (o.add as MutationValueJSON[]).map((i) => decodeValueToRaw(i, currentShape, prop));
-    if (o.remove) mod.remove = (o.remove as string[]).map((id) => ({id}));
+    if (o['@add']) mod.add = (o['@add'] as MutationValueJSON[]).map((i) => decodeValueToRaw(i, currentShape, prop));
+    if (o['@remove']) mod.remove = (o['@remove'] as string[]).map((id) => ({id}));
     return mod;
   }
-  // A computed-path value (`{path}`) used as a value.
-  if ('path' in o) {
+  // A computed-path value (`{@path}`) used as a value.
+  if ('@path' in o) {
     const {ir, refs} = decodeValueExpr(json as DslJsonValue, requireShapeForExpr(currentShape));
     return new ExpressionNode(ir, refs);
   }

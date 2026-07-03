@@ -520,7 +520,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       // A `{$ctx}` subject rehydrates as a pending context (preserving the name
       // so it re-serializes as a context reference and resolves live).
       const subject = isContextRefJSON(json.subject)
-        ? new PendingQueryContext(json.subject.$ctx)
+        ? new PendingQueryContext(json.subject['@ctx'])
         : json.subject;
       builder = builder.for(subject) as SelectBuilder<S>;
     }

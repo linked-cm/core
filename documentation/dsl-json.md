@@ -70,7 +70,7 @@ treating it as a select). Only `v` and `shape` are always present; everything el
   "where":  { "name": "Alice" },                    // filter (see Conditions)
   "limit": 10, "offset": 0,
   "sortBy": [ { "name": "ASC" } ],                  // array — element order is sort precedence
-  "subject": "https://ex.org/p1",                   // .for(id) — id, {$ctx}, or omitted
+  "subject": "https://ex.org/p1",                   // .for(id) — id, {@ctx}, or omitted
   "subjects": ["https://ex.org/p1"],                // .forAll([...])
   "one": true,                                      // .one()
   "minus": [ { "shape": "Employee" } ],             // .minus(...)
@@ -89,9 +89,11 @@ A path is written **bare** wherever its slot can only be a path:
 - a **condition key** — `{ "name": "Alice" }`
 - a **projection field** — `"friends.friends.name"`
 
-A path is **wrapped** as `{ "path": "a.b.c" }` only in **operand / value** slots, where a bare
-string would otherwise be a **literal** (see Values). `{ "path": "…" }` also serves as the
-**escape** for a property whose label collides with a reserved word (see Reserved words).
+A path is **wrapped** as `{ "@path": "a.b.c" }` only in **operand / value** slots, where a bare
+string would otherwise be a **literal** (see Values). The `@`-sigil on the wrapper (and on every
+other value-tag) is what frees property labels: a property literally named `path`, `id`, `date`,
+`list`, … never collides with a value-tag, because the tags are `@path` / `@id` / `@date` / … (see
+Reserved words).
 
 A path that crosses a **plural** relation in a condition is an **implicit `some`** (existential):
 `{ "friends.name": "Moa" }` means *"has some friend named Moa"*. Use an explicit quantifier for
@@ -120,7 +122,7 @@ of exactly three shapes — a **string** leaf path, a **relation-keyed** object,
 { "pets.as(Dog)": ["guardDogLevel"] }    // .as(Dog) type narrowing rides inline in the key
 { "name": { "as": "displayName" } }      // a leaf with options (alias only, no sub-fields)
 { "as": "isBestie",                      // a COMPUTED field — no single underlying property
-  "value": { "bestFriend": { "id": "…/p3" } } }   // value is an expression (see Values)
+  "value": { "bestFriend": { "@id": "…/p3" } } }  // value is an expression (see Values)
 ```
 
 Rule of thumb: **aliasing/optioning a real path** is relation-keyed (`{ "<path>": { "as": … } }`);
@@ -143,12 +145,12 @@ values say what to test.
 { "name": { "!=": "Bob" } }
 { "hobby":  { "oneOf": ["Chess", "Go"] } }          // membership — SPARQL IN
 { "hobby":  { "notOneOf": ["Golf"] } }              // SPARQL NOT IN
-{ "bestFriend": { "oneOf": [ {"id":"…/p1"}, {"id":"…/p2"} ] } }   // named-node membership
+{ "bestFriend": { "oneOf": [ {"@id":"…/p1"}, {"@id":"…/p2"} ] } }   // named-node membership
 ```
 
 Comparison keys use **symbols** (`=`, `!=`, `>`, `>=`, `<`, `<=`) — or the word aliases
 `equals`/`notEquals`/`gt`/`gte`/`lt`/`lte`. **Membership** uses `oneOf`/`notOneOf` with an array
-(literals for a literal property, `{id}` refs for an object property); an empty `oneOf` matches
+(literals for a literal property, `{@id}` refs for an object property); an empty `oneOf` matches
 nothing, an empty `notOneOf` matches everything. Everything else without a symbol uses its
 **method name** (quantifiers, functions, shape methods).
 
@@ -183,15 +185,15 @@ nothing, an empty `notOneOf` matches everything. Everything else without a symbo
 S-expr:
 
 ```jsonc
-{ "status": { "in":  { "list": ["draft", "sent"] } } }
-{ "status": { "nin": { "list": ["archived"] } } }
+{ "status": { "in":  { "@list": ["draft", "sent"] } } }
+{ "status": { "nin": { "@list": ["archived"] } } }
 ```
 
-A condition **value** is: a bare scalar (literal), a recognized value-object (`{id}`, `{$ctx}`),
-an **operator/method map** (`{ ">": 18 }`), a **`{list}`** (only as an `in`/`nin` operand), or an
-**S-expr array** (a computed expression — next section). A value-object with reserved value-keys
-(`id`, `$ctx`, `path`) is an implicit-equals **target**; an object of operator/method keys is the
-operation to apply. **A bare array as an operator/method value is illegal** — lists are `{list}`,
+A condition **value** is: a bare scalar (literal), a recognized value-object (`{@id}`, `{@ctx}`),
+an **operator/method map** (`{ ">": 18 }`), a **`{@list}`** (only as an `in`/`nin` operand), or an
+**S-expr array** (a computed expression — next section). A value-object with a tagged value-key
+(`@id`, `@ctx`, `@path`) is an implicit-equals **target**; an object of operator/method keys is the
+operation to apply. **A bare array as an operator/method value is illegal** — lists are `{@list}`,
 expressions are head-symbol arrays.
 
 The elements of an `and`/`or` list may each be a path-keyed object **or** an S-expr array (an
@@ -207,14 +209,14 @@ following. The array shape never collides with the path-keyed object tier.
 
 ```jsonc
 ["now"]                                   // Expr.now()  (nullary function)
-["strlen", {"path":"name"}]               // strlen(name)
-["+", {"path":"count"}, 1]                // count + 1
-["<", ["+", ["strlen", {"path":"name"}], 10], 100]   // strlen(name) + 10 < 100
+["strlen", {"@path":"name"}]              // strlen(name)
+["+", {"@path":"count"}, 1]               // count + 1
+["<", ["+", ["strlen", {"@path":"name"}], 10], 100]  // strlen(name) + 10 < 100
 { "birthDate": { "<": ["now"] } }         // an S-expr as a condition value
 ```
 
-**Operands** are: a bare scalar (**literal**), `{ "path": "…" }` (a **property**), a nested
-`[…]` (sub-expression), or `{id}` / `{$ctx}` (refs). The "bare = literal, `{path}` = property"
+**Operands** are: a bare scalar (**literal**), `{ "@path": "…" }` (a **property**), a nested
+`[…]` (sub-expression), or `{@id}` / `{@ctx}` (refs). The "bare = literal, `{@path}` = property"
 rule is the same as everywhere; it just appears in array form here.
 
 Use this tier when the path-keyed tier can't express the shape (a receiver that is itself an
@@ -223,22 +225,27 @@ case, prefer the path-keyed object — it reads like the DSL.
 
 ## Values
 
-`JSON.stringify` is lossy for some values, so value slots use these forms. In **value position**
-a bare scalar is always a **literal** (there is no property-vs-literal ambiguity — a property is
-marked `{path}`):
+`JSON.stringify` is lossy for some values, so value slots use these forms. Every non-native tag is
+`@`-sigiled, so it can never collide with a user property label. In **value position** a bare
+scalar is always a **literal** (there is no property-vs-literal ambiguity — a property is marked
+`{@path}`):
 
 | Form | Meaning |
 |---|---|
 | `"Alice"`, `42`, `true` | a literal string / number / boolean |
-| `{ "path": "a.b.c" }` | a property / computed-path value |
+| `{ "@path": "a.b.c" }` | a property / computed-path value |
 | `[ "op", … ]` | a computed expression (S-expr tier) |
-| `{ "id": "<iri>" }` | a node reference |
-| `{ "$ctx": "user" }` / `{ "$ctx": "user", "path": "name" }` | a context reference (see below) |
-| `{ "date": "<ISO-8601>" }` | a `Date` (marked — an ISO string ≈ a literal string) |
-| `{ "list": [ <value>, … ] }` | a list (marked — a bare array ≈ an S-expr) |
-| `{ "add"?: [<value>], "remove"?: ["<iri>"] }` | add/remove on a set relation |
-| `{ "unset": true }` | clear the property (`undefined`/`null`) |
+| `{ "@id": "<iri>" }` | a node reference |
+| `{ "@ctx": "user" }` / `{ "@ctx": "user", "@path": "name" }` | a context reference (see below) |
+| `{ "@date": "<ISO-8601>" }` | a `Date` (marked — an ISO string ≈ a literal string) |
+| `{ "@list": [ <value>, … ] }` | a list (marked — a bare array ≈ an S-expr) |
+| `{ "@add"?: [<value>], "@remove"?: ["<iri>"] }` | add/remove on a set relation |
+| `{ "@unset": true }` | clear the property (`undefined`/`null`) |
 | `{ "name": "…", … }` | a nested node description (a create) |
+
+The eight tags — `@path`, `@id`, `@ctx`, `@date`, `@list`, `@add`, `@remove`, `@unset` — appear
+**only in value position**. A nested node description uses plain property labels plus the
+structural keys `__id` / `__shape` (below), which stay `__`-prefixed, not `@`-prefixed.
 
 ### Computed values (mutation fields, projected `value`)
 
@@ -247,21 +254,21 @@ written**, so a computed value must be a **self-contained expression** with its 
 receiver. Use a literal, `{path}`, or an S-expr — **not** the path-keyed condition form:
 
 ```jsonc
-{ "guardDogLevel": ["+", {"path":"guardDogLevel"}, 1] }   // count = count + 1
-{ "hobby":        { "path": "bestFriend.name.ucase()" } } // pure-path value
+{ "guardDogLevel": ["+", {"@path":"guardDogLevel"}, 1] }  // count = count + 1
+{ "hobby":        { "@path": "bestFriend.name.ucase()" } } // pure-path value
 { "birthDate":    ["now"] }                               // Expr.now()
 ```
 
-## Context references (`{$ctx}`)
+## Context references (`{@ctx}`)
 
 A query may refer to a value not known when it is authored — most commonly "the current user".
 Instead of resolving it eagerly, the reference travels as a marker and is resolved **at lowering
-time** against the resolving process's context map. `$ctx` carries *only* the context name; an
-access on it uses `path` (the same dotted-path syntax):
+time** against the resolving process's context map. `@ctx` carries *only* the context name; an
+access on it uses `@path` (the same dotted-path syntax):
 
 ```json
-{ "$ctx": "user" }                       // the user entity
-{ "$ctx": "user", "path": "name" }       // getQueryContext('user').name
+{ "@ctx": "user" }                       // the user entity
+{ "@ctx": "user", "@path": "name" }      // getQueryContext('user').name
 ```
 
 The marker appears anywhere a node id can: the select `subject`, the update `targetId`, a delete
@@ -282,7 +289,7 @@ projections, and values. A **no-arg** call rides in the path (`"fullName()"`,
 ```jsonc
 { "fullName()": "Alice Smith" }                          // no-arg, in the key
 { "as": "len", "value": { "path": "name.strlen()" } }    // no-arg, as a value
-{ "call": "distanceTo", "args": [ { "id": "…/office" } ] }   // with args
+{ "call": "distanceTo", "args": [ { "@id": "…/office" } ] }  // with args
 ```
 
 Only **value-producing** methods are legal in these positions. **Side-effecting** methods
@@ -301,14 +308,15 @@ Position — not syntax — decides intent.
     "name": "Alice",
     "hobby": "Chess",
     "bestFriend": { "name": "Bestie" },
-    "friends": [ { "id": "https://ex.org/p2" } ]
+    "friends": { "@list": [ { "@id": "https://ex.org/p2" } ] }
   }
 }
 ```
 
 `data` is a **node description**: property keys are labels (resolved against the shape), values
-use the Value forms above. A nested object is a nested create; `{ "id": … }` is a reference; an
-optional `"id"` on `data` fixes a predefined id.
+use the Value forms above. A nested object is a nested create; `{ "@id": … }` is a reference; a
+set relation is a `{ "@list": [ … ] }`; the optional structural key `__id` on `data` fixes a
+predefined id (and `__shape` records a concrete subclass — see mutation node data).
 
 ### Update
 
@@ -316,34 +324,40 @@ optional `"id"` on `data` fixes a predefined id.
 {
   "v": "1.0", "op": "update", "shape": "…/Person",
   "mode": "for", "targetId": "https://ex.org/p1",
-  "data": { "hobby": "Go", "guardDogLevel": ["+", {"path":"guardDogLevel"}, 1] }
+  "data": { "hobby": "Go", "guardDogLevel": ["+", {"@path":"guardDogLevel"}, 1] }
 }
 ```
 
-`mode` is `"for"` (single target — `targetId` is an id or `{$ctx}`), `"forAll"` (every instance),
+`mode` is `"for"` (single target — `targetId` is an id or `{@ctx}`), `"forAll"` (every instance),
 or `"where"` (a `where` condition, same as select's).
 
 ### Delete
 
 ```jsonc
 { "v":"1.0", "op":"delete", "shape":"…", "mode":"ids",
-  "ids": [ "https://ex.org/p1", { "$ctx": "user" } ] }   // ids and/or {$ctx}
+  "ids": [ "https://ex.org/p1", { "@ctx": "user" } ] }   // ids and/or {@ctx}
 { "v":"1.0", "op":"delete", "shape":"…", "mode":"all" }
 { "v":"1.0", "op":"delete", "shape":"…", "mode":"where", "where": { "hobby": "Chess" } }
 ```
 
 ## Reserved words
 
-These keys are reserved: `and`, `or`, `not`, `as`, `value`, `where`, `fields`, `cast`, `one`,
-`call`, `args`, `path`, `id`, `date`, `list`, `add`, `remove`, `unset`, `some`, `every`, `none`,
-`minus`, `sortBy`, `subject`, `subjects`, `op`, `shape`, `data`, `mode`, `targetId`, `ids`, `v`,
-`$ctx`, and the operator symbols.
+The **value-tags** are all `@`-sigiled — `@path`, `@id`, `@ctx`, `@date`, `@list`, `@add`,
+`@remove`, `@unset` — and so are in a namespace no user property label can reach. This is the whole
+point of the sigil: a property literally named `path`, `id`, `date`, `list`, `add`, `remove`,
+`unset`, or `ctx` round-trips as its own bare key without any escape.
 
-In **value / operand** position a property whose label collides is escaped with
-`{ "path": "<label>" }`. **Key** position (a condition key) has no wrapper, so the three boolean
-**combinators `and` / `or` / `not` are globally reserved** — a NodeShape may not declare a property
-with one of those labels (enforced at shape registration). The other reserved words only matter as
-path suffixes or option keys and do not collide with bare property labels.
+The remaining reserved keys are the **structural / grammar** words, not value-tags: `and`, `or`,
+`not`, `as`, `value`, `where`, `fields`, `cast`, `one`, `call`, `args`, `some`, `every`, `none`,
+`minus`, `sortBy`, `subject`, `subjects`, `op`, `shape`, `data`, `mode`, `targetId`, `ids`, `v`,
+and the operator symbols.
+
+**Key** position (a condition key) has no wrapper, so the three boolean **combinators `and` / `or`
+/ `not` are globally reserved** — a NodeShape may not declare a property with one of those labels
+(enforced at shape registration). The other structural words only matter as path suffixes, envelope
+fields, or option keys and do not collide with bare property labels. In **value / operand** position
+a property is always written `{ "@path": "<label>" }`, so even a label matching a structural word is
+unambiguous there.
 
 ## Producing and consuming DSL-JSON
 

@@ -257,7 +257,7 @@ describe('QueryBuilder — where clause serialization', () => {
       .where((p) => p.bestFriend.equals({id: `${tmpEntityBase}p1`}))
       .toJSON();
 
-    expect(json.where).toEqual({bestFriend: {id: `${tmpEntityBase}p1`}});
+    expect(json.where).toEqual({bestFriend: {'@id': `${tmpEntityBase}p1`}});
   });
 
   test('toJSON — where with AND (DSL-JSON implicit-AND multi-key)', () => {

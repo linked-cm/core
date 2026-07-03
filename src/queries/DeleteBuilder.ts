@@ -98,7 +98,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     if (json.mode === 'ids') {
       // A `{$ctx}` id rehydrates as a live context ref (resolved at lower).
       const ids: DeleteId[] = json.ids.map((id) =>
-        isContextRefJSON(id) ? new PendingQueryContext(id.$ctx) : {id},
+        isContextRefJSON(id) ? new PendingQueryContext(id['@ctx']) : {id},
       );
       return new DeleteBuilder({shape: resolved, ids, mode: 'ids'});
     }

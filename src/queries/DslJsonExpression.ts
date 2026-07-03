@@ -36,11 +36,11 @@ import {walkPropertyPath} from './PropertyPath.js';
 // ---------------------------------------------------------------------------
 
 export type DslJsonScalar = string | number | boolean | null;
-export type DslJsonRef = {id: string};
-export type DslJsonCtx = {$ctx: string; path?: string};
-export type DslJsonDate = {date: string};
-export type DslJsonList = {list: DslJsonValue[]};
-export type DslJsonPath = {path: string};
+export type DslJsonRef = {'@id': string};
+export type DslJsonCtx = {'@ctx': string; '@path'?: string};
+export type DslJsonDate = {'@date': string};
+export type DslJsonList = {'@list': DslJsonValue[]};
+export type DslJsonPath = {'@path': string};
 export type DslJsonSExpr = [string, ...DslJsonValue[]];
 export type DslJsonValue =
   | DslJsonScalar
@@ -124,22 +124,22 @@ export function encodeValueExpr(
   switch (ir.kind) {
     case 'literal_expr': {
       const v = ir.value as unknown;
-      if (v instanceof Date) return {date: v.toISOString()};
+      if (v instanceof Date) return {'@date': v.toISOString()};
       return v as DslJsonScalar;
     }
     case 'reference_expr':
-      if (ir.contextName !== undefined) return {$ctx: ir.contextName};
-      return {id: ir.value as string};
+      if (ir.contextName !== undefined) return {'@ctx': ir.contextName};
+      return {'@id': ir.value as string};
     case 'context_property_expr':
-      return {$ctx: ir.contextName as string, path: labelOf(ir.property)};
+      return {'@ctx': ir.contextName as string, '@path': labelOf(ir.property)};
     case 'property_expr': {
       const segs = refs.get(ir.sourceAlias);
-      return {path: segs ? segmentsToPath(segs) : labelOf(ir.property)};
+      return {'@path': segs ? segmentsToPath(segs) : labelOf(ir.property)};
     }
     case 'alias_expr': {
       const segs = refs.get(ir.alias);
       // A bare alias_expr as a value is the node at the end of the traversal.
-      return {path: segs ? segmentsToPath(segs) : ir.alias};
+      return {'@path': segs ? segmentsToPath(segs) : ir.alias};
     }
     case 'in_expr':
       return [
@@ -206,27 +206,27 @@ function decodeValueExprInner(
   // Objects: recognized value-objects
   if (json !== null && typeof json === 'object') {
     const o = json as Record<string, unknown>;
-    if ('id' in o) {
-      return {ir: {kind: 'reference_expr', value: o.id as string}, refs: new Map()};
+    if ('@id' in o) {
+      return {ir: {kind: 'reference_expr', value: o['@id'] as string}, refs: new Map()};
     }
-    if ('$ctx' in o) {
-      if (typeof o.path === 'string') {
-        const property = pathToSegmentIds(shape, o.path).pop() as string;
+    if ('@ctx' in o) {
+      if (typeof o['@path'] === 'string') {
+        const property = pathToSegmentIds(shape, o['@path']).pop() as string;
         return {
-          ir: {kind: 'context_property_expr', contextName: o.$ctx as string, property},
+          ir: {kind: 'context_property_expr', contextName: o['@ctx'] as string, property},
           refs: new Map(),
         };
       }
-      return {ir: {kind: 'reference_expr', contextName: o.$ctx as string}, refs: new Map()};
+      return {ir: {kind: 'reference_expr', contextName: o['@ctx'] as string}, refs: new Map()};
     }
-    if ('date' in o) {
-      return {ir: {kind: 'literal_expr', value: new Date(o.date as string) as never}, refs: new Map()};
+    if ('@date' in o) {
+      return {ir: {kind: 'literal_expr', value: new Date(o['@date'] as string) as never}, refs: new Map()};
     }
-    if ('path' in o) {
-      return propertyOrAlias(shape, o.path as string);
+    if ('@path' in o) {
+      return propertyOrAlias(shape, o['@path'] as string);
     }
-    if ('list' in o) {
-      throw new Error('A {list} value is only valid as an in/nin operand');
+    if ('@list' in o) {
+      throw new Error('A {@list} value is only valid as an in/nin operand');
     }
   }
   // bare scalar literal
@@ -501,7 +501,7 @@ function isOpMap(value: unknown): boolean {
   if (Array.isArray(value) || value === null || typeof value !== 'object') return false;
   const keys = Object.keys(value as object);
   if (keys.length === 0) return false;
-  if (keys.some((k) => k === 'id' || k === '$ctx' || k === 'path' || k === 'date' || k === 'list')) {
+  if (keys.some((k) => k === '@id' || k === '@ctx' || k === '@path' || k === '@date' || k === '@list')) {
     return false;
   }
   // Comparison operators (symbols) or their word aliases (`equals`/`gt`/…) form

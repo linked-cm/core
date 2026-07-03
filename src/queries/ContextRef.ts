@@ -14,16 +14,34 @@
  * marker and resolved at lowering time against whatever context map is
  * available (client-side React context, server-side auth, …).
  *
- * The same `{$ctx: "<name>"}` marker is used in *every* position a node id can
+ * The same `{@ctx: "<name>"}` marker is used in *every* position a node id can
  * appear: the select subject, the update target, where-clause arguments, and
  * mutation field values. One marker, one resolver, everywhere.
  */
 import {getQueryContext, UnresolvedContextError} from './QueryContext.js';
 
-/** The reserved key that tags a context reference in DSL-JSON. */
-export const CONTEXT_REF_KEY = '$ctx';
+/**
+ * DSL-JSON system value-tags. These `@`-prefixed keys are the reserved
+ * vocabulary for tagged *values* (dates, node refs, lists, set-mods, unset,
+ * computed paths, context refs). The `@` sigil frees every user property name —
+ * a property literally named `date`/`id`/`path`/… no longer collides with a tag.
+ * (Structural node-data keys stay `__id`/`__shape`.)
+ */
+export const WIRE_TAG = {
+  id: '@id',
+  date: '@date',
+  list: '@list',
+  add: '@add',
+  remove: '@remove',
+  unset: '@unset',
+  path: '@path',
+  ctx: '@ctx',
+} as const;
 
-/** The wire shape of a context reference: `{$ctx: "<contextName>"}`. */
+/** The reserved key that tags a context reference in DSL-JSON. */
+export const CONTEXT_REF_KEY = WIRE_TAG.ctx;
+
+/** The wire shape of a context reference: `{@ctx: "<contextName>"}`. */
 export interface ContextRefJSON {
   [CONTEXT_REF_KEY]: string;
 }
@@ -33,7 +51,7 @@ export function encodeContextRef(name: string): ContextRefJSON {
   return {[CONTEXT_REF_KEY]: name};
 }
 
-/** Type guard: is this value a `{$ctx: "..."}` context-reference marker? */
+/** Type guard: is this value a `{@ctx: "..."}` context-reference marker? */
 export function isContextRefJSON(value: unknown): value is ContextRefJSON {
   return (
     !!value &&

@@ -96,7 +96,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     const data = decodeNodeDataToRaw(json.data, resolved.shape) as any;
     if (json.mode === 'for') {
       if (isContextRefJSON(json.targetId)) {
-        return new UpdateBuilder({shape: resolved, data, targetContextName: json.targetId.$ctx, mode: 'for'});
+        return new UpdateBuilder({shape: resolved, data, targetContextName: json.targetId['@ctx'], mode: 'for'});
       }
       return new UpdateBuilder({shape: resolved, data, targetId: json.targetId, mode: 'for'});
     }

@@ -102,31 +102,31 @@ function decodeValueInner(
   if (json === null) return null as unknown as PropUpdateValue;
   if (typeof json !== 'object') return json as PropUpdateValue; // bare scalar literal
   const o = json as Record<string, unknown>;
-  if ('unset' in o) return undefined;
-  if ('date' in o) return new Date(o.date as string) as unknown as PropUpdateValue;
-  if ('$ctx' in o) {
+  if ('@unset' in o) return undefined;
+  if ('@date' in o) return new Date(o['@date'] as string) as unknown as PropUpdateValue;
+  if ('@ctx' in o) {
     // Lowering path: a mutation must hit a concrete node, so resolve the
     // context now and throw if it isn't set.
-    const id = resolveContextId(o.$ctx as string, true)!;
+    const id = resolveContextId(o['@ctx'] as string, true)!;
     return {id} as PropUpdateValue;
   }
-  if ('id' in o) return {id: o.id} as PropUpdateValue;
-  if ('list' in o) {
-    return (o.list as MutationValueJSON[]).map(
+  if ('@id' in o) return {id: o['@id']} as PropUpdateValue;
+  if ('@list' in o) {
+    return (o['@list'] as MutationValueJSON[]).map(
       (item) => decodeValue(item, currentShape, prop) as SinglePropertyUpdateValue,
     );
   }
-  if ('add' in o || 'remove' in o) {
+  if ('@add' in o || '@remove' in o) {
     const mod: SetModificationValue = {};
-    if (o.add) {
-      mod.$add = (o.add as MutationValueJSON[]).map((v) =>
+    if (o['@add']) {
+      mod.$add = (o['@add'] as MutationValueJSON[]).map((v) =>
         decodeValue(v, currentShape, prop),
       ) as SetModificationValue['$add'];
     }
-    if (o.remove) mod.$remove = (o.remove as string[]).map((id) => ({id}));
+    if (o['@remove']) mod.$remove = (o['@remove'] as string[]).map((id) => ({id}));
     return mod as PropUpdateValue;
   }
-  if ('path' in o) {
+  if ('@path' in o) {
     const {ir, refs} = decodeValueExpr(json as DslJsonValue, currentShape);
     return new ExpressionNode(ir, refs) as unknown as PropUpdateValue;
   }
@@ -194,7 +194,7 @@ export function lowerMutationJSON(
         // A `{$ctx}` target resolves against the current context map; a mutation
         // must hit a concrete subject, so an unresolved context throws.
         const id = isContextRefJSON(json.targetId)
-          ? resolveContextId(json.targetId.$ctx, true)
+          ? resolveContextId(json.targetId['@ctx'], true)
           : json.targetId;
         if (!id) {
           throw new Error('update mode "for" requires a targetId');
@@ -214,10 +214,10 @@ export function lowerMutationJSON(
       if (json.mode === 'ids') {
         return buildCanonicalDeleteMutationIR({
           shape,
-          // A `{$ctx}` id resolves against the live map; a delete must hit a
+          // A `{@ctx}` id resolves against the live map; a delete must hit a
           // concrete node, so an unresolved context throws.
           ids: json.ids.map((id) =>
-            isContextRefJSON(id) ? {id: resolveContextId(id.$ctx, true)!} : {id},
+            isContextRefJSON(id) ? {id: resolveContextId(id['@ctx'], true)!} : {id},
           ),
         });
       }
