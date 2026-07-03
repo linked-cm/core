@@ -187,6 +187,15 @@ export function serializeExpression(
 
     case 'bound_expr':
       return `BOUND(?${sanitizeVarName(expr.variable)})`;
+
+    case 'in_expr': {
+      // Empty list: `IN ()` matches nothing, `NOT IN ()` matches everything —
+      // fold to a boolean constant rather than emit an empty parenthesis list.
+      if (expr.list.length === 0) return expr.negated ? 'true' : 'false';
+      const val = serializeExpression(expr.value, collector);
+      const items = expr.list.map((e) => serializeExpression(e, collector)).join(', ');
+      return `${val} ${expr.negated ? 'NOT IN' : 'IN'} (${items})`;
+    }
   }
 }
 

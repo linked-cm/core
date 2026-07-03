@@ -141,6 +141,12 @@ export function encodeValueExpr(
       // A bare alias_expr as a value is the node at the end of the traversal.
       return {path: segs ? segmentsToPath(segs) : ir.alias};
     }
+    case 'in_expr':
+      return [
+        ir.negated ? 'not-in' : 'in',
+        encodeValueExpr(ir.value, refs),
+        ...ir.source.list.map((e) => encodeValueExpr(e, refs)),
+      ];
     case 'binary_expr':
       return [
         ir.operator,
@@ -252,6 +258,9 @@ function headToIR(head: string, args: IRExpression[]): IRExpression {
   if (head === 'not') {
     return {kind: 'not_expr', expression: args[0]};
   }
+  if (head === 'in' || head === 'not-in') {
+    return {kind: 'in_expr', negated: head === 'not-in', value: args[0], source: {list: args.slice(1)}};
+  }
   if (COMPARISON_OPS.has(head as IRBinaryOperator) || '+-*/'.includes(head)) {
     return {kind: 'binary_expr', operator: head as IRBinaryOperator, left: args[0], right: args[1]};
   }
@@ -323,6 +332,13 @@ function encodeBoolExpr(
   }
   if (ir.kind === 'not_expr') {
     return {not: encodeBoolExpr(ir.expression, refs, shape)};
+  }
+  if (ir.kind === 'in_expr') {
+    const key = pathKeyOf(ir.value, refs);
+    if (key !== null) {
+      const list = ir.source.list.map((e) => encodeValueExpr(e, refs));
+      return {[key]: {[ir.negated ? 'notOneOf' : 'oneOf']: list}} as DslJsonCondition;
+    }
   }
   if (ir.kind === 'binary_expr' && COMPARISON_OPS.has(ir.operator)) {
     const key = pathKeyOf(ir.left, refs);
@@ -451,6 +467,20 @@ function comparisonsFor(
   shape: NodeShape,
   refs: Map<string, readonly string[]>,
 ): IRExpression[] {
+  // Membership: { "oneOf": [...] } / { "notOneOf": [...] } → IN / NOT IN.
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const o = value as Record<string, unknown>;
+    if (Array.isArray(o.oneOf) || Array.isArray(o.notOneOf)) {
+      const negated = Array.isArray(o.notOneOf);
+      const listRaw = (negated ? o.notOneOf : o.oneOf) as DslJsonValue[];
+      const list = listRaw.map((el) => {
+        const r = decodeValueExpr(el, shape);
+        mergeRefs(refs, r.refs);
+        return r.ir;
+      });
+      return [{kind: 'in_expr', negated, value: left, source: {list}}];
+    }
+  }
   // operator map: { ">": 18, "<": 65 } (symbols) or { "gt": 18 } (word aliases)
   if (isOpMap(value)) {
     return Object.entries(value as DslJsonOpMap).map(([op, v]) => {

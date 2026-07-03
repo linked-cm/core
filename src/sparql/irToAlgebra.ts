@@ -179,7 +179,7 @@ function sanitizeVarName(name: string): string {
 const IR_EXPRESSION_KINDS = new Set([
   'literal_expr', 'property_expr', 'binary_expr', 'logical_expr',
   'not_expr', 'function_expr', 'aggregate_expr', 'reference_expr',
-  'alias_expr', 'context_property_expr', 'exists_expr',
+  'alias_expr', 'context_property_expr', 'exists_expr', 'in_expr',
 ]);
 
 function isIRExpression(value: unknown): value is IRExpression {
@@ -354,6 +354,10 @@ function collectExpressionAliases(
       collectExpressionAliases(expr.left, aliases);
       collectExpressionAliases(expr.right, aliases);
       break;
+    case 'in_expr':
+      collectExpressionAliases(expr.value, aliases);
+      for (const el of expr.source.list) collectExpressionAliases(el, aliases);
+      break;
     case 'logical_expr':
       for (const sub of expr.expressions) {
         collectExpressionAliases(sub, aliases);
@@ -520,6 +524,8 @@ function containsAggregate(expr: SparqlExpression): boolean {
   switch (expr.kind) {
     case 'aggregate_expr':
       return true;
+    case 'in_expr':
+      return containsAggregate(expr.value) || expr.list.some(containsAggregate);
     case 'binary_expr':
       return containsAggregate(expr.left) || containsAggregate(expr.right);
     case 'logical_expr':
@@ -1230,6 +1236,16 @@ function processExpressionForProperties(
         requiredPropertyKeys,
       );
       break;
+    case 'in_expr':
+      // The tested value binds a property; list elements are constants.
+      processExpressionForProperties(
+        expr.value,
+        registry,
+        optionalPropertyTriples,
+        requiredPropertyTriples,
+        requiredPropertyKeys,
+      );
+      break;
     case 'logical_expr':
       for (const sub of expr.expressions) {
         processExpressionForProperties(
@@ -1315,6 +1331,9 @@ function collectRequiredBindingKeys(expr: IRExpression): Set<string> {
       return new Set([bindingKey(expr.sourceAlias, expr.property)]);
     case 'context_property_expr':
       return new Set([bindingKey(contextAliasKey(resolvedContextIri(expr.contextIri, expr.contextName)), expr.property)]);
+    case 'in_expr':
+      // The tested value must be bound; list elements are constants.
+      return collectRequiredBindingKeys(expr.value);
     case 'binary_expr':
       return mergeKeySets(
         collectRequiredBindingKeys(expr.left),
@@ -1413,6 +1432,16 @@ function convertExpression(
       const varName = registry.getOrCreate(expr.sourceAlias, expr.property);
       return {kind: 'variable_expr', name: varName};
     }
+
+    case 'in_expr':
+      return {
+        kind: 'in_expr',
+        negated: expr.negated,
+        value: convertExpression(expr.value, registry, optionalPropertyTriples),
+        list: expr.source.list.map((e) =>
+          convertExpression(e, registry, optionalPropertyTriples),
+        ),
+      };
 
     case 'binary_expr':
       return {

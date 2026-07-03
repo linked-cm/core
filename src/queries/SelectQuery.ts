@@ -683,7 +683,7 @@ export const processWhereClause = (
 const EXPRESSION_METHODS = new Set([
   'plus', 'minus', 'times', 'divide', 'abs', 'round', 'ceil', 'floor', 'power',
   'equals', 'eq', 'neq', 'notEquals', 'gt', 'greaterThan', 'gte', 'greaterThanOrEqual',
-  'lt', 'lessThan', 'lte', 'lessThanOrEqual',
+  'lt', 'lessThan', 'lte', 'lessThanOrEqual', 'oneOf', 'notOneOf',
   'concat', 'contains', 'startsWith', 'endsWith', 'substr', 'before', 'after',
   'replace', 'ucase', 'lcase', 'strlen', 'encodeForUri', 'matches',
   'year', 'month', 'day', 'hours', 'minutes', 'seconds', 'timezone', 'tz',
@@ -1189,6 +1189,17 @@ export class QueryShape<
     return self.eq(arg as any);
   }
 
+  oneOf(values: (NodeReferenceValue | QShape<any>)[]): ExpressionNode {
+    return toExpressionNode(this).oneOf(
+      values.map((v) => (v instanceof QueryBuilderObject ? toExpressionNode(v) : v)) as any,
+    );
+  }
+  notOneOf(values: (NodeReferenceValue | QShape<any>)[]): ExpressionNode {
+    return toExpressionNode(this).notOneOf(
+      values.map((v) => (v instanceof QueryBuilderObject ? toExpressionNode(v) : v)) as any,
+    );
+  }
+
   select<QF = unknown>(
     subQueryFn: QueryBuildFn<S, QF>,
   ): FieldSet<QF, QueryShape<S, Source, Property>> {
@@ -1253,6 +1264,17 @@ export class QueryPrimitive<
       ? toExpressionNode(otherValue)
       : otherValue;
     return self.eq(arg as any);
+  }
+
+  oneOf(values: (JSPrimitive | QueryBuilderObject)[]): ExpressionNode {
+    return toExpressionNode(this).oneOf(
+      values.map((v) => (v instanceof QueryBuilderObject ? toExpressionNode(v) : v)) as any,
+    );
+  }
+  notOneOf(values: (JSPrimitive | QueryBuilderObject)[]): ExpressionNode {
+    return toExpressionNode(this).notOneOf(
+      values.map((v) => (v instanceof QueryBuilderObject ? toExpressionNode(v) : v)) as any,
+    );
   }
 
   where(validation: WhereClause<string>): this {

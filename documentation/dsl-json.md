@@ -10,8 +10,9 @@ the structure you target.
 > (`v:"1.0"`) — and the JavaScript serializer emits it: where-clauses, mutation values,
 > path-keyed **mutation node data** (`__id`/`__shape`), projections (incl. computed/scoped/casts),
 > and the select envelope (`sortBy` ordered array, `one`). Remaining edges are tracked in
-> docs/backlog/002 (`preload`, `in`/`nin`, cross-shape context property). See report 019 for the
-> implementation record.
+> docs/backlog/002 (`preload`, cross-shape context property). See report 019 for the
+> implementation record. Membership (`oneOf`/`notOneOf` → SPARQL `IN`/`NOT IN`) against an
+> explicit list is supported; membership against a *subquery* is future work (plan 003, Rung 2).
 >
 > **Examples are tested.** The JSON examples in this document are mirrored as executable
 > fixtures in `src/tests/dsl-json-spec-fixtures.ts` and driven through `fromJSON → lower →
@@ -140,10 +141,16 @@ values say what to test.
 { "age":  { ">": 18, "<": 65 } }         // multiple ops on ONE path = AND (range)
 { "name": "Alice", "age": { ">": 18 } }  // multiple keys = implicit AND
 { "name": { "!=": "Bob" } }
+{ "hobby":  { "oneOf": ["Chess", "Go"] } }          // membership — SPARQL IN
+{ "hobby":  { "notOneOf": ["Golf"] } }              // SPARQL NOT IN
+{ "bestFriend": { "oneOf": [ {"id":"…/p1"}, {"id":"…/p2"} ] } }   // named-node membership
 ```
 
-Comparison keys use **symbols** (`=`, `!=`, `>`, `>=`, `<`, `<=`); everything without a symbol
-uses its **method name** (`equals`, quantifiers, functions, shape methods).
+Comparison keys use **symbols** (`=`, `!=`, `>`, `>=`, `<`, `<=`) — or the word aliases
+`equals`/`notEquals`/`gt`/`gte`/`lt`/`lte`. **Membership** uses `oneOf`/`notOneOf` with an array
+(literals for a literal property, `{id}` refs for an object property); an empty `oneOf` matches
+nothing, an empty `notOneOf` matches everything. Everything else without a symbol uses its
+**method name** (quantifiers, functions, shape methods).
 
 **Combinators** are reserved keys:
 

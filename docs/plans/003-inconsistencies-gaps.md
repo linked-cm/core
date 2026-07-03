@@ -101,7 +101,8 @@ Tasks:
 5. Spec fixtures: add every documented projection form (`{friends:[...]}`, `{friends:{as,where,one,fields}}`, `{pets:{cast,fields}}`).
 Validation: `npm test` green; round-trip suite green (IR unchanged); new spec fixtures pass; **flag updated format-assertion tests in the review**.
 
-### Phase 2d — `oneOf` / `notOneOf` (D3)
+### Phase 2d — `oneOf` / `notOneOf` (D3)  ✅ DONE (Route A / Rung 1)
+Result: first-class `in_expr` IR node (forward-shaped `source: {list}` for a future Rung-2 `{query}` arm), `SparqlInExpr`, `IN`/`NOT IN` emission with empty-list constant folding (`false`/`true`). Wired through all ~9 expression-kind handlers (convert, alias-collect, aggregate-detect, property-collect, required-binding, context-resolve, proxy-resolve, IR-expr-kinds). DSL `oneOf`/`notOneOf` on `ExpressionNode` + `BaseExpressionMethods` + typed on `QueryPrimitive`/`QueryShape` proxies + runtime `EXPRESSION_METHODS`. Decode `{oneOf}`/`{notOneOf}` conditions + `['in']`/`['not-in']` S-exprs; encode symmetric. Tests: `one-of.test.ts` (literal/named-node/empty), 3 round-trip fixtures (auto IR-equivalence), 2 spec fixtures, doc updated. Suite 1471 / typecheck green.
 Tasks:
 1. IR: add `IRInExpression = {kind:'in_expr', negated:boolean, value:IRExpression, list:IRExpression[]}` to `IntermediateRepresentation.ts`; include in `IRExpression` union.
 2. SPARQL algebra: add `SparqlInExpr = {kind:'in_expr', negated, value, list}` to `SparqlAlgebra.ts`; `irToAlgebra.convertExpression` maps `in_expr`→`in_expr`; `algebraToString` emits `${value} IN (${list.join(', ')})` / `NOT IN`. Empty list → constant `false`/`true` (no `IN ()`).

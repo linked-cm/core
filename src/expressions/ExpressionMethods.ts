@@ -8,6 +8,10 @@ export interface BaseExpressionMethods {
   equals(v: ExpressionInput): ExpressionNode;
   neq(v: ExpressionInput): ExpressionNode;
   notEquals(v: ExpressionInput): ExpressionNode;
+  /** Membership: this value is one of `values` (SPARQL `IN`). */
+  oneOf(values: ExpressionInput[]): ExpressionNode;
+  /** Membership: this value is not one of `values` (SPARQL `NOT IN`). */
+  notOneOf(values: ExpressionInput[]): ExpressionNode;
   isDefined(): ExpressionNode;
   isNotDefined(): ExpressionNode;
   defaultTo(fallback: ExpressionInput): ExpressionNode;

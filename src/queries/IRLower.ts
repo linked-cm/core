@@ -179,6 +179,12 @@ const resolveContextRefs = (expr: IRExpression): IRExpression => {
       return expr;
     case 'binary_expr':
       return {...expr, left: resolveContextRefs(expr.left), right: resolveContextRefs(expr.right)};
+    case 'in_expr':
+      return {
+        ...expr,
+        value: resolveContextRefs(expr.value),
+        source: {list: expr.source.list.map(resolveContextRefs)},
+      };
     case 'logical_expr':
       return {...expr, expressions: expr.expressions.map(resolveContextRefs)};
     case 'not_expr':

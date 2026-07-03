@@ -101,4 +101,24 @@ export const specFixtures: SpecFixture[] = [
     }),
     sparqlIncludes: ['FILTER', '!= "Bob"'],
   },
+  {
+    doc: 'Condition — membership { "hobby": { "oneOf": ["Chess", "Go"] } } → IN',
+    json: () => ({
+      v: '1.0',
+      shape: Person.shape.id,
+      fields: ['name'],
+      where: {hobby: {oneOf: ['Chess', 'Go']}},
+    }),
+    sparqlIncludes: ['IN (', '"Chess"', '"Go"'],
+  },
+  {
+    doc: 'Condition — membership { "hobby": { "notOneOf": ["Golf"] } } → NOT IN',
+    json: () => ({
+      v: '1.0',
+      shape: Person.shape.id,
+      fields: ['name'],
+      where: {hobby: {notOneOf: ['Golf']}},
+    }),
+    sparqlIncludes: ['NOT IN (', '"Golf"'],
+  },
 ];
