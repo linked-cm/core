@@ -1,6 +1,6 @@
 ---
 summary: Chapter 3 of report 021 — inconsistencies & functional gaps. Fix the highest-impact items under the established "keep tests green + add lock-in tests" discipline, starting with G1 (arithmetic operator precedence in SPARQL serialization). G2+ explored in ideation before committing.
-status: Plan
+status: Tasks
 source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 3)
 packages: [core]
 ---
@@ -77,6 +77,39 @@ No generator/CI. Add a `dsl-json` spec-fixtures test that feeds the *documented*
 - **2d — `oneOf`/`noneOf` (D3):** DSL method + IR op + SPARQL lowering + encode/decode + round-trip + spec fixtures.
 
 Gate each: `npm test` (jest + typecheck); new fixtures lock each; existing tests changed only with sign-off.
+
+## Tasks (2b–2d)  [automatic mode]
+
+Dependency graph: **2b → 2c → 2d**, sequential (2d's decode touches the same `isOpMap`/op-map path 2b edits; 2c is independent but ordered for clean commits). Each phase = one commit, gated by `npm test` (jest + typecheck) and new spec fixtures. Baseline before 2b: **1457 passed / 117 skipped**.
+
+### Phase 2b — word-operator aliases (D2)
+Tasks:
+1. `DslJsonExpression.ts`: add `OP_ALIASES = {equals:'=', notEquals:'!=', gt:'>', gte:'>=', lt:'<', lte:'<='}`.
+2. `isOpMap`: accept a key if it's a symbol **or** an alias (`COMPARISON_OPS.has(k) || k in OP_ALIASES`).
+3. Op-map decode (`decodeConditionNode`): normalize `op` through `OP_ALIASES` before building `binary_expr`.
+4. Encoder unchanged — symbols stay canonical/emitted; aliases are accepted **input** sugar (matches the doc's "`{equals}` — explicit, same thing").
+5. Spec fixtures: add `{name:{equals:'Alice'}}`, `{guardDogLevel:{gt:3}}` (Dog), etc. → assert same SPARQL as the symbol form.
+Validation: `npm test` green; new fixtures pass; existing golden/round-trip byte-identical (encoder unchanged). No existing test changed.
+
+### Phase 2c — relation-keyed projection (D1)  ⚠ format change
+Tasks:
+1. `FieldSet.fromJSON`: recognize a **relation-keyed** field object — a single non-reserved key (`as`/`value`/`cast`/`where`/`whereIndex`/`customKey` are reserved) whose value is an **array** (sub-fields) or **object** (`{as?, where?, one?, cast?, fields}`). The key is the relation path; nested `shape` is inferred from the segment `valueShape`. Keep bare-string leaves and `{as,value}` computed as-is.
+2. `FieldSet.toJSON`: emit the relation-keyed form for relation entries (drop `path`+`subSelect`+nested `shape`); leaves stay bare strings; computed stays `{as,value}`; cast → `{ "<rel>": {cast, fields} }`.
+3. Update `FieldSetObjectFieldJSON`/`FieldSetFieldJSON` types + `documentation/dsl-json.md` projection section to the new grammar; update the LLM prompt doc.
+4. **Existing tests that assert the OLD emitted JSON structure** (`serialization.test.ts`, `field-set.test.ts` hand-written `{path, subSelect}` inputs) must be updated to the new form — this is the inherent, user-approved consequence of the format change (D1). Round-trip suite is IR-equivalence (format-agnostic) → should stay green.
+5. Spec fixtures: add every documented projection form (`{friends:[...]}`, `{friends:{as,where,one,fields}}`, `{pets:{cast,fields}}`).
+Validation: `npm test` green; round-trip suite green (IR unchanged); new spec fixtures pass; **flag updated format-assertion tests in the review**.
+
+### Phase 2d — `oneOf` / `notOneOf` (D3)
+Tasks:
+1. IR: add `IRInExpression = {kind:'in_expr', negated:boolean, value:IRExpression, list:IRExpression[]}` to `IntermediateRepresentation.ts`; include in `IRExpression` union.
+2. SPARQL algebra: add `SparqlInExpr = {kind:'in_expr', negated, value, list}` to `SparqlAlgebra.ts`; `irToAlgebra.convertExpression` maps `in_expr`→`in_expr`; `algebraToString` emits `${value} IN (${list.join(', ')})` / `NOT IN`. Empty list → constant `false`/`true` (no `IN ()`).
+3. DSL: add `oneOf(list)`/`notOneOf(list)` to `ExpressionMethods` (+ `Expr` static if symmetric) returning an `ExpressionNode` of `in_expr`; element type follows the property type (literals vs `{id}` refs).
+4. Decode: recognize `oneOf`/`notOneOf` array-valued op-map keys in `decodeConditionNode`/`isOpMap` → `in_expr`; each list element decoded via `decodeValueExpr`.
+5. Encode: `encodeCondition` emits `{ "<path>": { "oneOf": [...] } }` / `notOneOf`.
+6. Lowering: `lowerWhereToIR` passes `in_expr` through; verify required-binding marking treats `value`'s refs like a comparison.
+7. Tests: DSL→SPARQL golden (`IN`/`NOT IN`, empty-list constant), decode/encode round-trip, spec fixtures (literal + id-ref lists), type-probe that element type is checked.
+Validation: `npm test` green; new golden + round-trip + spec fixtures pass; typecheck (element-type inference) green.
 
 ## Still open (ideating) — G3+
 G4 (expr-in-create), G6/G7 (null / set-mod precedence), G9 (multi-key sort), G11 (aggregates + SetSize comparisons), G12/G13 (Expr drift / SHACL path reader) — not yet scoped.
