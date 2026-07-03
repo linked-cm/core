@@ -478,6 +478,16 @@ export class PropertyShape extends Shape {
   disjoint?: NodeReferenceValue;
   lessThan?: NodeReferenceValue;
   lessThanOrEquals?: NodeReferenceValue;
+  /** Value-range constraints (SHACL sh:minInclusive / sh:maxInclusive / sh:minExclusive / sh:maxExclusive). */
+  minInclusive?: number;
+  maxInclusive?: number;
+  minExclusive?: number | string;
+  maxExclusive?: number;
+  /** String-length constraints (SHACL sh:minLength / sh:maxLength). */
+  minLength?: number;
+  maxLength?: number;
+  /** Regex constraint (SHACL sh:pattern); serialized as its source string. */
+  pattern?: RegExp;
   hasValueConstraint?: NodeReferenceValue | string | number | boolean;
   defaultValue?: unknown;
   sortBy?: PathExpr;
@@ -548,6 +558,27 @@ export class PropertyShape extends Shape {
     }
     if (this.lessThanOrEquals) {
       result.lessThanOrEquals = this.lessThanOrEquals;
+    }
+    if (this.minInclusive !== undefined) {
+      result.minInclusive = this.minInclusive;
+    }
+    if (this.maxInclusive !== undefined) {
+      result.maxInclusive = this.maxInclusive;
+    }
+    if (this.minExclusive !== undefined) {
+      result.minExclusive = this.minExclusive;
+    }
+    if (this.maxExclusive !== undefined) {
+      result.maxExclusive = this.maxExclusive;
+    }
+    if (typeof this.minLength === 'number') {
+      result.minLength = this.minLength;
+    }
+    if (typeof this.maxLength === 'number') {
+      result.maxLength = this.maxLength;
+    }
+    if (this.pattern) {
+      result.pattern = this.pattern.source;
     }
     if (this.hasValueConstraint !== undefined) {
       result.hasValue = this.hasValueConstraint;
@@ -781,6 +812,19 @@ export function createPropertyShape<
   }
   if ((config as LiteralPropertyShapeConfig).lessThanOrEquals) {
     propertyShape.lessThanOrEquals = toNodeReference((config as LiteralPropertyShapeConfig).lessThanOrEquals);
+  }
+  // Value-range / string-length / pattern constraints (report 021 §3, G5). These are
+  // recorded on the shape and serialized to SHACL; there is no DSL-side runtime
+  // enforcement — they describe the shape for validators / introspection.
+  {
+    const lit = config as LiteralPropertyShapeConfig;
+    if (lit.minInclusive !== undefined) propertyShape.minInclusive = lit.minInclusive;
+    if (lit.maxInclusive !== undefined) propertyShape.maxInclusive = lit.maxInclusive;
+    if (lit.minExclusive !== undefined) propertyShape.minExclusive = lit.minExclusive;
+    if (lit.maxExclusive !== undefined) propertyShape.maxExclusive = lit.maxExclusive;
+    if (lit.minLength !== undefined) propertyShape.minLength = lit.minLength;
+    if (lit.maxLength !== undefined) propertyShape.maxLength = lit.maxLength;
+    if (lit.pattern !== undefined) propertyShape.pattern = lit.pattern;
   }
   if (config.hasValue !== undefined) {
     const v = config.hasValue;

@@ -759,6 +759,33 @@ createPropertyShape(
 // PropertyShape.hasValue (literal or IRI — generic)
 createPropertyShape({path: shacl.hasValue, maxCount: 1}, 'hasValue', null, PropertyShape);
 
+// PropertyShape value-range / string-length / pattern constraints (report 021 §3, G5).
+// The range constraints carry no fixed datatype — the literal is typed from the JS value
+// (integer/double), mirroring the constrained property's own datatype. Length is an integer;
+// pattern is the regex source string.
+createPropertyShape({path: shacl.minInclusive, maxCount: 1}, 'minInclusive', shacl.Literal, PropertyShape);
+createPropertyShape({path: shacl.maxInclusive, maxCount: 1}, 'maxInclusive', shacl.Literal, PropertyShape);
+createPropertyShape({path: shacl.minExclusive, maxCount: 1}, 'minExclusive', shacl.Literal, PropertyShape);
+createPropertyShape({path: shacl.maxExclusive, maxCount: 1}, 'maxExclusive', shacl.Literal, PropertyShape);
+createPropertyShape(
+  {path: shacl.minLength, datatype: xsd.integer, maxCount: 1},
+  'minLength',
+  shacl.Literal,
+  PropertyShape,
+);
+createPropertyShape(
+  {path: shacl.maxLength, datatype: xsd.integer, maxCount: 1},
+  'maxLength',
+  shacl.Literal,
+  PropertyShape,
+);
+createPropertyShape(
+  {path: shacl.pattern, datatype: xsd.string, maxCount: 1},
+  'pattern',
+  shacl.Literal,
+  PropertyShape,
+);
+
 // PropertyShape.order / group
 createPropertyShape(
   {path: shacl.order, datatype: xsd.integer, maxCount: 1},

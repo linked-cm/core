@@ -144,5 +144,13 @@ The 7 DSL-JSON system value-tags used bare keys (`$ctx`, `id`, `date`, `list`, `
 - `reserved-value-tags.test.ts` (3): locks in that a user property named `date`/`path`/`list`/`unset`/`add` now round-trips as its own bare wire key, and that `@date`/`@list`/`@id` stay distinct.
 - `documentation/dsl-json.md` updated (value forms, context refs, reserved words). Suite 1484 (+3) / typecheck green.
 
-## Still open (ideating) — G5, G12/G13
-G5 (SHACL constraint serialization — min/max inclusive/exclusive, min/maxLength, pattern; no DSL-side enforcement; skip language) is next. G12 (Expr↔ExpressionNode naming drift, missing `Expr.oneOf`), G13 (SHACL negated-set throws at sync; no `sh:path`→PathExpr reader) — not yet scoped.
+## Phase 7 — G5 (SHACL constraint serialization)  ✅ DONE
+The config types already **declared** `minInclusive`/`maxInclusive`/`minExclusive`/`maxExclusive`/`minLength`/`maxLength`/`pattern` (SHACL.ts) and the SHACL ontology already exported the terms (shacl.ts), but nothing read them off the config or serialized them — a shape could ask for `minInclusive: 0` and it silently vanished. Wire them end-to-end (serialization only; **no DSL-side runtime enforcement**, per decision). Language constraints (`languageIn`/`uniqueLang`) skipped.
+
+- `PropertyShape` (SHACL.ts): added the 7 fields. `createPropertyShape` now reads them off the config; `getResult()` emits them (pattern as its regex **source string**).
+- `buildPropertyShapeData` (syncShapes.ts): emits the 7 to the sync create-data (range constraints untyped → literal typed from the JS value; length → xsd:integer; pattern → source string).
+- Meta-model (Package.ts): added the 7 `sh:` accessors on `PropertyShape` so the create-pipeline resolves the labels → predicates (mirrors the existing minCount/datatype/hasValue accessors).
+- `shacl-constraint-serialization.test.ts` (3): decorator→shape fields, `getResult()` exposure, and NodeShape.create→lower→SPARQL emitting `shacl:minInclusive`/`maxLength`/`pattern`. No graph→code reader exists to keep symmetric (the read side is the meta-model query via `getResult`). Suite 1487 (+3) / typecheck green.
+
+## Still open (ideating) — G12/G13
+G12 (Expr↔ExpressionNode naming drift, missing `Expr.oneOf`), G13 (SHACL negated-set throws at sync; no `sh:path`→PathExpr reader) — not yet scoped.
