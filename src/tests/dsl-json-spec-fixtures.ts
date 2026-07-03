@@ -43,6 +43,20 @@ export const specFixtures: SpecFixture[] = [
     sparqlIncludes: ['SELECT'],
   },
   {
+    doc: 'Projection — relation with sub-fields { "friends": ["name", "hobby"] }',
+    json: () => ({v: '1.0', shape: Person.shape.id, fields: [{friends: ['name', 'hobby']}]}),
+    sparqlIncludes: ['SELECT'],
+  },
+  {
+    doc: 'Projection — relation with options { "friends": { "as": "buddies", "fields": ["name"] } }',
+    json: () => ({
+      v: '1.0',
+      shape: Person.shape.id,
+      fields: [{friends: {as: 'buddies', fields: ['name']}}],
+    }),
+    sparqlIncludes: ['SELECT'],
+  },
+  {
     doc: 'Condition — implicit equals { "name": "Alice" }',
     json: () => ({v: '1.0', shape: Person.shape.id, fields: ['name'], where: {name: 'Alice'}}),
     sparqlIncludes: ['FILTER', '"Alice"'],

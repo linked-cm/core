@@ -99,13 +99,14 @@ compound predicates or for `every`/`none` (see Conditions).
 A path segment may also **narrow type** with `as(<ShapeLabel>)`, mirroring the DSL's `.as(Dog)`:
 `"pets.as(Dog).guardDogLevel"`. The shape is given by its short **label**, not its IRI, to keep
 the path readable. (This is the one place an argument-bearing call rides inside a path string;
-it is allowed because a cast is a path operation. In a *projection* the structured form
-`{ "pets": { "cast": "Dog", "fields": [ … ] } }` is preferred.)
+it is allowed because a cast is a path operation. The same inline `as(...)` form is used in a
+projection key — `{ "pets.as(Dog)": ["guardDogLevel"] }`.)
 
 ## Projection (`fields`)
 
-`fields` is an array, or the string `"*"` for `selectAll()` (every property of the shape). An
-**omitted** `fields` is the `select()` default. Each array entry is one of:
+`fields` is an array; an **omitted** `fields` is the `select()` default. Each array entry is one
+of exactly three shapes — a **string** leaf path, a **relation-keyed** object, or a **computed**
+`{ as, value }`:
 
 ```jsonc
 "name"                                   // a leaf path (string)
@@ -114,16 +115,14 @@ it is allowed because a cast is a path operation. In a *projection* the structur
 { "friends": {                           // a relation with options
     "as": "buddies",                     //   alias the result key
     "where": { "hobby": "Chess" },       //   filter the related set
-    "one": true,                         //   .one() — unwrap a single
     "fields": ["name"] } }               //   sub-projection
-{ "pets": { "cast": "Dog",               // .as(Dog) — type narrowing (NOT alias)
-            "fields": ["guardDogLevel"] } }
+{ "pets.as(Dog)": ["guardDogLevel"] }    // .as(Dog) type narrowing rides inline in the key
+{ "name": { "as": "displayName" } }      // a leaf with options (alias only, no sub-fields)
 { "as": "isBestie",                      // a COMPUTED field — no single underlying property
   "value": { "bestFriend": { "id": "…/p3" } } }   // value is an expression (see Values)
-{ "as": "numFriends", "value": { "path": "friends.size()" } }   // aggregate as a value
 ```
 
-Rule of thumb: **aliasing/optioning a real path** stays path-keyed (`{ "<path>": { "as": … } }`);
+Rule of thumb: **aliasing/optioning a real path** is relation-keyed (`{ "<path>": { "as": … } }`);
 a **computed expression** uses `{ "as": …, "value": <expr> }`. An aggregate or function without
 an alias projects under its dotted call string as the key (`"friends.size()"`) — alias it for a
 clean result key. Because `fields` is an array, the **same relation may be projected more than

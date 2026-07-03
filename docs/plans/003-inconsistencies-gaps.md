@@ -91,7 +91,8 @@ Tasks:
 5. Spec fixtures: add `{name:{equals:'Alice'}}`, `{guardDogLevel:{gt:3}}` (Dog), etc. → assert same SPARQL as the symbol form.
 Validation: `npm test` green; new fixtures pass; existing golden/round-trip byte-identical (encoder unchanged). No existing test changed.
 
-### Phase 2c — relation-keyed projection (D1)  ⚠ format change
+### Phase 2c — relation-keyed projection (D1)  ✅ DONE
+Result: `FieldSet.toJSON`/`fromJSON` rewritten to the relation-keyed grammar (three shapes: string leaf / `{rel: [...] | {options}}` / `{as,value}`); nested `shape` dropped (inferred from `valueShape`); casts inline in the key. **Round-trip suite stayed green** (IR-equivalence — format-agnostic). Doc projection section + 2 spec fixtures updated. **Deviation (approved format change):** updated format-assertion tests in `serialization.test.ts` (5 assertions) and `field-set.test.ts` (9 constructions) from `{path,subSelect}` to relation-keyed — inherent to D1; no behavior/IR change. Suite 1461 / typecheck green.
 Tasks:
 1. `FieldSet.fromJSON`: recognize a **relation-keyed** field object — a single non-reserved key (`as`/`value`/`cast`/`where`/`whereIndex`/`customKey` are reserved) whose value is an **array** (sub-fields) or **object** (`{as?, where?, one?, cast?, fields}`). The key is the relation path; nested `shape` is inferred from the segment `valueShape`. Keep bare-string leaves and `{as,value}` computed as-is.
 2. `FieldSet.toJSON`: emit the relation-keyed form for relation entries (drop `path`+`subSelect`+nested `shape`); leaves stay bare strings; computed stays `{as,value}`; cast → `{ "<rel>": {cast, fields} }`.
