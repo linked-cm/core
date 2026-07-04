@@ -165,3 +165,20 @@ The config types already **declared** `minInclusive`/`maxInclusive`/`minExclusiv
 3. *No `sh:path`→PathExpr reader (one-way sync)* — **deferred to its own effort** as a genuine feature (bidirectional shape sync, RDF/Turtle shapes as source of truth). Captured in `docs/backlog/012-shacl-path-reader.md`; aligns with idea 015.
 
 Suite green / typecheck green.
+
+## Phase 9 — Tier 4/5 (error-handling policy + lightweight validation)  ✅ DONE
+
+The report's Tier 4/5 was one dense paragraph pointing at an unwritten "catalogue" — reconstructed it against the code (117 `throw` vs 10 `console.warn`; the real issue is the *same failure class* getting opposite treatment by module).
+
+**Policy (agreed with user):** `throw` = caller logic error (default); `warn`-once = recoverable environment/bundling condition only; `silent` ≈ never. A `console.warn` in a library is effectively silent (swallowed console) → warning-and-limping on a logic error is the anti-pattern the library's own Tier-1 principle ("silent wrong results are worst") forbids.
+
+- **2 warn→throw flips** (the genuine silent-wrong traps):
+  - `SelectQuery.ts` proxy: accessing an **undecorated property in a query** warned then returned the raw value → query ran with a broken path (silently-wrong rows). Now throws. Guarded to string keys not in an `INTEROP_PASSTHROUGH_KEYS` set (`then`/`$$typeof`/`toJSON`/…) so promise/React/serializer introspection and all symbol keys still pass through. `query-builder.test.ts` +2.
+  - `QueryContext.ts`: `setQueryContext` with an unrecognized value (`:144`) **or** a `{id}` without a shapeType (`:129`) silently no-op'd → context never set, no signal. Both now throw. `core-utils.test.ts` 2 tests updated to the throw contract.
+- **Lightweight write validation** (structural only — does *not* duplicate the store's datatype/deep validation; fails fast at normalize/`toJSON`/lower time). Added `validateAgainstShape` in `MutationQuery.createNodePropertyValue` (covers top-level **and** nested descriptions — both route through it):
+  - **maxCount / minCount** — value count must fall within the property's cardinality (single-valued given an array → throw; fewer than `minCount` → throw). The existing builder already threw on unknown keys + missing required *presence*; this adds the general **count** check. Skips set-modifications (`{add,remove}` — final count unknown), unset, context refs, expressions.
+  - **node kind** — a literal property (`nodeKind` `sh:Literal`, from the `@literalProperty` default) given a `{id}`/object → throw; a relation property (`sh:IRI` default) given a bare scalar → throw. Ambiguous kinds (`IRIOrLiteral` etc.) not enforced. `mutation-shape-validation.test.ts` (10).
+- **Full validation** (types/datatype/deep) intentionally **not** added — the store validates shapes; keeping the library lean (per user). 
+- **Plain-object update without a value shape** — kept throwing, but the ergonomic fix (a typed builder/`Shape` value, `update(id, {rel: Person.create({…})})`) captured as `docs/backlog/013-nested-builder-values-for-shapeless-properties.md`. Clarified that a generic `owl:Thing` value-shape does *not* solve nested-create (only references), and `.as()`-on-write is redundant with the nested-builder.
+
+Suite 1453 green / typecheck green.

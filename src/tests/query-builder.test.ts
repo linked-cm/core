@@ -850,3 +850,20 @@ describe('where-clause context references', () => {
     ).toThrow(/context "wctx" is not set/i);
   });
 });
+
+// =============================================================================
+// Error policy — accessing an undecorated property in a query throws
+// (was a console.warn + silently-wrong path; a swallowed warning is a trap)
+// =============================================================================
+
+describe('undecorated property access in a query', () => {
+  test('a decorated property still resolves', () => {
+    expect(() => Person.select((p: any) => [p.name]).toJSON()).not.toThrow();
+  });
+
+  test('an undecorated property throws instead of returning a broken path', () => {
+    expect(() =>
+      Person.select((p: any) => [p.notADecoratedProperty]).toJSON(),
+    ).toThrow(/does not have a @linkedProperty decorator/);
+  });
+});

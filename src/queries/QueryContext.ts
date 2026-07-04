@@ -126,11 +126,11 @@ export function setQueryContext(name: string, value: any, shapeType?) {
   // A plain QResult `{id}` — materialize a shape (requires shapeType).
   if (typeof value.id === 'string') {
     if (!shapeType) {
-      console.warn(
-        'setQueryContext: value is a QResult but no shapeType provided',
-        value,
+      // A silent no-op here is a trap: the context never sets and the caller
+      // gets no signal. A `{id}` value cannot be materialized without its shape.
+      throw new Error(
+        `setQueryContext('${name}'): a {id} value requires a shapeType so the shape can be materialized. Pass the Shape class as the third argument.`,
       );
-      return;
     }
     const shape = new (shapeType as any)();
     shape.id = value.id;
@@ -141,5 +141,7 @@ export function setQueryContext(name: string, value: any, shapeType?) {
     return;
   }
 
-  console.warn('setQueryContext: value is not a QueryShape, Shape, or {id} result', value);
+  throw new Error(
+    `setQueryContext('${name}'): value is not a QueryShape, Shape, or {id} result. Got ${typeof value}. Pass a Shape instance, a query-context shape, or a {id} result (with its shapeType).`,
+  );
 }

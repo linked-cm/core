@@ -16,6 +16,23 @@ import {ExpressionNode, ExistsCondition, isExpressionNode, isExistsCondition, tr
 import {PendingQueryContext} from './QueryContext.js';
 
 /**
+ * String keys the query-shape proxy must let through *without* treating them as
+ * a property access — promise-awaiting (`then`), React (`$$typeof`), and common
+ * serializer/object-protocol probes. Everything else that isn't a decorated
+ * property is a genuine misuse and throws. (Symbol keys always pass through.)
+ */
+const INTEROP_PASSTHROUGH_KEYS = new Set<string>([
+  'then',
+  '$$typeof',
+  'toJSON',
+  'toString',
+  'valueOf',
+  'constructor',
+  'asymmetricMatch', // jest matchers probe this
+  'nodeType', // some DOM/serializer probes
+]);
+
+/**
  * The closed, read-only select query a dataset receives (implemented by
  * `SelectBuilder`). It exposes the wire form (`toJSON`), the routing key
  * (`shape`), and the read-only lowering hook (`toRawInput`) — but none of the
@@ -1145,14 +1162,14 @@ export class QueryShape<
             return QueryBuilderObject.generatePathValue(propertyShape, target);
           }
         }
-        if (key !== 'then' && key !== '$$typeof') {
-          //   //otherwise return the value of the property on the original shape
-          //generate stack trace for debugging
-          let stack = new Error().stack;
-          //https://stackoverflow.com/a/49725198/977206
-          const stackLines = stack.split('\n').slice(1); //remove the "Error" line
-          console.warn(
-            `${originalShape.constructor.name}.${key.toString()} is accessed in a query, but it does not have a @linkedProperty decorator. Queries can only access decorated get/set methods. ${stackLines.join('\n')}`,
+        // A string key that is neither a QueryShape member nor a decorated
+        // property is a genuine misuse: it would silently return the raw value
+        // and the query would run with a broken path (silently-wrong results).
+        // Throw. Symbols and framework/interop keys pass through untouched so
+        // promise-awaiting, React, and serializers can still introspect the proxy.
+        if (typeof key === 'string' && !INTEROP_PASSTHROUGH_KEYS.has(key)) {
+          throw new Error(
+            `${originalShape.constructor.name}.${key} is accessed in a query, but it does not have a @linkedProperty decorator. Queries can only access decorated get/set methods (@objectProperty / @literalProperty).`,
           );
         }
         return originalShape[key];
