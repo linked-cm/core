@@ -545,7 +545,7 @@ const labeled = await Person.select((p) => ({
 
 // First non-null value
 const display = await Person.select((p) => ({
-  display: Expr.firstDefined(p.name, p.nickNames, Expr.str('Unknown')),
+  display: Expr.firstDefined(p.name, p.nickNames, 'Unknown'),
 }));
 ```
 

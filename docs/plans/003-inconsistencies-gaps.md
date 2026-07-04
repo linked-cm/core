@@ -152,5 +152,16 @@ The config types already **declared** `minInclusive`/`maxInclusive`/`minExclusiv
 - Meta-model (Package.ts): added the 7 `sh:` accessors on `PropertyShape` so the create-pipeline resolves the labels → predicates (mirrors the existing minCount/datatype/hasValue accessors).
 - `shacl-constraint-serialization.test.ts` (3): decorator→shape fields, `getResult()` exposure, and NodeShape.create→lower→SPARQL emitting `shacl:minInclusive`/`maxLength`/`pattern`. No graph→code reader exists to keep symmetric (the read side is the meta-model query via `getResult`). Suite 1487 (+3) / typecheck green.
 
-## Still open (ideating) — G12/G13
-G12 (Expr↔ExpressionNode naming drift, missing `Expr.oneOf`), G13 (SHACL negated-set throws at sync; no `sh:path`→PathExpr reader) — not yet scoped.
+## Phase 8 — G12 (`Expr` trim) + G13 (SHACL path guards)  ✅ DONE
+
+**G12 — `Expr` vs `ExpressionNode` drift.** Investigated the origin (report 010): `Expr` was introduced *only* for **non-property-first** expressions (`now`/`ifThen`/`firstDefined` — nothing to chain a `.method()` off). It had since drifted into a **full mirror**: 50 of 55 functions were one-line delegators to the identical fluent method — same IR, same SPARQL — and two carried a *different name* (`Expr.regex`→`.matches`, `Expr.bound`→`.isDefined`), which is exactly the reported drift.
+
+**Decision (with user): trim to charter (Option 1), don't full-mirror (Option 2).** `Expr` now carries only the five ops that have no natural fluent host: `now`, `ifThen`, `firstDefined` (non-property-first), `concat` (variadic; the common literal-first case `Expr.concat('Hi ', p.name)`), and `not` (prefix negation — report 013's canonical spelling). The ~50 delegators are dropped; the fluent form (`p.age.plus(1)`, `p.name.matches(/^A/)`, `p.hobby.oneOf([…])`) is the one true way for everything property-first. This **erases the naming drift by removal** (no `regex`/`bound` to mis-name) and resolves "missing `Expr.oneOf`" by deciding membership lives on the fluent side only — no new surface.
+- `Expr.ts` rewritten to the 5; `expr-module.test.ts` trimmed to those (the deleted equivalence tests covered delegators that no longer exist; fluent ops stay covered by `expression-node.test.ts`). No non-test source used a delegator; README `Expr` section already documented only the non-property-first ops (fixed one `Expr.str('Unknown')`→`'Unknown'`).
+
+**G13 — SHACL paths (all three sub-issues resolved).**
+1. *Negated set throws at sync* — **left as-is** (deliberate: SHACL genuinely has no `sh:path` representation for a negated property set; the error message is clear, failing at sync is acceptable).
+2. *Empty/1-member seq & alt → SHACL-invalid lists* — **guard added** to `serializePathToNodeData` (backend-only, `syncShapes` path — never the frontend wire): a 1-member seq/alt collapses to its bare member (a valid single-predicate path), an empty one throws. Exactly SHACL §2.3.1/§2.3.2 (a sequence/alternative is a list of **≥2** members). Unreachable via `normalizePropertyPath` (collapses upstream) — pins the serializer's independent spec-correctness. `shacl-path-translator.test.ts` +3.
+3. *No `sh:path`→PathExpr reader (one-way sync)* — **deferred to its own effort** as a genuine feature (bidirectional shape sync, RDF/Turtle shapes as source of truth). Captured in `docs/backlog/012-shacl-path-reader.md`; aligns with idea 015.
+
+Suite green / typecheck green.

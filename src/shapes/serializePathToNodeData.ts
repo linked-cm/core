@@ -33,6 +33,14 @@ export function serializePathToNodeData(path: PathExpr, base: string): PathNodeD
       return {id: typeof e === 'string' ? e : e.id};
     }
     if ('seq' in e) {
+      // SHACL §2.3.1: a sequence path is a list with **at least two** members.
+      // A 0/1-member sequence is not a list — collapse a singleton to its bare
+      // member, reject an empty one. (normalizePropertyPath already collapses
+      // these upstream; this keeps the serializer independently spec-correct.)
+      if (e.seq.length === 0) {
+        throw new Error('Cannot serialize an empty sequence path to SHACL sh:path.');
+      }
+      if (e.seq.length === 1) return serialize(e.seq[0], `${b}/seq/0`);
       return rdfList(
         e.seq.map((s, i) => serialize(s, `${b}/seq/${i}`)),
         {base: `${b}/seq`},
@@ -42,6 +50,12 @@ export function serializePathToNodeData(path: PathExpr, base: string): PathNodeD
       return {shape: PathNode, __id: `${b}/inv`, inversePath: serialize(e.inv, `${b}/inv`)};
     }
     if ('alt' in e) {
+      // SHACL §2.3.2: sh:alternativePath is a list with **at least two** members.
+      // Collapse a singleton alternative to its bare member, reject an empty one.
+      if (e.alt.length === 0) {
+        throw new Error('Cannot serialize an empty alternative path to SHACL sh:path.');
+      }
+      if (e.alt.length === 1) return serialize(e.alt[0], `${b}/alt/0`);
       return {
         shape: PathNode,
         __id: `${b}/alt`,
