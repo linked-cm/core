@@ -3,7 +3,8 @@ import {resolveShape} from './resolveShape.js';
 import type {UpdatePartial} from './QueryFactory.js';
 import type {CreateResponse} from './CreateQuery.js';
 import {MutationQueryFactory} from './MutationQuery.js';
-import {getQueryDispatch} from './queryDispatch.js';
+import {resolveMutationDispatch} from './queryDispatch.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {encodeNodeData, decodeNodeDataToRaw, type CreateMutationJSON} from './MutationSerialization.js';
@@ -157,9 +158,15 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     };
   }
 
-  /** Execute the mutation. */
-  exec(): Promise<CreateResponse<U>> {
-    return getQueryDispatch().createQuery(this) as Promise<CreateResponse<U>>;
+  /**
+   * Execute the mutation.
+   *
+   * @param target Optional explicit dataset (a store or a router) to run against. Omitted →
+   *   the global query dispatch. A `target` runs on that dataset only; the global router is
+   *   untouched. Rejects if the target dataset doesn't implement create.
+   */
+  async exec(target?: IDataset): Promise<CreateResponse<U>> {
+    return resolveMutationDispatch('create', target).createQuery(this) as Promise<CreateResponse<U>>;
   }
 
   // ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {getQueryDispatch} from './queryDispatch.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
@@ -641,18 +642,30 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     return this._shape.shape;
   }
 
-  /** Execute the query and return results. */
-  exec(): Promise<Result> {
+  /**
+   * Execute the query and return results.
+   *
+   * @param target Optional explicit dataset (a store or a router — a router *is* an
+   *   `IDataset`) to run against. Omitted → the global query dispatch (the router's
+   *   shape-based default). A `target` runs on that dataset only; the global router is
+   *   untouched. `await`ing the builder (the PromiseLike path) always uses the global
+   *   dispatch — only `.exec(target)` overrides.
+   */
+  async exec(target?: IDataset): Promise<Result> {
     if (this._nullSubject) {
       // .for(null/undefined) was called — return null instead of executing a broken query.
-      return Promise.resolve(null as Result);
+      return null as Result;
     }
     if (this._pendingContextName && !this._subject?.id) {
       // Pending context hasn't resolved yet — return null rather than querying without a subject.
-      return Promise.resolve(null as Result);
+      return null as Result;
     }
     // Dispatch the live (closed) query; the dataset decides whether to lower it.
-    return getQueryDispatch().selectQuery(this).catch(err => {
+    // `async` ensures a missing global dispatch surfaces as a rejected promise, not a sync throw.
+    const dispatch = target ?? getQueryDispatch();
+    try {
+      return (await dispatch.selectQuery(this)) as Result;
+    } catch (err) {
       // A where-clause context reference that hasn't resolved yet surfaces as
       // UnresolvedContextError when the dataset lowers the query. For SELECT this
       // means "not ready" — return null (a reactive layer re-runs once it lands),
@@ -660,8 +673,8 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       if (err instanceof UnresolvedContextError) {
         return null as Result;
       }
-      throw Error(`Error while executing query: ${err.stack}.\n\nQuery related to this error: ${JSON.stringify(this.toJSON())}`)
-    }) as Promise<Result>;
+      throw Error(`Error while executing query: ${(err as Error).stack}.\n\nQuery related to this error: ${JSON.stringify(this.toJSON())}`);
+    }
   }
 
   // ---------------------------------------------------------------------------

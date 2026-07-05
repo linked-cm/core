@@ -2,7 +2,8 @@ import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import type {DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
-import {getQueryDispatch} from './queryDispatch.js';
+import {resolveMutationDispatch} from './queryDispatch.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import type {NodeShape} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
@@ -200,13 +201,21 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     };
   }
 
-  /** Execute the mutation. */
-  exec(): Promise<R> {
+  /**
+   * Execute the mutation.
+   *
+   * @param target Optional explicit dataset (a store or a router) to run against. Omitted →
+   *   the global query dispatch. A `target` runs on that dataset only; the global router is
+   *   untouched. Rejects if the target dataset doesn't implement delete.
+   */
+  async exec(target?: IDataset): Promise<R> {
     const mode = this._mode || (this._ids ? 'ids' : undefined);
+    const result = resolveMutationDispatch('delete', target).deleteQuery(this);
+    // Bulk (all/where) resolves to void; id-based resolves to the DeleteResponse.
     if (mode === 'all' || mode === 'where') {
-      return getQueryDispatch().deleteQuery(this).then(() => undefined) as Promise<R>;
+      return result.then(() => undefined) as Promise<R>;
     }
-    return getQueryDispatch().deleteQuery(this) as Promise<R>;
+    return result as Promise<R>;
   }
 
   // ---------------------------------------------------------------------------
