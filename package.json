@@ -64,7 +64,7 @@
     "next-tick": "^1.1.0",
     "ulid": "^3.0.2"
   },
-  "types": "./index.d.ts",
+  "types": "./lib/esm/index.d.ts",
   "typesVersions": {
     "*": {
       "*": [
