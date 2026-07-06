@@ -19,13 +19,24 @@ export interface QueryDispatch {
   deleteQuery(query: DeleteQuery): Promise<DeleteResponse>;
 }
 
-let dispatch: QueryDispatch | null = null;
+// Global-backed so it is SHARED across duplicate copies of this module. In dev,
+// `@_linked/core` can be evaluated twice (Vite/`src` + Node/`lib` — an accepted
+// 2-instance state, see report-011). The module REGISTRY already lives on the
+// shared global; the query dispatch must too, or `setDefaultDataset()` on one
+// copy is invisible to queries on the other ("No query dispatch configured").
+// Whichever copy runs the storage config sets it; every copy reads it.
+const dispatchGlobal: any =
+  typeof globalThis !== 'undefined' ? globalThis : ({} as any);
+if (!('__linkedQueryDispatch' in dispatchGlobal)) {
+  dispatchGlobal.__linkedQueryDispatch = {current: null as QueryDispatch | null};
+}
 
 export function setQueryDispatch(d: QueryDispatch): void {
-  dispatch = d;
+  dispatchGlobal.__linkedQueryDispatch.current = d;
 }
 
 export function getQueryDispatch(): QueryDispatch {
+  const dispatch = dispatchGlobal.__linkedQueryDispatch.current as QueryDispatch | null;
   if (!dispatch) {
     throw new Error(
       'No query dispatch configured. Call LinkedStorage.setDefaultDataset() first.',
