@@ -1,6 +1,8 @@
-import {jest} from '@jest/globals';
 import {setQueryDispatch} from '../queries/queryDispatch';
-import * as IRPipeline from '../queries/IRPipeline';
+import {
+  buildSelectQueryImpl,
+  setBuildSelectQueryHook,
+} from '../queries/IRPipeline';
 import {lower} from '../queries/lower';
 
 // Datasets now receive the live (closed) query; tests expect the lowered IR, so
@@ -20,11 +22,12 @@ const toIR = (query: any) =>
 let _lastQuery: any;
 let _lastRawInput: any;
 
-// Spy on buildSelectQuery to capture pre-pipeline raw input
-const originalBuildSelectQuery = IRPipeline.buildSelectQuery;
-jest.spyOn(IRPipeline, 'buildSelectQuery').mockImplementation((raw: any) => {
+// Intercept buildSelectQuery to capture the pre-pipeline raw input. Uses the
+// IRPipeline hook rather than jest.spyOn because ESM module namespaces are
+// frozen and cannot be reassigned by spyOn.
+setBuildSelectQueryHook((raw: any) => {
   _lastRawInput = raw;
-  return originalBuildSelectQuery(raw);
+  return buildSelectQueryImpl(raw);
 });
 
 setQueryDispatch({

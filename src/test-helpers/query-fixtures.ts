@@ -675,7 +675,6 @@ export const queryFactories = {
 
   // Expression in update with Expr.now()
   updateExprNow: (): any => {
-    const {Expr} = require('../expressions/Expr');
     return Person.update({birthDate: Expr.now()}).for(entity('p1'));
   },
 

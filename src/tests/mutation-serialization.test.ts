@@ -7,6 +7,12 @@ import {CreateBuilder} from '../queries/CreateBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
 import {lower} from '../queries/lower';
 import {fromJSON} from '../queries/fromJSON';
+import {
+  getQueryContext,
+  setQueryContext,
+  subscribeQueryContext,
+  UnresolvedContextError,
+} from '../queries/QueryContext';
 
 /**
  * Round-trip proof: for every mutation feature, serializing the builder to
@@ -134,13 +140,6 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
   });
 
   describe('query context as target subject (phase 6 — mutation parity)', () => {
-    const {
-      getQueryContext,
-      setQueryContext,
-      subscribeQueryContext,
-      UnresolvedContextError,
-    } = require('../queries/QueryContext');
-
     test('subscribeQueryContext notifies on set/clear (reactivity primitive)', () => {
       const seen: string[] = [];
       const unsub = subscribeQueryContext((name: string) => seen.push(name));
