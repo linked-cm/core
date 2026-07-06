@@ -8,6 +8,8 @@
     "skipLibCheck": true,
     "pretty": true,
     "target": "es6",
+    "module": "esnext",
+    "jsx": "react",
     "moduleResolution": "node",
     "types": ["node", "jest"],
     "baseUrl": "./",

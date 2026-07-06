@@ -1,14 +1,15 @@
 {
   "name": "@_linked/core",
-  "version": "2.12.0",
+  "version": "2.13.0",
   "license": "MIT",
   "linkedPackage": true,
+  "type": "module",
   "description": "Linked.js core query and SHACL shape DSL (copy-then-prune baseline)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/linked-cm/core.git"
   },
-  "main": "lib/cjs/index.js",
+  "main": "lib/esm/index.js",
   "module": "lib/esm/index.js",
   "sideEffects": [
     "**/ontologies/*.js",
@@ -20,20 +21,17 @@
     ".": {
       "types": "./lib/esm/index.d.ts",
       "development": "./src/index.ts",
-      "import": "./lib/esm/index.js",
-      "require": "./lib/cjs/index.js"
+      "import": "./lib/esm/index.js"
     },
     "./sparql": {
       "types": "./lib/esm/sparql/index.d.ts",
       "development": "./src/sparql/index.ts",
-      "import": "./lib/esm/sparql/index.js",
-      "require": "./lib/cjs/sparql/index.js"
+      "import": "./lib/esm/sparql/index.js"
     },
     "./*": {
       "types": "./lib/esm/*.d.ts",
       "development": "./src/*.ts",
-      "import": "./lib/esm/*.js",
-      "require": "./lib/cjs/*.js"
+      "import": "./lib/esm/*.js"
     }
   },
   "publishConfig": {
@@ -47,14 +45,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npx rimraf ./lib && npx tsc -p tsconfig-cjs.json && npx tsc -p tsconfig-esm.json && node ./scripts/dual-package.js",
-    "compile": "echo '💫 Compiling CJS' && npx tsc -p tsconfig-cjs.json && echo '💫 Compiling ESM' && npx tsc -p tsconfig-esm.json",
-    "dual-package": "node ./scripts/dual-package.js",
+    "build": "npx rimraf ./lib && npx tsc -p tsconfig-esm.json",
+    "compile": "echo '💫 Compiling ESM' && npx tsc -p tsconfig-esm.json",
     "sync:agents": "node packages/skills/sync.mjs",
     "setup": "npx semantu-agents",
     "typecheck": "npx tsc -p tsconfig-tests.json",
-    "test": "npx jest --config jest.config.js --runInBand && npm run typecheck",
-    "test:fuseki": "docker compose -f src/tests/docker-compose.test.yml up -d --wait && npx jest --config jest.config.js --testPathPattern='sparql-fuseki' --verbose; EXIT=$?; docker compose -f src/tests/docker-compose.test.yml down; exit $EXIT"
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest --config jest.config.cjs --runInBand && npm run typecheck",
+    "test:fuseki": "docker compose -f src/tests/docker-compose.test.yml up -d --wait && NODE_OPTIONS=--experimental-vm-modules npx jest --config jest.config.cjs --testPathPattern='sparql-fuseki' --verbose; EXIT=$?; docker compose -f src/tests/docker-compose.test.yml down; exit $EXIT"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
