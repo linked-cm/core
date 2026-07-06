@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.11.1
+
+### Patch Changes
+
+- [#140](https://github.com/linked-cm/core/pull/140) [`3aeaa0a`](https://github.com/linked-cm/core/commit/3aeaa0a6e86a3012fb33dfa6f29397b5bd312c5d) Thanks [@flyon](https://github.com/flyon)! - Fix the package root `types` field, which pointed to a nonexistent `./index.d.ts`. It now points to `./lib/esm/index.d.ts` (the real declarations, matching the `exports` map). Consumers using the legacy `moduleResolution: "node"` (which reads the root `types` fallback rather than the `exports` map) can now resolve `@_linked/core`'s types for the root import; subpath imports already resolved via `typesVersions`.
+
+## 2.11.0
+
+### Minor Changes
+
+- [#134](https://github.com/linked-cm/core/pull/134) [`e2de396`](https://github.com/linked-cm/core/commit/e2de3963f126afd24d41424abf02ecf03e127233) Thanks [@flyon](https://github.com/flyon)! - Add `exec(target?: IDataset)` to the four query builders (`SelectBuilder`, `CreateBuilder`, `UpdateBuilder`, `DeleteBuilder`) for targeted query execution against an explicit dataset.
+
+  ```ts
+  // Run against one specific store/router instead of the global default; the global router is untouched.
+  await Person.select((p) => p.name).exec(someStore);
+  await NodeShape.create(data).withId(iri).exec(branchStore);
+  ```
+
+  - Passing a `target` (a store, or a router — a router _is_ an `IDataset`) runs the query on that dataset only. Omitting it is unchanged (global dispatch), and `await`ing a builder (the PromiseLike path) always stays global — only an explicit `.exec(target)` overrides.
+  - `selectQuery` is required on `IDataset`; the mutation methods are optional, so a mutation `exec(target)` **rejects** with a clear message if the target can't perform the op. All `exec` methods are now `async`, so failures (unsupported target, missing global dispatch) surface as rejected promises rather than synchronous throws.
+
+  `syncShape(target, ds?)` and `syncShapes(ds?)` now accept an optional dataset that threads through to every `.exec(ds)`. For `syncShapes`, `ds` is a plan-time parameter feeding both the orphan-detection read and the delete/create thunks, so orphans are computed against the same store they're pruned from; the returned thunks stay nullary.
+
+  ```ts
+  const { store } = await getBranchMetadataStore(projectId, branch);
+  await syncShape(Person, store)(); // materialize Person's sh:NodeShape into a per-branch store
+  ```
+
+  No routing/config/`LinkedStorage` changes — purely an execution-target override on the builder. See `docs/reports/021-targeted-query-execution.md`.
+
+## 2.10.2
+
+### Patch Changes
+
+- [#130](https://github.com/linked-cm/core/pull/130) [`d1d435f`](https://github.com/linked-cm/core/commit/d1d435f85e93091ee795c363465c95b9760615ac) Thanks [@flyon](https://github.com/flyon)! - Fixed 9 correctness bugs in query lowering and result mapping (nested sub-select filters, `.one()` truncation, `isNotDefined`/`defaultTo`/`Expr.ifThen` in `.where()`, nested aggregates, expression-over-traversal projections and updates). Most previously returned silently wrong results rather than errors. No public API changes — see `docs/reports/020-linked-query-test-coverage.md` for details.
+
 ## 2.10.1
 
 ### Patch Changes

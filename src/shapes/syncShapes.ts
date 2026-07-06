@@ -7,6 +7,7 @@ import {getAllShapeClasses, getShapeClass} from '../utils/ShapeClass.js';
 import {NodeShape, PropertyShape} from './SHACL.js';
 import {Shape} from './Shape.js';
 import {DeleteBuilder} from '../queries/DeleteBuilder.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import {rdfList} from './List.js';
 import {serializePathToNodeData} from './serializePathToNodeData.js';
 
@@ -72,17 +73,20 @@ function buildNodeShapeData(nodeShape: NodeShape, shapeIri: string): Record<stri
 /**
  * The per-shape `delete → create` thunk shared by `syncShapes()` and `syncShape()`. The delete
  * cascade-cleans the shape's old property-shape / list / path subtrees; the create rebuilds them.
+ *
+ * `ds` (optional) targets an explicit dataset — both the delete and the create run against it
+ * instead of the global router. Omitted → today's global behavior.
  */
-function buildSyncThunk(nodeShape: NodeShape, iri: string): () => Promise<void> {
+function buildSyncThunk(nodeShape: NodeShape, iri: string, ds?: IDataset): () => Promise<void> {
   return () => {
     // Build the data fresh on each invocation: the create pipeline mutates the node-data
     // (it strips nested `shape` keys), so a shared object can't be re-used across runs.
     const data = buildNodeShapeData(nodeShape, iri);
-    return (DeleteBuilder.from(NodeShape, {id: iri}).exec() as Promise<unknown>)
+    return (DeleteBuilder.from(NodeShape, {id: iri}).exec(ds) as Promise<unknown>)
       .then(() =>
         (NodeShape.create(data as never).withId(iri) as unknown as {
-          exec: () => Promise<unknown>;
-        }).exec(),
+          exec: (target?: IDataset) => Promise<unknown>;
+        }).exec(ds),
       )
       .then(() => undefined);
   };
@@ -99,9 +103,14 @@ function buildSyncThunk(nodeShape: NodeShape, iri: string): () => Promise<void> 
  * Each in-code shape's thunk runs `delete → create` in order (the delete cascade-cleans the old
  * property shapes / list / path subtrees via the containment cascade, the create rebuilds them).
  * Shapes present in the store but no longer in code are deleted as orphans (their owned subtree
- * cascades too). Reads existing shape IRIs via the global query dispatch for orphan detection.
+ * cascades too). Reads existing shape IRIs for orphan detection.
+ *
+ * `ds` (optional) targets an explicit dataset instead of the global router. It is a **plan-time**
+ * parameter: it feeds both the orphan-detection read (so orphans are computed against the same
+ * store they'll be pruned from) and every delete/create thunk. Omitted → today's global behavior;
+ * the returned thunks stay nullary either way.
  */
-export async function syncShapes(): Promise<Array<() => Promise<void>>> {
+export async function syncShapes(ds?: IDataset): Promise<Array<() => Promise<void>>> {
   // 1. Enumerate code-registered user shapes (exclude framework/meta shapes).
   const userShapes: Array<{iri: string; nodeShape: NodeShape}> = [];
   for (const [iri, shapeClass] of getAllShapeClasses()) {
@@ -114,24 +123,25 @@ export async function syncShapes(): Promise<Array<() => Promise<void>>> {
   }
   const localShapeIris = new Set(userShapes.map((s) => s.iri));
 
-  // 2. Identity-read existing NodeShape IRIs (ids only) for orphan detection.
+  // 2. Identity-read existing NodeShape IRIs (ids only) for orphan detection. Must hit the same
+  //    `ds` the thunks target, or orphans get computed against the wrong store.
   const existingRows = (await (NodeShape as unknown as {
-    select: () => Promise<Array<{id: string}>>;
-  }).select()) as Array<{id: string}>;
+    select: () => {exec: (target?: IDataset) => Promise<Array<{id: string}>>};
+  }).select().exec(ds)) as Array<{id: string}>;
   const existingShapeIris = new Set(existingRows.map((r) => r.id));
 
   const thunks: Array<() => Promise<void>> = [];
 
   // 3. Per in-code shape: delete (cascade) then recreate.
   for (const {iri, nodeShape} of userShapes) {
-    thunks.push(buildSyncThunk(nodeShape, iri));
+    thunks.push(buildSyncThunk(nodeShape, iri, ds));
   }
 
   // 4. Orphan shapes (in store, not in code) → delete (cascade cleans their owned subtree).
   for (const iri of existingShapeIris) {
     if (!localShapeIris.has(iri)) {
       thunks.push(() =>
-        (DeleteBuilder.from(NodeShape, {id: iri}).exec() as Promise<unknown>).then(
+        (DeleteBuilder.from(NodeShape, {id: iri}).exec(ds) as Promise<unknown>).then(
           () => undefined,
         ),
       );
@@ -150,12 +160,14 @@ export async function syncShapes(): Promise<Array<() => Promise<void>>> {
  *
  * @param target a shape class (e.g. `Person`) or its NodeShape IRI string. An IRI is resolved to
  *   its registered class via `getShapeClass`; the shape must be code-registered.
+ * @param ds optional explicit dataset to materialize into (a store or a router) — both the delete
+ *   and the create run against it instead of the global router. Omitted → global behavior.
  * @returns a single unexecuted thunk (consistent with {@link syncShapes}), so callers can batch
  *   several together — e.g. a shape plus its referenced object-property shapes:
  *   `await Promise.all([syncShape(Person), syncShape(Address)].map((run) => run()))`.
  * @throws if `target` is a framework/meta shape, is not registered, or has no `.shape`.
  */
-export function syncShape(target: typeof Shape | string): () => Promise<void> {
+export function syncShape(target: typeof Shape | string, ds?: IDataset): () => Promise<void> {
   // Normalize target → its registered shape class.
   const cls =
     typeof target === 'string' ? getShapeClass(target) : (target as typeof Shape);
@@ -179,5 +191,5 @@ export function syncShape(target: typeof Shape | string): () => Promise<void> {
     throw new Error(`syncShape: refusing to sync framework/meta shape ${iri}`);
   }
 
-  return buildSyncThunk(nodeShape, iri);
+  return buildSyncThunk(nodeShape, iri, ds);
 }

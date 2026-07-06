@@ -3,7 +3,8 @@ import {resolveShape} from './resolveShape.js';
 import {type AddId, type UpdatePartial, NodeReferenceValue} from './QueryFactory.js';
 import {MutationQueryFactory} from './MutationQuery.js';
 import {MutationThenable} from './MutationThenable.js';
-import {getQueryDispatch} from './queryDispatch.js';
+import {resolveMutationDispatch} from './queryDispatch.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {PendingQueryContext, getQueryContext, UnresolvedContextError} from './QueryContext.js';
 import {encodeContextRef, isContextRefJSON} from './ContextRef.js';
@@ -232,13 +233,21 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     return json;
   }
 
-  /** Execute the mutation. */
-  exec(): Promise<R> {
+  /**
+   * Execute the mutation.
+   *
+   * @param target Optional explicit dataset (a store or a router) to run against. Omitted →
+   *   the global query dispatch. A `target` runs on that dataset only; the global router is
+   *   untouched. Rejects if the target dataset doesn't implement update.
+   */
+  async exec(target?: IDataset): Promise<R> {
     const mode = this._mode || (this._targetId ? 'for' : undefined);
+    const result = resolveMutationDispatch('update', target).updateQuery(this);
+    // Bulk (forAll/where) resolves to void; id-based resolves to the updated node.
     if (mode === 'forAll' || mode === 'where') {
-      return getQueryDispatch().updateQuery(this).then(() => undefined) as Promise<R>;
+      return result.then(() => undefined) as Promise<R>;
     }
-    return getQueryDispatch().updateQuery(this) as Promise<R>;
+    return result as Promise<R>;
   }
 
 }
