@@ -13,11 +13,7 @@
  */
 import {execSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {dirname, resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
-
-/** This module's directory — ESM-safe (`__dirname` doesn't exist under ESM). */
-const HERE = dirname(fileURLToPath(import.meta.url));
+import {resolve} from 'node:path';
 
 export const FUSEKI_BASE_URL = process.env.FUSEKI_BASE_URL || 'http://localhost:3939';
 const FUSEKI_ADMIN_PASSWORD = process.env.FUSEKI_ADMIN_PASSWORD || 'admin';
@@ -52,12 +48,13 @@ export async function isFusekiAvailable(): Promise<boolean> {
  * Works from both source (src/) and compiled (lib/esm/) paths.
  */
 function findComposeFile(): string | null {
+  // Resolve from the package root (process.cwd() when jest/tsc runs) rather
+  // than this module's dir. Avoids `import.meta.url`, which ts-jest cannot
+  // compile in the CJS-mode globalSetup path (TS1343) — while the test always
+  // runs from the package root, so cwd is stable.
   const candidates = [
-    resolve(HERE, '../tests/docker-compose.test.yml'),
-    resolve(HERE, '../../src/tests/docker-compose.test.yml'),
-    // Built helpers live under lib/esm/test-helpers, so we need to
-    // climb back to the package root before looking in src/tests.
-    resolve(HERE, '../../../src/tests/docker-compose.test.yml'),
+    resolve(process.cwd(), 'src/tests/docker-compose.test.yml'),
+    resolve(process.cwd(), 'tests/docker-compose.test.yml'),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
