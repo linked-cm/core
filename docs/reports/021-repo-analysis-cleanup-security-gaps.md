@@ -116,8 +116,8 @@ Grounded in the existing `docs/ideas` + `docs/backlog` and the gaps above:
 
 1. **Harden the wire boundary (security + correctness together).** The `fromJSON` path is both the top injection vector (SEC1/SEC2) and the top gap source (G2). A single "validate + canonicalize at the boundary" pass — IRI/name allowlisting, depth cap, and reconciling the decoder with `dsl-json.md` — closes both. Highest leverage.
 2. **Close create/update parity and finish aggregates.** Expression-in-create (G4), `sum/avg/min/max` + `SetSize` comparisons (G11, backlog 006), and multi-key sort (G9) are all "IR/SPARQL already support it, only the DSL/codec lags" — cheap, high-visibility wins.
-3. **Make SHACL constraints real or remove them.** Decide per option in G5 whether to serialize/sync it or drop it from the config type; add a `sh:path` reader so shape sync is bidirectional (G13). Aligns with idea 015 (SHACL RDF serialization).
-4. **Fix the false-green CI.** Make Fuseki suites fail (or explicitly `skip`) when Docker is absent, so `SparqlDataset` regressions surface. Pairs with idea 010 (strictNullChecks) and the type-system refactor (idea 011) to raise the correctness floor.
+3. **Make SHACL constraints real or remove them.** Decide per option in G5 whether to serialize/sync it or drop it from the config type; add a `sh:path` reader so shape sync is bidirectional (G13, backlog 030). Aligns with SHACL RDF serialization (write side shipped in report 016).
+4. **Fix the false-green CI.** Make Fuseki suites fail (or explicitly `skip`) when Docker is absent, so `SparqlDataset` regressions surface. Pairs with backlog 028 (strictNullChecks) and the type-system refactor (backlog 029) to raise the correctness floor.
 5. **Leanness pass as a standalone PR.** The dead-code + dependency + build-config cleanups in §1 are low-risk, test-covered, and shrink both the published artifact and tsc load — a good first merge to de-risk the larger changes.
 6. **Named-graph / CONSTRUCT support** (ideas 004/005) remain the biggest genuinely-missing capabilities for multi-tenancy and provenance use cases.
 

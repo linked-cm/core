@@ -36,7 +36,7 @@ Third chapter of the repo-wide analysis (report 021). Chapters 1 (leanness → r
 - **G5** — SHACL value-range/length/pattern constraints (`minInclusive`/`maxInclusive`/`minExclusive`/`maxExclusive`/`minLength`/`maxLength`/`pattern`) were declared in the config type and ontology but never read or serialized. Wired end-to-end (serialization only; **no DSL-side runtime enforcement** — the store validates): `createPropertyShape` reads them, `getResult()` exposes them (pattern as its regex source string), `buildPropertyShapeData` emits them to the sync create-data, and `Package.ts` adds the `sh:` accessors so labels resolve to predicates. Language constraints (`languageIn`/`uniqueLang`) skipped.
 - **G11** — `SetSize` gained `gt/gte/lt/lte/neq` (+ long aliases) via a shared `toCountExpr()` → `HAVING(count(…) <op> n)`, so `.size().gt(2)` works (was `.equals()`-only). The `sum/avg/min/max` aggregate DSL surface remains backlog 006.
 - **G12** — the `Expr` static module had drifted from its charter (report 010: non-property-first ops only) into a **full mirror** — 50 of 55 functions were one-line delegators to the identical fluent method, two under a *different* name (`Expr.regex`→`.matches`, `Expr.bound`→`.isDefined`). **Trimmed to the five ops with no natural fluent host:** `now`, `ifThen`, `firstDefined`, `concat` (variadic; the common literal-first case), `not` (prefix negation). The fluent form (`p.age.plus(1)`, `p.name.matches(/^A/)`, `p.hobby.oneOf([…])`) is the one true way for everything property-first. This **erases the naming drift by removal** and settles "missing `Expr.oneOf`" by keeping membership fluent-only.
-- **G13** — SHACL paths. (1) A negated property set still throws at sync — SHACL genuinely has no `sh:path` representation; deliberate, clear error. (2) Added guards to `serializePathToNodeData`: a 1-member `seq`/`alt` collapses to its bare member, an empty one throws, per SHACL §2.3.1/§2.3.2 (a sequence/alternative is a list of ≥2). Backend-only (`syncShapes` path). (3) The reverse `sh:path`→`PathExpr` reader (bidirectional shape sync) is a genuine feature folded into idea 015.
+- **G13** — SHACL paths. (1) A negated property set still throws at sync — SHACL genuinely has no `sh:path` representation; deliberate, clear error. (2) Added guards to `serializePathToNodeData`: a 1-member `seq`/`alt` collapses to its bare member, an empty one throws, per SHACL §2.3.1/§2.3.2 (a sequence/alternative is a list of ≥2). Backend-only (`syncShapes` path). (3) The reverse `sh:path`→`PathExpr` reader (bidirectional shape sync) is a genuine feature deferred to backlog 030 (the write side already shipped in report 016).
 - **G14** — moot: the always-throwing stubs it flagged (`ShapeClass` throw-only functions) were already deleted as dead code in chapter 1 (report 022).
 
 ### Tier 4/5 — error-handling policy + write validation
@@ -88,7 +88,7 @@ A three-agent parallel review confirmed the code correct and surfaced seven gaps
 - **010** — membership rungs 2–4 (subquery / set-to-set → `EXISTS`/anti-join).
 - **011** — `create` with computed / subquery-derived values (`INSERT … WHERE`).
 - **013** — typed builder/`Shape` values for shapeless-property writes.
-- **idea 015** — SHACL RDF serialization, now including the `sh:path`→`PathExpr` reader (G13 read side).
+- **030** — SHACL `sh:path`→`PathExpr` reader (G13 read side; the write side shipped in report 016).
 
 ## Related documentation
 

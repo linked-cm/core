@@ -37,7 +37,7 @@ Linked currently exposes only `.size()` (COUNT) as an aggregate in the DSL. The 
 - Lines 134–140: serializes `count(...)`, `sum(...)`, etc. with optional DISTINCT prefix
 - Lines 292–298: serializes GROUP BY clause
 
-**Existing idea doc** — `docs/ideas/012-aggregate-group-filtering.md`:
+**Existing idea doc** — `docs/backlog/012-aggregate-group-filtering.md`:
 - Discusses HAVING semantics and whether `.groupBy()` should be public or remain implicit
 - Proposes `count().where(c => c.gt(10))` as aggregate-local filtering syntax
 
@@ -86,7 +86,7 @@ prisma.user.groupBy({ by: ['role'], _count: true, _avg: { balance: true }, havin
 - [ ] Should explicit `.groupBy()` be introduced, or should grouping remain implicit from aggregate usage?
 - [ ] How should aggregates on scalar properties work (e.g., `p.age.avg()` across all persons vs `p.friends.age.avg()` per person)?
 - [ ] Should DISTINCT aggregates be supported (e.g., `p.friends.hobby.countDistinct()`)?
-- [ ] How does this interact with the HAVING semantics from idea 012?
+- [ ] How does this interact with the HAVING semantics from backlog 012?
 
 ## Decisions
 
