@@ -213,3 +213,38 @@ Sharpening the routes above against the current engine — purely query-based, n
 - **Emit every predicate the shape declares, not a fixed SHACL allow-list.** Drive the field→predicate emission off what the `PropertyShape`/`NodeShape` actually carries, so linked-ecosystem extension predicates on a property (e.g. a future display/importance annotation) round-trip without touching the serializer.
 
 - **Share one predicate↔field map with the parser.** If round-trip (SHACL RDF → `NodeShape`) lands, the import side must use the *same* predicate↔field mapping as export — keep it in a single table so the two directions can't drift.
+
+## The read side: `sh:path` → `PathExpr` reader (folded in from backlog 012)
+
+The import direction above needs a **property-path reader** — the exact inverse
+of `serializePathToNodeData` (which today only writes `PathExpr` → `sh:path`
+RDF). Without it, a shape authored as RDF/Turtle (or stored in the graph) has no
+reconstructable property paths, so its relations aren't queryable. This was
+tracked separately as backlog 012 (G13, report 021); it belongs here as the path
+half of the round-trip.
+
+### What the reader must parse (inverse of `serializePathToNodeData`)
+
+| SHACL RDF (`sh:path` object) | `PathExpr` |
+|---|---|
+| a plain IRI | `{id}` (a `PathRef`) |
+| an `rdf:List` `( a b … )` | `{seq: [...]}` (≥2 members) |
+| `[ sh:inversePath P ]` | `{inv: …}` |
+| `[ sh:alternativePath ( a b ) ]` | `{alt: [...]}` |
+| `[ sh:zeroOrMorePath P ]` | `{zeroOrMore: …}` |
+| `[ sh:oneOrMorePath P ]` | `{oneOrMore: …}` |
+| `[ sh:zeroOrOnePath P ]` | `{zeroOrOne: …}` |
+
+There is no `sh:path` form for `negatedPropertySet` — SHACL cannot represent it,
+so it stays write-unsupported in both directions (see G13).
+
+### Scope notes
+- **Backend only.** The reader (like the writer) never ships in the lean
+  frontend `toJSON`/`fromJSON` wire path.
+- Beyond the path parser itself, the import side needs: how loaded shapes
+  **register** as classes (name collisions; datatype/cardinality recovery from
+  `sh:datatype` / `sh:minCount` / `sh:maxCount`) and where `loadShapesFromDataset`
+  lives — the same design work the round-trip section above already flags.
+- **Payoff:** SHACL `.ttl` files as the source of truth for shapes; shapes
+  shared across languages/services as pure RDF; round-tripping a shape through a
+  triple store without losing its property paths.

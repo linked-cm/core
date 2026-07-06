@@ -162,7 +162,7 @@ The config types already **declared** `minInclusive`/`maxInclusive`/`minExclusiv
 **G13 — SHACL paths (all three sub-issues resolved).**
 1. *Negated set throws at sync* — **left as-is** (deliberate: SHACL genuinely has no `sh:path` representation for a negated property set; the error message is clear, failing at sync is acceptable).
 2. *Empty/1-member seq & alt → SHACL-invalid lists* — **guard added** to `serializePathToNodeData` (backend-only, `syncShapes` path — never the frontend wire): a 1-member seq/alt collapses to its bare member (a valid single-predicate path), an empty one throws. Exactly SHACL §2.3.1/§2.3.2 (a sequence/alternative is a list of **≥2** members). Unreachable via `normalizePropertyPath` (collapses upstream) — pins the serializer's independent spec-correctness. `shacl-path-translator.test.ts` +3.
-3. *No `sh:path`→PathExpr reader (one-way sync)* — **deferred to its own effort** as a genuine feature (bidirectional shape sync, RDF/Turtle shapes as source of truth). Captured in `docs/backlog/012-shacl-path-reader.md`; aligns with idea 015.
+3. *No `sh:path`→PathExpr reader (one-way sync)* — **deferred to its own effort** as a genuine feature (bidirectional shape sync, RDF/Turtle shapes as source of truth). Folded into idea 015 (SHACL RDF serialization) as the read half of the round-trip — it's the same effort as serializing the rest of the SHACL metadata.
 
 Suite green / typecheck green.
 
