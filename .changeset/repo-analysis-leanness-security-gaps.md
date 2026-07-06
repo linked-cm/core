@@ -2,7 +2,7 @@
 "@_linked/core": minor
 ---
 
-Repo-wide analysis follow-through (reports 021–024): leanness, security hardening, and functional-gap fixes. Highlights users should know about:
+Repo-wide analysis follow-through (reports 022–025): leanness, security hardening, and functional-gap fixes. Highlights users should know about:
 
 **New query capabilities**
 - Membership: `.oneOf([...])` / `.notOneOf([...])` on any query property → SPARQL `IN` / `NOT IN` (empty list constant-folds to match-nothing / match-everything). Works in `.where()` and inside `.some()`/`.every()`.

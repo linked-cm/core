@@ -1,11 +1,11 @@
 ---
-summary: Deferred higher rungs of the membership feature. Rung 1 (value ∈ explicit list → SPARQL IN/NOT IN, `oneOf`/`notOneOf`) shipped in report 024. Rungs 2–4 extend membership to subqueries and collection/set semantics, lowering to EXISTS / anti-join rather than IN.
+summary: Deferred higher rungs of the membership feature. Rung 1 (value ∈ explicit list → SPARQL IN/NOT IN, `oneOf`/`notOneOf`) shipped in report 025. Rungs 2–4 extend membership to subqueries and collection/set semantics, lowering to EXISTS / anti-join rather than IN.
 packages: [core]
 ---
 
 # 010 — Membership: Rungs 2–4
 
-> Source: deferred from report 024 (G2, D3). Rung 1 is done; the IR
+> Source: deferred from report 025 (G2, D3). Rung 1 is done; the IR
 > node `IRInExpression` is **forward-shaped** (`source: {list}`) so the Rung-2
 > `{query}` arm is additive — no change to the `oneOf`/`notOneOf` DSL surface or
 > the node's identity.

@@ -1,11 +1,11 @@
 ---
-summary: Deferred security item from the hardening pass (report 023) — property-path prefixed-name grammar validation (SEC4). The two critical injection vectors and the medium var/DoS/proto items are already fixed; SEC6 (loadStores dynamic import) is now covered by an inline security note in the code.
+summary: Deferred security item from the hardening pass (report 024) — property-path prefixed-name grammar validation (SEC4). The two critical injection vectors and the medium var/DoS/proto items are already fixed; SEC6 (loadStores dynamic import) is now covered by an inline security note in the code.
 packages: [core]
 ---
 
 # 008 — Remaining SPARQL-injection hardening
 
-> Source: deferred from report 023 (security hardening), finding SEC4.
+> Source: deferred from report 024 (security hardening), finding SEC4.
 > SEC1/SEC2 (critical) and SEC3/SEC5/SEC7 are fixed on the same thread. SEC6
 > (loadStores config-driven dynamic import) was resolved with an inline security
 > note in `src/utils/loadStores.ts` — the specifier must never be

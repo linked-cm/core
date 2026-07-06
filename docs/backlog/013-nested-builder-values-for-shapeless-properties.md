@@ -5,7 +5,7 @@ packages: [core]
 
 # 013 — Nested builder/Shape values for shapeless (polymorphic) properties
 
-> Source: raised during the Tier 4/5 error-handling discussion (report 021 / plan
+> Source: raised during the Tier 4/5 error-handling discussion (report 022 / plan
 > 003). Today a nested **plain object** under a property whose `@objectProperty`
 > did not declare `shape:` **throws** (`MutationQuery.ts:261`) because the engine
 > can't resolve the object's keys → predicates without a shape.

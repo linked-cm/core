@@ -1,11 +1,11 @@
 ---
-summary: The six Fuseki integration suites early-return when Docker is absent, so CI without Docker reports success while executing none of the live-SPARQL assertions — SparqlDataset is effectively untested. Surfaced during the cleanup review (report 022, Gap 4) and independently in report 021 Tier 6.
+summary: The six Fuseki integration suites early-return when Docker is absent, so CI without Docker reports success while executing none of the live-SPARQL assertions — SparqlDataset is effectively untested. Surfaced during the cleanup review (report 023, Gap 4) and independently in report 022 Tier 6.
 packages: [core]
 ---
 
 # 009 — CI/test integrity: Fuseki false-green suites
 
-> Source: deferred from report 022 review (Gap 4); also report 021 §3 Tier 6.
+> Source: deferred from report 023 review (Gap 4); also report 022 §3 Tier 6.
 
 ## Problem
 All six Fuseki suites (`sparql-fuseki*`, `property-path-fuseki`,

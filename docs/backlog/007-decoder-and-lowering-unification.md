@@ -1,11 +1,11 @@
 ---
-summary: Deferred duplication refactors from the cleanup pass (report 022) that were judged too risky for a "keep-tests-passing" gate — the two DSL-JSON decoders and the two lowering entry points share structure but diverge subtly, so unifying them needs added round-trip fixtures first.
+summary: Deferred duplication refactors from the cleanup pass (report 023) that were judged too risky for a "keep-tests-passing" gate — the two DSL-JSON decoders and the two lowering entry points share structure but diverge subtly, so unifying them needs added round-trip fixtures first.
 packages: [core]
 ---
 
 # 007 — DSL-JSON decoder & lowering unification
 
-> Source: deferred from report 022 (simplification & leanness), Gap 3. The safe
+> Source: deferred from report 023 (simplification & leanness), Gap 3. The safe
 > parts of Gap 3 (builder thenable base, `buildPredicateTerm`) were done; these
 > two remain.
 

@@ -1,13 +1,13 @@
 ---
-summary: Security hardening from report 021 §2 — closed both critical SPARQL-injection vectors (unvalidated IRIs, unescaped function names) and added variable-name sanitization, a decoder recursion cap, and prototype-key hygiene. All fixes validate only at the SPARQL-emission boundary and reject only malicious input, so valid queries are byte-identical and no existing test changed. 8 new security tests. SEC4/SEC6 deferred to backlog 008.
+summary: Security hardening from report 022 §2 — closed both critical SPARQL-injection vectors (unvalidated IRIs, unescaped function names) and added variable-name sanitization, a decoder recursion cap, and prototype-key hygiene. All fixes validate only at the SPARQL-emission boundary and reject only malicious input, so valid queries are byte-identical and no existing test changed. 8 new security tests. SEC4/SEC6 deferred to backlog 008.
 packages: [core]
 status: Report
-source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 2)
+source_report: docs/reports/022-repo-analysis-cleanup-security-gaps.md (section 2)
 ---
 
-# 023 — Security Hardening (wrap-up)
+# 024 — Security Hardening (wrap-up)
 
-Delivered from report 021 §2. **Design principle:** validate at the SPARQL-emission trust boundary (`sparqlUtils`/`algebraToString`) so every input path (typed DSL + `fromJSON`) is covered, and reject **only** malicious input — valid IRIs, builtin functions, and normal variable names pass unchanged, keeping golden SPARQL byte-identical. New tests lock each fix; **no existing test was modified**.
+Delivered from report 022 §2. **Design principle:** validate at the SPARQL-emission trust boundary (`sparqlUtils`/`algebraToString`) so every input path (typed DSL + `fromJSON`) is covered, and reject **only** malicious input — valid IRIs, builtin functions, and normal variable names pass unchanged, keeping golden SPARQL byte-identical. New tests lock each fix; **no existing test was modified**.
 
 ## Fixed
 

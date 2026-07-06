@@ -8,7 +8,7 @@ the `todo` skill creates items here, and `ideation` consumes one to seed a plan 
 ## Consolidation note (was `docs/ideas/`)
 
 The former `docs/ideas/` directory — a pre-workflow convention for exploratory
-"future work" — was merged into this backlog (report 024 wrapup), since it served
+"future work" — was merged into this backlog (report 025 wrapup), since it served
 the same role and lived outside the skill tooling. Larger exploratory items
 (CONSTRUCT, named graphs, transactions, upsert, type-system refactor, …) and
 smaller scoped deferrals now coexist here; the `summary` frontmatter says which is

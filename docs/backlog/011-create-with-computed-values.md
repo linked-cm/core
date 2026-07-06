@@ -1,11 +1,11 @@
 ---
-summary: Support computed/expression AND subquery-derived values in `create` by lowering to `INSERT … WHERE` when any value is non-ground, instead of the current `INSERT DATA`-only path. G4 (report 024) currently throws for such values; this is the feature that would make them work.
+summary: Support computed/expression AND subquery-derived values in `create` by lowering to `INSERT … WHERE` when any value is non-ground, instead of the current `INSERT DATA`-only path. G4 (report 025) currently throws for such values; this is the feature that would make them work.
 packages: [core]
 ---
 
 # 011 — Create with computed / subquery-derived values
 
-> Source: raised while fixing G4 (report 024). G4 makes `create`
+> Source: raised while fixing G4 (report 025). G4 makes `create`
 > **throw** for a computed/expression value because `create` lowers only to
 > `INSERT DATA` (ground triples, no `WHERE`). This backlog captures the feature
 > that would make those values *work* rather than error.

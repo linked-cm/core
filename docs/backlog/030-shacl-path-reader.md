@@ -5,7 +5,7 @@ packages: [core]
 
 # 030 — SHACL `sh:path` → `PathExpr` reader (bidirectional shape sync)
 
-> Source: G13 (report 024). The write half of SHACL RDF serialization is **done**
+> Source: G13 (report 025). The write half of SHACL RDF serialization is **done**
 > (report 016 — `serializePathToNodeData` / `syncShapes` emit `sh:path` RDF from a
 > `PathExpr`). This is the missing read half.
 
@@ -33,7 +33,7 @@ Person.select(p => [p.knows.name])   // can't: .path was never reconstructed
 | `[ sh:zeroOrOnePath P ]` | `{zeroOrOne: …}` |
 
 There is no `sh:path` form for `negatedPropertySet` — SHACL cannot represent it,
-so it stays write-unsupported in both directions (see G13, report 024).
+so it stays write-unsupported in both directions (see G13, report 025).
 
 ## What it unlocks
 - SHACL `.ttl` files as the **source of truth** for shapes.

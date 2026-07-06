@@ -1,12 +1,12 @@
 ---
-summary: Chapter 3 of the repo analysis (report 021 §3) — resolved the catalogued inconsistencies and functional gaps (G1–G14, Tier 4/5) in @_linked/core. Highlights: correct SPARQL operator precedence, a reconciled and LLM-authorable DSL-JSON wire format (relation-keyed projection, word-operator aliases, `oneOf`/`notOneOf` membership, `@`-sigiled value-tags), mutation-input correctness, per-path multi-key sort, `SetSize` comparisons, SHACL constraint serialization, a trimmed `Expr` module, SHACL path guards, and a coherent throw-vs-warn error policy with lightweight structural write-validation.
-source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 3)
+summary: Chapter 3 of the repo analysis (report 022 §3) — resolved the catalogued inconsistencies and functional gaps (G1–G14, Tier 4/5) in @_linked/core. Highlights: correct SPARQL operator precedence, a reconciled and LLM-authorable DSL-JSON wire format (relation-keyed projection, word-operator aliases, `oneOf`/`notOneOf` membership, `@`-sigiled value-tags), mutation-input correctness, per-path multi-key sort, `SetSize` comparisons, SHACL constraint serialization, a trimmed `Expr` module, SHACL path guards, and a coherent throw-vs-warn error policy with lightweight structural write-validation.
+source_report: docs/reports/022-repo-analysis-cleanup-security-gaps.md (section 3)
 packages: [core]
 ---
 
-# 024 — Inconsistencies & Gaps (Chapter 3)
+# 025 — Inconsistencies & Gaps (Chapter 3)
 
-Third chapter of the repo-wide analysis (report 021). Chapters 1 (leanness → report 022) and 2 (security → report 023) preceded this. Worked under a fixed discipline: **valid input stays byte-identical; every fix gets a lock-in test; existing tests change only with sign-off.** Gate on each phase: `npm test` (jest + `tsc` typecheck). Final suite: **1460 passed / 117 skipped**, typecheck green.
+Third chapter of the repo-wide analysis (report 022). Chapters 1 (leanness → report 023) and 2 (security → report 024) preceded this. Worked under a fixed discipline: **valid input stays byte-identical; every fix gets a lock-in test; existing tests change only with sign-off.** Gate on each phase: `npm test` (jest + `tsc` typecheck). Final suite: **1460 passed / 117 skipped**, typecheck green.
 
 ## Outcome by gap
 
@@ -37,7 +37,7 @@ Third chapter of the repo-wide analysis (report 021). Chapters 1 (leanness → r
 - **G11** — `SetSize` gained `gt/gte/lt/lte/neq` (+ long aliases) via a shared `toCountExpr()` → `HAVING(count(…) <op> n)`, so `.size().gt(2)` works (was `.equals()`-only). The `sum/avg/min/max` aggregate DSL surface remains backlog 006.
 - **G12** — the `Expr` static module had drifted from its charter (report 010: non-property-first ops only) into a **full mirror** — 50 of 55 functions were one-line delegators to the identical fluent method, two under a *different* name (`Expr.regex`→`.matches`, `Expr.bound`→`.isDefined`). **Trimmed to the five ops with no natural fluent host:** `now`, `ifThen`, `firstDefined`, `concat` (variadic; the common literal-first case), `not` (prefix negation). The fluent form (`p.age.plus(1)`, `p.name.matches(/^A/)`, `p.hobby.oneOf([…])`) is the one true way for everything property-first. This **erases the naming drift by removal** and settles "missing `Expr.oneOf`" by keeping membership fluent-only.
 - **G13** — SHACL paths. (1) A negated property set still throws at sync — SHACL genuinely has no `sh:path` representation; deliberate, clear error. (2) Added guards to `serializePathToNodeData`: a 1-member `seq`/`alt` collapses to its bare member, an empty one throws, per SHACL §2.3.1/§2.3.2 (a sequence/alternative is a list of ≥2). Backend-only (`syncShapes` path). (3) The reverse `sh:path`→`PathExpr` reader (bidirectional shape sync) is a genuine feature deferred to backlog 030 (the write side already shipped in report 016).
-- **G14** — moot: the always-throwing stubs it flagged (`ShapeClass` throw-only functions) were already deleted as dead code in chapter 1 (report 022).
+- **G14** — moot: the always-throwing stubs it flagged (`ShapeClass` throw-only functions) were already deleted as dead code in chapter 1 (report 023).
 
 ### Tier 4/5 — error-handling policy + write validation
 
@@ -95,4 +95,4 @@ A three-agent parallel review confirmed the code correct and surfaced seven gaps
 - `documentation/dsl-json.md` — the canonical wire-format contract (updated).
 - `documentation/dsl-json-llm-prompt.md` — LLM-authoring system prompt (updated).
 - `documentation/intermediate-representation.md` — the IR the codecs lower to.
-- `docs/reports/021-...` (analysis), `022-...` (chapter 1 leanness), `023-...` (chapter 2 security).
+- `docs/reports/022-...` (analysis), `023-...` (chapter 1 leanness), `024-...` (chapter 2 security).

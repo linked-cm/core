@@ -3,7 +3,7 @@ summary: Repository-wide analysis of @_linked/core — simplification/leanness o
 packages: [core]
 ---
 
-# 021 — Repo Analysis: Simplification, Security, Gaps, Future Directions
+# 022 — Repo Analysis: Simplification, Security, Gaps, Future Directions
 
 Baseline verified before analysis: `npm test` → **1444 passed, 117 skipped** (51/54 suites; 3 Fuseki suites skipped without Docker). All headline findings below were spot-checked against source. No files were modified.
 

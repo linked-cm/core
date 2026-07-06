@@ -1,13 +1,13 @@
 ---
-summary: Behavior-preserving simplification & leanness pass over @_linked/core (report 021 §1) plus follow-up iterations — dead code, unused dependency, build-config bloat, a no-op IR pass, hot-path memoization, three real bug fixes, duplication extractions, CoreMap→native Map, a public-surface prune, and a new TypeScript compile gate for the query result-type inference. Production source ended at 17,605 lines; ~790 net lines removed; full suite green throughout.
+summary: Behavior-preserving simplification & leanness pass over @_linked/core (report 022 §1) plus follow-up iterations — dead code, unused dependency, build-config bloat, a no-op IR pass, hot-path memoization, three real bug fixes, duplication extractions, CoreMap→native Map, a public-surface prune, and a new TypeScript compile gate for the query result-type inference. Production source ended at 17,605 lines; ~790 net lines removed; full suite green throughout.
 packages: [core]
 status: Report
-source_report: docs/reports/021-repo-analysis-cleanup-security-gaps.md (section 1)
+source_report: docs/reports/022-repo-analysis-cleanup-security-gaps.md (section 1)
 ---
 
-# 022 — Simplification & Leanness (wrap-up)
+# 023 — Simplification & Leanness (wrap-up)
 
-Delivered from report 021 §1 and the review iterations that followed. **Constraint held throughout:** same functionality, all tests passing; the full suite (later + a typecheck gate) was the acceptance gate after every phase. No existing test was modified without evidence; behavior-changing fixes got new lock-in tests.
+Delivered from report 022 §1 and the review iterations that followed. **Constraint held throughout:** same functionality, all tests passing; the full suite (later + a typecheck gate) was the acceptance gate after every phase. No existing test was modified without evidence; behavior-changing fixes got new lock-in tests.
 
 ## Outcome
 - **Production source: 79 files, 17,605 lines** (everything reachable from `src`/`index.ts`, excluding tests + test-helpers).
