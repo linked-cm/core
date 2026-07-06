@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.13.0
+
+### Minor Changes
+
+- [#149](https://github.com/linked-cm/core/pull/149) [`a875dc5`](https://github.com/linked-cm/core/commit/a875dc536bc0100063a865c31f8a9e3d87a38aa4) Thanks [@flyon](https://github.com/flyon)! - ESM-only — drops the CommonJS build (`type: module`, no `require` export condition, no `lib/cjs`); global-backed query dispatch shared across duplicate module copies; ESM-safe dir resolution; root `types` field fix.
+
 ## 2.12.0
 
 ### Minor Changes
