@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.11.1
+
+### Patch Changes
+
+- [#140](https://github.com/linked-cm/core/pull/140) [`3aeaa0a`](https://github.com/linked-cm/core/commit/3aeaa0a6e86a3012fb33dfa6f29397b5bd312c5d) Thanks [@flyon](https://github.com/flyon)! - Fix the package root `types` field, which pointed to a nonexistent `./index.d.ts`. It now points to `./lib/esm/index.d.ts` (the real declarations, matching the `exports` map). Consumers using the legacy `moduleResolution: "node"` (which reads the root `types` fallback rather than the `exports` map) can now resolve `@_linked/core`'s types for the root import; subpath imports already resolved via `typesVersions`.
+
 ## 2.11.0
 
 ### Minor Changes
