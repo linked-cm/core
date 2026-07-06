@@ -255,13 +255,13 @@ describe('QueryContext edge cases', () => {
     expect(ctx.id).toBeUndefined();
   });
 
-  test('setQueryContext warns and ignores invalid values', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    setQueryContext('invalid-context', {foo: 'bar'} as any);
-    // Invalid value was rejected, so context remains unset → PendingQueryContext
+  test('setQueryContext throws on an unrecognized value (silent no-op is a trap)', () => {
+    // A swallowed warning let the context silently never set. It now throws so
+    // the caller gets an unmissable signal.
+    expect(() => setQueryContext('invalid-context', {foo: 'bar'} as any)).toThrow(
+      /not a QueryShape, Shape, or {id} result/,
+    );
     expect(getQueryContext('invalid-context')).toBeInstanceOf(PendingQueryContext);
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
   });
 
   test('setQueryContext accepts a Shape instance without a shapeType', () => {
@@ -276,13 +276,13 @@ describe('QueryContext edge cases', () => {
     setQueryContext('shape-ctx', null as any);
   });
 
-  test('setQueryContext warns when QResult provided without shapeType', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    setQueryContext('missing-shape', {id: 'ctx-1'} as any);
-    // Value was rejected, so context remains unset → PendingQueryContext
+  test('setQueryContext throws when a QResult is provided without a shapeType', () => {
+    // A `{id}` value cannot be materialized without its shape — throw rather
+    // than silently no-op.
+    expect(() => setQueryContext('missing-shape', {id: 'ctx-1'} as any)).toThrow(
+      /requires a shapeType/,
+    );
     expect(getQueryContext('missing-shape')).toBeInstanceOf(PendingQueryContext);
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
   });
 
   test('setQueryContext accepts QResult with shapeType and uses latest value', () => {

@@ -38,6 +38,14 @@ function buildPropertyShapeData(ps: PropertyShape, shapeIri: string): Record<str
   if (ps.disjoint) d.disjoint = ps.disjoint;
   if (ps.lessThan) d.lessThan = ps.lessThan;
   if (ps.lessThanOrEquals) d.lessThanOrEquals = ps.lessThanOrEquals;
+  if (ps.minInclusive !== undefined) d.minInclusive = ps.minInclusive;
+  if (ps.maxInclusive !== undefined) d.maxInclusive = ps.maxInclusive;
+  if (ps.minExclusive !== undefined) d.minExclusive = ps.minExclusive;
+  if (ps.maxExclusive !== undefined) d.maxExclusive = ps.maxExclusive;
+  if (typeof ps.minLength === 'number') d.minLength = ps.minLength;
+  if (typeof ps.maxLength === 'number') d.maxLength = ps.maxLength;
+  // sh:pattern is serialized as its regex source string.
+  if (ps.pattern) d.pattern = ps.pattern.source;
   if (ps.hasValueConstraint !== undefined) d.hasValue = ps.hasValueConstraint;
   if (ps.valueShape) d.valueShape = ps.valueShape;
   if (ps.contains) d.contains = true;

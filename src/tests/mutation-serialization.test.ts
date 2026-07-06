@@ -159,8 +159,8 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
         .for(getQueryContext('ctx-x'));
 
       const json: any = JSON.parse(JSON.stringify(b.toJSON()));
-      // Unified context reference: the target slot carries a {$ctx} marker.
-      expect(json.targetId).toEqual({$ctx: 'ctx-x'});
+      // Unified context reference: the target slot carries a {@ctx} marker.
+      expect(json.targetId).toEqual({'@ctx': 'ctx-x'});
 
       // unresolved → lowering throws
       expect(() => lower(b as any)).toThrow(UnresolvedContextError);
@@ -174,7 +174,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       setQueryContext('ctx-x', undefined);
     });
 
-    test('inbound mutation JSON with a {$ctx} field value resolves at lower (or throws)', () => {
+    test('inbound mutation JSON with a {@ctx} field value resolves at lower (or throws)', () => {
       setQueryContext('ctx-v', undefined); // ensure unset
       // A wire envelope (e.g. authored elsewhere, or hand-built for interop)
       // carrying a unified context reference as a node field value.
@@ -183,7 +183,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
           Person.update({bestFriend: entity('p2')}).for(entity('p1')).toJSON(),
         ),
       );
-      json.data.bestFriend = {$ctx: 'ctx-v'};
+      json.data.bestFriend = {'@ctx': 'ctx-v'};
 
       // unresolved → lowering throws (a mutation must hit a concrete node)
       expect(() => lowerMutationJSON(json)).toThrow(UnresolvedContextError);
@@ -194,15 +194,15 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
       setQueryContext('ctx-v', undefined);
     });
 
-    test('LIVE builder field-value context: toJSON emits {$ctx}; lower resolves/throws with parity', () => {
+    test('LIVE builder field-value context: toJSON emits {@ctx}; lower resolves/throws with parity', () => {
       setQueryContext('ctx-fv', undefined); // ensure unset
       const b = Person.update({bestFriend: getQueryContext('ctx-fv')} as any).for(
         entity('p1'),
       );
-      // The live builder now carries the context as a {$ctx} marker on the wire
+      // The live builder now carries the context as a {@ctx} marker on the wire
       // (it is no longer silently collapsed to a malformed {id: undefined} ref).
       const json: any = JSON.parse(JSON.stringify(b.toJSON()));
-      expect(json.data.bestFriend).toEqual({$ctx: 'ctx-fv'});
+      expect(json.data.bestFriend).toEqual({'@ctx': 'ctx-fv'});
 
       // Unresolved → BOTH the live-builder path and the wire path throw (a
       // mutation must hit a concrete node — no silent undefined ref).
@@ -219,35 +219,35 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
 
     test('context SET at build time behaves identically (delete + field value)', () => {
       // A context resolved (a QueryShape, not a PendingQueryContext) at build time
-      // must still carry {$ctx} and lower cleanly — not throw — so context-bound
+      // must still carry {@ctx} and lower cleanly — not throw — so context-bound
       // mutations work whether the user is logged in or not when the query is built.
       setQueryContext('ctx-set', {id: entity('p2').id}, Person);
 
       const del: any = Person.delete(getQueryContext('ctx-set'));
-      expect(del.toJSON().ids).toEqual([{$ctx: 'ctx-set'}]);
+      expect(del.toJSON().ids).toEqual([{'@ctx': 'ctx-set'}]);
       expect(() => lower(del)).not.toThrow();
 
       const upd: any = Person.update({bestFriend: getQueryContext('ctx-set')} as any).for(entity('p1'));
-      expect(upd.toJSON().data.bestFriend).toEqual({$ctx: 'ctx-set'});
+      expect(upd.toJSON().data.bestFriend).toEqual({'@ctx': 'ctx-set'});
       expect(() => lower(upd)).not.toThrow();
 
       setQueryContext('ctx-set', undefined);
     });
 
-    test('delete-by-context: Person.delete(ctx) carries {$ctx}; resolves/throws with parity', () => {
+    test('delete-by-context: Person.delete(ctx) carries {@ctx}; resolves/throws with parity', () => {
       setQueryContext('ctx-del', undefined); // ensure unset
       // The ergonomic spelling typechecks without a cast (Shape.delete accepts a context).
       const d = Person.delete(getQueryContext('ctx-del'));
       const json: any = JSON.parse(JSON.stringify(d.toJSON()));
-      // The node to delete is carried as a {$ctx} ref, not a baked/undefined id.
-      expect(json.ids).toEqual([{$ctx: 'ctx-del'}]);
+      // The node to delete is carried as a {@ctx} ref, not a baked/undefined id.
+      expect(json.ids).toEqual([{'@ctx': 'ctx-del'}]);
 
       // Unresolved → both the live and the wire path throw (no silent {id:undefined}).
       expect(() => lower(d as any)).toThrow(UnresolvedContextError);
       expect(() => lowerMutationJSON(json)).toThrow(UnresolvedContextError);
 
       // Round-trips, and resolves with live↔wire parity once set.
-      expect((DeleteBuilder.fromJSON(json).toJSON() as any).ids).toEqual([{$ctx: 'ctx-del'}]);
+      expect((DeleteBuilder.fromJSON(json).toJSON() as any).ids).toEqual([{'@ctx': 'ctx-del'}]);
       setQueryContext('ctx-del', {id: entity('p2').id}, Person);
       expect(sanitize(lower(d as any))).toEqual(
         sanitize(lowerMutationJSON(JSON.parse(JSON.stringify(d.toJSON())))),

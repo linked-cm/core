@@ -123,18 +123,6 @@ function coerceValue(
   return binding.value;
 }
 
-/**
- * Determines whether a projection expression targets an entity reference
- * (i.e., a URI variable) vs a property value. Used for result structuring.
- *
- * - `alias_expr` → entity reference (the alias itself is a traversed entity)
- * - `property_expr` where the property represents an object property → URI reference
- * - Other expressions → literal/property value
- */
-function isUriExpression(expression: IRExpression): boolean {
-  return expression.kind === 'alias_expr';
-}
-
 // ---------------------------------------------------------------------------
 // Type: nesting descriptor for reconstructing nested objects from flat bindings
 // ---------------------------------------------------------------------------

@@ -44,6 +44,10 @@ export async function loadStores<T = unknown>(
 ): Promise<Record<string, T>> {
   const stores: Record<string, T> = {};
   for (const [alias, entry] of Object.entries(config.datasets)) {
+    // SECURITY: `entry.store` is a module specifier loaded and executed here.
+    // It must come from a trusted developer artifact (datasets.json) and must
+    // NEVER be attacker-influenced — an arbitrary specifier is arbitrary code
+    // execution. Do not source this from request/user input.
     const mod = await import(entry.store);
     const exportName = entry.store.split('/').pop()!;
     const StoreClass =

@@ -93,34 +93,67 @@ export type FieldSetInput =
   | FieldSet
   | Record<string, string[] | FieldSet>;
 
-/** The object form of a field entry (used when a plain-string leaf isn't enough). */
-export type FieldSetObjectFieldJSON = {
-  /** A dotted label path. Omitted for a computed field (carries `value` instead). */
-  path?: string;
+/** A computed projection field: `{ as?, value }` — a DSL-JSON expression, no path. */
+export type FieldSetComputedJSON = {
   as?: string;
-  subSelect?: FieldSetJSON;
-  aggregation?: string;
+  value: DslJsonValue;
   customKey?: string;
-  /** A computed projection (e.g. `{k: p.x.strlen()}`) — a DSL-JSON value; no path. */
-  value?: DslJsonValue;
-  /** A scoped filter on a relation segment (`p.friends.where(...)`). */
+};
+
+/** Options for a relation projection (the object value under a relation key). */
+export type FieldSetRelationOptionsJSON = {
+  as?: string;
+  /** A scoped filter on the relation (`p.friends.where(...)`). */
   where?: WherePathJSON;
   /** Which path segment the scoped `where` applies to (defaults to the last). */
   whereIndex?: number;
+  aggregation?: string;
+  customKey?: string;
+  /** Nested-select pagination (`p.friends.select(...).limit(5).offset(2).orderBy(...)`). */
+  limit?: number;
+  offset?: number;
+  orderBy?: Array<{[path: string]: 'ASC' | 'DESC'}>;
+  /** Sub-projection of the related shape. */
+  fields?: FieldSetFieldJSON[];
 };
 
 /**
- * JSON representation of a FieldSet field entry: a bare dotted-path string for a
- * plain leaf (`"name"`, `"friends.friends.name"`), or the object form for
- * anything with extras (alias, sub-select, aggregation, computed value, filter).
+ * A relation-keyed field: a single-key object whose key is the relation path
+ * (labels dotted, with inline `as(Shape)` casts) and whose value is either the
+ * sub-fields array (`{ "friends": ["name"] }`) or an options object
+ * (`{ "friends": { as, where, fields } }`). Also covers a leaf with options
+ * (`{ "name": { "as": "personName" } }`). The related shape is inferred.
  */
-export type FieldSetFieldJSON = string | FieldSetObjectFieldJSON;
+export type FieldSetRelationJSON = {
+  [path: string]: FieldSetFieldJSON[] | FieldSetRelationOptionsJSON;
+};
 
-/** JSON representation of a FieldSet. */
+/**
+ * JSON representation of a FieldSet field entry — exactly three shapes:
+ *   - a **string** leaf path (`"name"`, `"friends.friends.name"`, `"pets.as(Dog).level"`)
+ *   - a **relation-keyed** object (`{ "friends": [...] | {options} }`)
+ *   - a **computed** object (`{ as?, value }`)
+ */
+export type FieldSetFieldJSON = string | FieldSetComputedJSON | FieldSetRelationJSON;
+
+/** JSON representation of a FieldSet (a shape + its top-level fields). */
 export type FieldSetJSON = {
   shape: string;
   fields: FieldSetFieldJSON[];
 };
+
+/** Option keys reserved inside a relation options object (never a relation path). */
+const RELATION_OPTION_KEYS = new Set([
+  'as',
+  'where',
+  'whereIndex',
+  'aggregation',
+  'customKey',
+  'limit',
+  'offset',
+  'orderBy',
+  'fields',
+]);
 
 /**
  * An immutable, composable collection of property paths for a shape.
@@ -498,50 +531,53 @@ export class FieldSet<R = any, Source = any> {
    * Shape is identified by its IRI, paths by dot-separated labels.
    */
   toJSON(): FieldSetJSON {
-    return {
-      shape: this.shape.id,
-      fields: (this.entries as FieldSetEntry[]).map((entry) => {
-        const field: FieldSetObjectFieldJSON = {};
-        if (!entry.expressionNode) {
-          field.path = FieldSet.pathToStringWithCasts(this.shape, entry.path.segments);
-        }
-        if (entry.alias) {
-          field.as = entry.alias;
-        }
-        if (entry.subSelect) {
-          field.subSelect = entry.subSelect.toJSON();
-        } else if (entry.preloadSubSelect) {
-          // Preloads produce identical IR to subSelect — serialize as subSelect.
-          field.subSelect = entry.preloadSubSelect.toJSON();
-        }
-        if (entry.aggregation) {
-          field.aggregation = entry.aggregation;
-        }
-        if (entry.customKey) {
-          field.customKey = entry.customKey;
-        }
-        if (entry.expressionNode) {
-          // Computed projection — no path; carry the DSL-JSON value.
-          field.value = encodeValueExpr(
-            entry.expressionNode.ir,
-            entry.expressionNode._refs,
-          );
-        }
-        if (entry.scopedFilter) {
-          const idx =
-            entry.scopedFilterIndex ?? entry.path.segments.length - 1;
-          field.where = serializeWherePath(
-            entry.scopedFilter,
-            this.scopedShapeAt(entry, idx),
-          );
-          field.whereIndex = idx;
-        }
-        // Bare-string shorthand for a plain leaf path with no extras.
-        const keys = Object.keys(field);
-        if (keys.length === 1 && keys[0] === 'path') return field.path as string;
-        return field;
-      }),
-    };
+    return {shape: this.shape.id, fields: this.toFieldsJSON()};
+  }
+
+  /** Serialize just the field entries (used for nested relation sub-fields). */
+  private toFieldsJSON(): FieldSetFieldJSON[] {
+    return (this.entries as FieldSetEntry[]).map((entry) =>
+      this.serializeEntry(entry),
+    );
+  }
+
+  private serializeEntry(entry: FieldSetEntry): FieldSetFieldJSON {
+    // Computed projection — no path; carry the DSL-JSON value.
+    if (entry.expressionNode) {
+      const out: FieldSetComputedJSON = {
+        value: encodeValueExpr(entry.expressionNode.ir, entry.expressionNode._refs),
+      };
+      if (entry.alias) out.as = entry.alias;
+      if (entry.customKey) out.customKey = entry.customKey;
+      return out;
+    }
+    const pathStr = FieldSet.pathToStringWithCasts(this.shape, entry.path.segments);
+    const sub = entry.subSelect ?? entry.preloadSubSelect;
+    const subFields = sub ? sub.toFieldsJSON() : undefined;
+    const opts: FieldSetRelationOptionsJSON = {};
+    if (entry.alias) opts.as = entry.alias;
+    if (entry.aggregation) opts.aggregation = entry.aggregation;
+    if (entry.customKey) opts.customKey = entry.customKey;
+    if (entry.scopedFilter) {
+      const idx = entry.scopedFilterIndex ?? entry.path.segments.length - 1;
+      opts.where = serializeWherePath(entry.scopedFilter, this.scopedShapeAt(entry, idx));
+      opts.whereIndex = idx;
+    }
+    // Nested-select pagination (G10) — was previously dropped on the wire.
+    if (typeof entry.innerLimit === 'number') opts.limit = entry.innerLimit;
+    if (typeof entry.innerOffset === 'number') opts.offset = entry.innerOffset;
+    if (entry.innerOrderBy && entry.innerOrderBy.length > 0) {
+      opts.orderBy = entry.innerOrderBy.map((o) => ({
+        [FieldSet.labelOfId(o.propertyShapeId)]: o.direction,
+      }));
+    }
+    const hasOpts = Object.keys(opts).length > 0;
+    // Bare-string shorthand: a plain leaf/relation with no options or sub-fields.
+    if (!subFields && !hasOpts) return pathStr;
+    // Array shorthand: sub-fields only, no other options.
+    if (subFields && !hasOpts) return {[pathStr]: subFields};
+    // Full options object (optionally carrying `fields`).
+    return {[pathStr]: {...opts, ...(subFields ? {fields: subFields} : {})}};
   }
 
   /** The shape a scoped filter at segment `idx` is evaluated against (the segment's value shape). */
@@ -557,43 +593,80 @@ export class FieldSet<R = any, Source = any> {
    * Resolves shape IRI via getShapeClass() and paths via walkPropertyPath().
    */
   static fromJSON(json: FieldSetJSON): FieldSet {
-    const resolvedShape = FieldSet.resolveShape(json.shape);
-    const entries: FieldSetEntry[] = json.fields.map((raw) => {
-      // Bare-string shorthand → the object form with just a path.
-      const field: FieldSetObjectFieldJSON =
-        typeof raw === 'string' ? {path: raw} : raw;
-      let entry: FieldSetEntry;
-      if (field.value !== undefined) {
-        // Computed projection — empty path + the expression rebuilt from the value.
-        const {ir, refs} = decodeValueExpr(field.value, resolvedShape);
-        entry = {
-          path: new PropertyPath(resolvedShape, []),
-          expressionNode: new ExpressionNode(ir, refs),
-        };
-      } else {
-        entry = {path: FieldSet.walkPathWithCasts(resolvedShape, field.path)};
-        if (field.subSelect) {
-          entry.subSelect = FieldSet.fromJSON(field.subSelect);
-        }
-        if (field.aggregation) {
-          entry.aggregation = field.aggregation as 'count';
-        }
-        if (field.where) {
-          const idx = field.whereIndex ?? entry.path.segments.length - 1;
-          const seg = entry.path.segments[idx] as PropertyShape | undefined;
-          const valueShapeId = (seg as unknown as {valueShape?: {id: string}})
-            ?.valueShape?.id;
-          const scopedShape =
-            (valueShapeId && getShapeClass(valueShapeId)?.shape) || resolvedShape;
-          entry.scopedFilter = deserializeWherePath(scopedShape, field.where);
-          entry.scopedFilterIndex = idx;
-        }
-      }
-      if (field.as) entry.alias = field.as;
-      if (field.customKey) entry.customKey = field.customKey;
+    return FieldSet.fromFields(FieldSet.resolveShape(json.shape), json.fields);
+  }
+
+  /** Build a FieldSet from a shape + relation-keyed field list (recursion entry). */
+  private static fromFields(shape: NodeShape, fields: FieldSetFieldJSON[]): FieldSet {
+    return new FieldSet(
+      shape,
+      fields.map((raw) => FieldSet.parseField(shape, raw)),
+    );
+  }
+
+  /** Parse one field entry (string leaf / computed / relation-keyed) against `shape`. */
+  private static parseField(shape: NodeShape, raw: FieldSetFieldJSON): FieldSetEntry {
+    // Leaf path (may carry inline `as(Shape)` casts).
+    if (typeof raw === 'string') {
+      return {path: FieldSet.walkPathWithCasts(shape, raw)};
+    }
+    // Computed projection — carries `value`.
+    if ('value' in raw && (raw as FieldSetComputedJSON).value !== undefined) {
+      const computed = raw as FieldSetComputedJSON;
+      const {ir, refs} = decodeValueExpr(computed.value, shape);
+      const entry: FieldSetEntry = {
+        path: new PropertyPath(shape, []),
+        expressionNode: new ExpressionNode(ir, refs),
+      };
+      if (computed.as) entry.alias = computed.as;
+      if (computed.customKey) entry.customKey = computed.customKey;
       return entry;
-    });
-    return new FieldSet(resolvedShape, entries);
+    }
+    // Relation-keyed: the single non-option key is the relation path.
+    const rel = raw as FieldSetRelationJSON;
+    const pathKey = Object.keys(rel).find((k) => !RELATION_OPTION_KEYS.has(k));
+    if (!pathKey) {
+      throw new Error(`FieldSet field has no relation path: ${JSON.stringify(raw)}`);
+    }
+    const spec = rel[pathKey];
+    const path = FieldSet.walkPathWithCasts(shape, pathKey);
+    const entry: FieldSetEntry = {path};
+    const subFields = Array.isArray(spec) ? spec : spec.fields;
+    const opts = Array.isArray(spec) ? ({} as FieldSetRelationOptionsJSON) : spec;
+    if (opts.as) entry.alias = opts.as;
+    if (opts.customKey) entry.customKey = opts.customKey;
+    if (opts.aggregation) entry.aggregation = opts.aggregation as 'count';
+    if (opts.where) {
+      const idx = opts.whereIndex ?? path.segments.length - 1;
+      const seg = path.segments[idx] as PropertyShape | undefined;
+      const valueShapeId = (seg as unknown as {valueShape?: {id: string}})?.valueShape?.id;
+      const scopedShape = (valueShapeId && getShapeClass(valueShapeId)?.shape) || shape;
+      entry.scopedFilter = deserializeWherePath(scopedShape, opts.where);
+      entry.scopedFilterIndex = idx;
+    }
+    // Nested-select pagination (G10).
+    if (typeof opts.limit === 'number') entry.innerLimit = opts.limit;
+    if (typeof opts.offset === 'number') entry.innerOffset = opts.offset;
+    if (opts.orderBy && opts.orderBy.length > 0) {
+      const nested = FieldSet.nestedShapeOf(path) ?? shape;
+      entry.innerOrderBy = opts.orderBy.map((e) => {
+        const label = Object.keys(e)[0];
+        const ps = nested.getPropertyShape(label);
+        return {propertyShapeId: ps?.id ?? label, direction: Object.values(e)[0]};
+      });
+    }
+    if (subFields) {
+      const nested = FieldSet.nestedShapeOf(path) ?? shape;
+      entry.subSelect = FieldSet.fromFields(nested, subFields);
+    }
+    return entry;
+  }
+
+  /** The shape reached at the end of a relation path (its terminal segment's value shape). */
+  private static nestedShapeOf(path: PropertyPath): NodeShape | undefined {
+    const seg = path.segments[path.segments.length - 1] as PropertyShape | undefined;
+    const valueShapeId = (seg as unknown as {valueShape?: {id: string}})?.valueShape?.id;
+    return (valueShapeId && getShapeClass(valueShapeId)?.shape) || undefined;
   }
 
   // ---------------------------------------------------------------------------

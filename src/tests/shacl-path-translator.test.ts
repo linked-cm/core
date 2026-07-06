@@ -74,4 +74,25 @@ describe('serializePathToNodeData', () => {
       serializePathToNodeData({negatedPropertySet: [{id: 'http://ex.org/a'}]} as any, B),
     ).toThrow(/negatedPropertySet/);
   });
+
+  // SHACL requires a sequence/alternative to be a list of ≥2 members. A degenerate
+  // 1-member path collapses to the bare member (a valid single-predicate path);
+  // an empty one is rejected. (Unreachable via normalizePropertyPath, which
+  // collapses upstream — this pins the serializer's independent spec-correctness.)
+  test('1-member sequence collapses to the bare member (not a 1-element list)', () => {
+    expect(serializePathToNodeData({seq: [{id: 'http://ex.org/a'}]} as any, B)).toEqual({
+      id: 'http://ex.org/a',
+    });
+  });
+
+  test('1-member alternative collapses to the bare member', () => {
+    expect(serializePathToNodeData({alt: [{id: 'http://ex.org/a'}]} as any, B)).toEqual({
+      id: 'http://ex.org/a',
+    });
+  });
+
+  test('empty sequence / alternative throws', () => {
+    expect(() => serializePathToNodeData({seq: []} as any, B)).toThrow(/empty sequence/);
+    expect(() => serializePathToNodeData({alt: []} as any, B)).toThrow(/empty alternative/);
+  });
 });

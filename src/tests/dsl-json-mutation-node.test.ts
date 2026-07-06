@@ -20,14 +20,14 @@ describe('DSL-JSON mutation node data — path-keyed', () => {
     expect(json.data.fields).toBeUndefined();
   });
 
-  test('nested node is bare; a set relation uses {list}', () => {
+  test('nested node is bare; a set relation uses {@list}', () => {
     const json: any = Person.create({
       name: 'Alice',
       bestFriend: {name: 'Bestie'},
       friends: [{id: 'x:2'}],
     } as any).toJSON();
     expect(json.data.bestFriend).toEqual({name: 'Bestie'});
-    expect(json.data.friends).toEqual({list: [{id: 'x:2'}]});
+    expect(json.data.friends).toEqual({'@list': [{'@id': 'x:2'}]});
   });
 
   test('__id carries a fixed/predefined id', () => {

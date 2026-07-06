@@ -14,6 +14,8 @@ import {
   formatLiteral,
   escapeSparqlString,
   collectPrefixes,
+  assertSafeCallName,
+  sanitizeVarName,
 } from './sparqlUtils.js';
 
 // ---------------------------------------------------------------------------
@@ -37,7 +39,7 @@ export function serializeTerm(
 ): string {
   switch (term.kind) {
     case 'variable':
-      return `?${term.name}`;
+      return `?${sanitizeVarName(term.name)}`;
     case 'iri':
       if (collector) collectUri(collector, term.value);
       return formatUri(term.value);
@@ -85,13 +87,49 @@ function serializeTriples(
 // Expression serialization
 // ---------------------------------------------------------------------------
 
+// SPARQL binary-operator precedence (higher binds tighter): multiplicative >
+// additive > relational. Used to parenthesize nested `binary_expr` operands so
+// arithmetic groups correctly (`(a+b)*c`, not `a+b*c`) and relational chains
+// (`a=b=c`, a non-associative syntax error) get parenthesized.
+const RELATIONAL_OPS = new Set(['=', '!=', '<', '>', '<=', '>=']);
+function binaryPrecedence(op: string): number {
+  if (op === '*' || op === '/') return 3;
+  if (op === '+' || op === '-') return 2;
+  if (RELATIONAL_OPS.has(op)) return 1;
+  return 0;
+}
+
+/**
+ * Serialize a `binary_expr` operand, wrapping it in parens when omitting them
+ * would change how SPARQL parses the expression.
+ */
+function wrapBinaryOperand(
+  operand: SparqlExpression,
+  parentOp: string,
+  side: 'left' | 'right',
+  collector?: UriCollector,
+): string {
+  const s = serializeExpression(operand, collector);
+  // Logical (&&/||) binds looser than any binary operator → always parenthesize.
+  if (operand.kind === 'logical_expr') return `(${s})`;
+  if (operand.kind !== 'binary_expr') return s;
+  const parentIsRel = RELATIONAL_OPS.has(parentOp);
+  const childIsRel = RELATIONAL_OPS.has(operand.op);
+  // Relational is non-associative in SPARQL: any relational-in-relational needs parens.
+  if (parentIsRel && childIsRel) return `(${s})`;
+  const pc = binaryPrecedence(operand.op);
+  const pp = binaryPrecedence(parentOp);
+  const needs = side === 'left' ? pc < pp : pc <= pp;
+  return needs ? `(${s})` : s;
+}
+
 export function serializeExpression(
   expr: SparqlExpression,
   collector?: UriCollector,
 ): string {
   switch (expr.kind) {
     case 'variable_expr':
-      return `?${expr.name}`;
+      return `?${sanitizeVarName(expr.name)}`;
 
     case 'iri_expr':
       if (collector) collectUri(collector, expr.value);
@@ -103,8 +141,8 @@ export function serializeExpression(
     }
 
     case 'binary_expr': {
-      const left = serializeExpression(expr.left, collector);
-      const right = serializeExpression(expr.right, collector);
+      const left = wrapBinaryOperand(expr.left, expr.op, 'left', collector);
+      const right = wrapBinaryOperand(expr.right, expr.op, 'right', collector);
       return `${left} ${expr.op} ${right}`;
     }
 
@@ -125,6 +163,7 @@ export function serializeExpression(
       return `!(${serializeExpression(expr.inner, collector)})`;
 
     case 'function_expr': {
+      assertSafeCallName(expr.name);
       const args = expr.args
         .map((a) => serializeExpression(a, collector))
         .join(', ');
@@ -132,6 +171,7 @@ export function serializeExpression(
     }
 
     case 'aggregate_expr': {
+      assertSafeCallName(expr.name);
       const args = expr.args
         .map((a) => serializeExpression(a, collector))
         .join(', ');
@@ -146,7 +186,16 @@ export function serializeExpression(
     }
 
     case 'bound_expr':
-      return `BOUND(?${expr.variable})`;
+      return `BOUND(?${sanitizeVarName(expr.variable)})`;
+
+    case 'in_expr': {
+      // Empty list: `IN ()` matches nothing, `NOT IN ()` matches everything —
+      // fold to a boolean constant rather than emit an empty parenthesis list.
+      if (expr.list.length === 0) return expr.negated ? 'true' : 'false';
+      const val = serializeExpression(expr.value, collector);
+      const items = expr.list.map((e) => serializeExpression(e, collector)).join(', ');
+      return `${val} ${expr.negated ? 'NOT IN' : 'IN'} (${items})`;
+    }
   }
 }
 
@@ -204,7 +253,7 @@ export function serializeAlgebraNode(
     case 'extend': {
       const inner = serializeAlgebraNode(node.inner, collector);
       const expr = serializeExpression(node.expression, collector);
-      return `${inner}\nBIND(${expr} AS ?${node.variable})`;
+      return `${inner}\nBIND(${expr} AS ?${sanitizeVarName(node.variable)})`;
     }
 
     case 'graph': {
@@ -220,12 +269,12 @@ export function serializeAlgebraNode(
           return formatUri(iri);
         })
         .join(' ');
-      return `VALUES ?${node.variable} { ${values} }`;
+      return `VALUES ?${sanitizeVarName(node.variable)} { ${values} }`;
     }
 
     case 'subselect': {
       const innerBody = serializeAlgebraNode(node.inner, collector);
-      const projection = node.projection.map((v) => `?${v}`).join(' ');
+      const projection = node.projection.map((v) => `?${sanitizeVarName(v)}`).join(' ');
       const lines: string[] = [`SELECT ${projection} WHERE {`];
       lines.push(indent(innerBody));
       lines.push('}');
@@ -287,11 +336,11 @@ export function selectPlanToSparql(
   // 2. Build SELECT line
   const projectionParts = plan.projection.map((item) => {
     if (item.kind === 'variable') {
-      return `?${item.name}`;
+      return `?${sanitizeVarName(item.name)}`;
     } else {
       // aggregate or expression projection: (expr AS ?alias)
       const expr = serializeExpression(item.expression, collector);
-      return `(${expr} AS ?${item.alias})`;
+      return `(${expr} AS ?${sanitizeVarName(item.alias)})`;
     }
   });
 
@@ -306,7 +355,7 @@ export function selectPlanToSparql(
 
   if (plan.groupBy && plan.groupBy.length > 0) {
     clauses.push(
-      `GROUP BY ${plan.groupBy.map((v) => `?${v}`).join(' ')}`,
+      `GROUP BY ${plan.groupBy.map((v) => `?${sanitizeVarName(v)}`).join(' ')}`,
     );
   }
 

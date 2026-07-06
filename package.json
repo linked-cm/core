@@ -23,6 +23,12 @@
       "import": "./lib/esm/index.js",
       "require": "./lib/cjs/index.js"
     },
+    "./sparql": {
+      "types": "./lib/esm/sparql/index.d.ts",
+      "development": "./src/sparql/index.ts",
+      "import": "./lib/esm/sparql/index.js",
+      "require": "./lib/cjs/sparql/index.js"
+    },
     "./*": {
       "types": "./lib/esm/*.d.ts",
       "development": "./src/*.ts",
@@ -46,7 +52,8 @@
     "dual-package": "node ./scripts/dual-package.js",
     "sync:agents": "node packages/skills/sync.mjs",
     "setup": "npx semantu-agents",
-    "test": "npx jest --config jest.config.js --runInBand",
+    "typecheck": "npx tsc -p tsconfig-tests.json",
+    "test": "npx jest --config jest.config.js --runInBand && npm run typecheck",
     "test:fuseki": "docker compose -f src/tests/docker-compose.test.yml up -d --wait && npx jest --config jest.config.js --testPathPattern='sparql-fuseki' --verbose; EXIT=$?; docker compose -f src/tests/docker-compose.test.yml down; exit $EXIT"
   },
   "devDependencies": {
@@ -61,7 +68,6 @@
     "typescript": "^5.7.3"
   },
   "dependencies": {
-    "next-tick": "^1.1.0",
     "ulid": "^3.0.2"
   },
   "types": "./lib/esm/index.d.ts",

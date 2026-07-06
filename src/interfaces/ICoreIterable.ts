@@ -5,7 +5,7 @@
  */
 /**
  * Pretty open and general interface that closely resembles JS Arrays.
- * other classes like CoreMap and CoreSet can implement this so that we know which methods are available
+ * classes like CoreSet can implement this so that we know which methods are available
  */
 //extending Iterable<ANY> because Maps and Sets use different iterator setups that would not match with type definitions
 //this allows us to still use iterators for ICoreIterable but without typing information, although for all methods below it works

@@ -16,6 +16,7 @@ import {getShapeClass} from '../utils/ShapeClass.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {asContextRef} from './QueryContext.js';
+import {shacl} from '../ontologies/shacl.js';
 
 export type NodeId = {id: string} | string;
 
@@ -72,7 +73,11 @@ export class MutationQueryFactory extends QueryFactory {
     let hasRemove = obj.remove;
     let numKeysExpected = (hasAdd ? 1 : 0) + (hasRemove ? 1 : 0);
     let numKeys = Object.getOwnPropertyNames(obj).length;
-    return hasAdd || (hasRemove && numKeysExpected === numKeys);
+    // A set modification is ONLY add/remove keys. Mixing them with other keys
+    // (e.g. {add:[…], name:'x'}) must NOT be silently treated as a set mod —
+    // that dropped the sibling fields. Require an exact key-count match for
+    // both add and remove (mirrors isSetModificationValue).
+    return (hasAdd || hasRemove) && numKeysExpected === numKeys;
   }
 
   protected convertSetModification(
@@ -178,11 +183,104 @@ export class MutationQueryFactory extends QueryFactory {
     value,
     propShape: PropertyShape,
   ): UpdateNodePropertyValue {
-    // let value = obj[propShape.label];
+    this.validateAgainstShape(value, propShape);
     return {
       prop: propShape,
       val: this.convertUpdateValue(value, propShape),
     } as UpdateNodePropertyValue;
+  }
+
+  /**
+   * Lightweight structural validation of a single property value against its
+   * PropertyShape — cardinality (`minCount`/`maxCount`) and node-kind (literal
+   * vs relation). This is *structural* only (from metadata already in hand); it
+   * does not duplicate datatype/deep validation, which the store performs. It
+   * fails fast at the call site with a clear message instead of surfacing a
+   * confusing store error later.
+   *
+   * Skips values whose final shape isn't known here: computed expressions,
+   * context refs, `unset` (null/undefined), and set-modifications (`{add,remove}`
+   * — the resulting count depends on the node's current state).
+   */
+  protected validateAgainstShape(value, propShape: PropertyShape): void {
+    // A `null` value clears the property. Clearing a required (minCount>=1)
+    // property is a cardinality violation — the same as providing zero values —
+    // so it is rejected exactly like an empty array (both spellings of "clear
+    // it" behave identically).
+    if (value === null) {
+      if (typeof propShape.minCount === 'number' && propShape.minCount > 0) {
+        throw new Error(
+          `Property '${propShape.label || propShape.id}' requires at least ${propShape.minCount} value(s) and cannot be cleared.`,
+        );
+      }
+      return;
+    }
+    if (
+      value === undefined ||
+      isExpressionNode(value) ||
+      asContextRef(value) ||
+      (typeof value === 'function') ||
+      (typeof value === 'object' && this.isSetModification(value, propShape))
+    ) {
+      return;
+    }
+
+    const label = propShape.label || propShape.id;
+    const elems = Array.isArray(value) ? value : [value];
+    const count = elems.length;
+
+    // --- cardinality ---
+    if (typeof propShape.maxCount === 'number' && count > propShape.maxCount) {
+      throw new Error(
+        `Property '${label}' allows at most ${propShape.maxCount} value(s), but ${count} were provided.`,
+      );
+    }
+    if (typeof propShape.minCount === 'number' && propShape.minCount > 0 && count < propShape.minCount) {
+      throw new Error(
+        `Property '${label}' requires at least ${propShape.minCount} value(s), but ${count} were provided.`,
+      );
+    }
+
+    // --- node kind: literal vs relation ---
+    const expectsLiteral = this.expectsLiteral(propShape);
+    const expectsNode = this.expectsNode(propShape);
+    if (!expectsLiteral && !expectsNode) return; // ambiguous/unspecified kind — don't enforce
+    for (const el of elems) {
+      if (el === null || el === undefined || isExpressionNode(el) || asContextRef(el)) continue;
+      const isScalar =
+        typeof el === 'string' ||
+        typeof el === 'number' ||
+        typeof el === 'boolean' ||
+        el instanceof Date;
+      if (expectsLiteral && !isScalar) {
+        throw new Error(
+          `Property '${label}' is a literal property but was given a ${typeof el === 'object' ? 'node/object' : typeof el} value.`,
+        );
+      }
+      if (expectsNode && isScalar) {
+        throw new Error(
+          `Property '${label}' is a relation (object) property but was given a literal (${typeof el}). Provide a {id} reference or a nested object.`,
+        );
+      }
+    }
+  }
+
+  /** True when the property clearly accepts only literal values. */
+  private expectsLiteral(ps: PropertyShape): boolean {
+    if (ps.nodeKind) return ps.nodeKind.id === shacl.Literal.id;
+    return !!ps.datatype && !ps.valueShape;
+  }
+
+  /** True when the property clearly accepts only nodes (IRIs/blank nodes). */
+  private expectsNode(ps: PropertyShape): boolean {
+    if (ps.nodeKind) {
+      return (
+        ps.nodeKind.id === shacl.IRI.id ||
+        ps.nodeKind.id === shacl.BlankNode.id ||
+        ps.nodeKind.id === shacl.BlankNodeOrIRI.id
+      );
+    }
+    return !!ps.valueShape;
   }
 
   protected convertUpdateValue(
@@ -197,7 +295,7 @@ export class MutationQueryFactory extends QueryFactory {
 
     // Query-context reference → preserve the live ref (do NOT collapse to {id},
     // which would read an unresolved `.id` as undefined). Handles both an unset
-    // PendingQueryContext and a resolved context shape; both serialize as a {$ctx}
+    // PendingQueryContext and a resolved context shape; both serialize as a {@ctx}
     // marker and are resolved — or throw — at lowering time.
     {
       const ctx = asContextRef(value);

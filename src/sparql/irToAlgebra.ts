@@ -20,7 +20,6 @@ import type {
   SparqlSelectPlan,
   SparqlInsertDataPlan,
   SparqlDeleteInsertPlan,
-  SparqlDeleteWherePlan,
   SparqlAlgebraNode,
   SparqlBGP,
   SparqlTriple,
@@ -37,7 +36,6 @@ import {
   selectPlanToSparql,
   insertDataPlanToSparql,
   deleteInsertPlanToSparql,
-  deleteWherePlanToSparql,
 } from './algebraToString.js';
 import {rdf} from '../ontologies/rdf.js';
 import {shacl} from '../ontologies/shacl.js';
@@ -103,8 +101,23 @@ function resolveShapeScanIri(shapeId: string): string {
  *   that matched nothing.
  * - No matching shape / unresolvable → `{kind:'iri'}` of the property id itself (unchanged shadow fallback).
  */
+// Memoizes resolved predicate terms across the many call sites that resolve the
+// same property. Guarded by the shape-registry size so it self-invalidates when
+// new shapes register (e.g. across test-file module instances). Only successful
+// resolutions are cached — a not-found fallback is never stored, so a predicate
+// resolved before its shape registers can still resolve correctly afterwards.
+const predicateTermCache = new Map<string, SparqlTerm>();
+let predicateTermCacheSize = -1;
+
 function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
   const shapeClasses = getAllShapeClasses();
+  if (shapeClasses.size !== predicateTermCacheSize) {
+    predicateTermCache.clear();
+    predicateTermCacheSize = shapeClasses.size;
+  }
+  const cached = predicateTermCache.get(propertyId);
+  if (cached) return cached;
+
   for (const shapeClass of shapeClasses.values()) {
     const propertyShape = shapeClass.shape
       ?.getPropertyShapes?.(true)
@@ -112,19 +125,39 @@ function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
     if (!propertyShape) continue;
 
     const simplePathId = getSimplePathId(propertyShape.path);
+    let term: SparqlTerm;
     if (simplePathId !== null) {
       // Simple single-IRI path: resolve to the IRI, or fall back to the property id
       // (e.g. unresolvable `linked://tmp/` ids) — unchanged from before.
-      return iriTerm(shouldResolveShapeOrPropertyId(simplePathId) ? simplePathId : propertyId);
+      term = iriTerm(shouldResolveShapeOrPropertyId(simplePathId) ? simplePathId : propertyId);
+    } else {
+      // Structured sh:path — emit a property-path predicate instead of a shadow IRI.
+      term = {
+        kind: 'path',
+        value: pathExprToSparql(propertyShape.path),
+        uris: collectPathUris(propertyShape.path),
+      };
     }
-    // Structured sh:path — emit a property-path predicate instead of a shadow IRI.
-    return {
-      kind: 'path',
-      value: pathExprToSparql(propertyShape.path),
-      uris: collectPathUris(propertyShape.path),
-    };
+    predicateTermCache.set(propertyId, term);
+    return term;
   }
   return iriTerm(propertyId);
+}
+
+/**
+ * Resolve the predicate term for a traversal/property node: a structured
+ * property-path when an explicit `pathExpr` is present, otherwise the
+ * registry-resolved predicate for `property`. Centralizes the invariant that
+ * these two branches stay in lockstep across every triple-building site.
+ */
+function buildPredicateTerm(spec: {pathExpr?: PathExpr; property: string}): SparqlTerm {
+  return spec.pathExpr
+    ? {
+        kind: 'path',
+        value: pathExprToSparql(spec.pathExpr),
+        uris: collectPathUris(spec.pathExpr),
+      }
+    : resolvePropertyPredicateTerm(spec.property);
 }
 
 /** Produce variable name suffix from the last segment of a property URI. */
@@ -146,7 +179,7 @@ function sanitizeVarName(name: string): string {
 const IR_EXPRESSION_KINDS = new Set([
   'literal_expr', 'property_expr', 'binary_expr', 'logical_expr',
   'not_expr', 'function_expr', 'aggregate_expr', 'reference_expr',
-  'alias_expr', 'context_property_expr', 'exists_expr',
+  'alias_expr', 'context_property_expr', 'exists_expr', 'in_expr',
 ]);
 
 function isIRExpression(value: unknown): value is IRExpression {
@@ -187,7 +220,7 @@ function contextAliasKey(contextIri: string): string {
 /**
  * Defense-in-depth: a `reference_expr`/`context_property_expr` must arrive here with its
  * IRI already resolved (lowering's `resolveContextRefs` fills it from `contextName`). If it
- * didn't — an unresolved `{$ctx}` reaching the algebra through some path that bypassed
+ * didn't — an unresolved `{@ctx}` reaching the algebra through some path that bypassed
  * resolution — fail with a clear `UnresolvedContextError` instead of an opaque
  * `undefined.substring` crash deeper in URI formatting.
  */
@@ -250,13 +283,7 @@ function collectTraversalAliases(patterns: IRGraphPattern[]): string[] {
 }
 
 function buildTraverseTriple(pattern: IRTraversePattern): SparqlTriple {
-  const predicate = pattern.pathExpr
-    ? {
-        kind: 'path' as const,
-        value: pathExprToSparql(pattern.pathExpr),
-        uris: collectPathUris(pattern.pathExpr),
-      }
-    : resolvePropertyPredicateTerm(pattern.property);
+  const predicate = buildPredicateTerm(pattern);
   return tripleOf(
     varTerm(pattern.from),
     predicate,
@@ -326,6 +353,10 @@ function collectExpressionAliases(
     case 'binary_expr':
       collectExpressionAliases(expr.left, aliases);
       collectExpressionAliases(expr.right, aliases);
+      break;
+    case 'in_expr':
+      collectExpressionAliases(expr.value, aliases);
+      for (const el of expr.source.list) collectExpressionAliases(el, aliases);
       break;
     case 'logical_expr':
       for (const sub of expr.expressions) {
@@ -493,6 +524,8 @@ function containsAggregate(expr: SparqlExpression): boolean {
   switch (expr.kind) {
     case 'aggregate_expr':
       return true;
+    case 'in_expr':
+      return containsAggregate(expr.value) || expr.list.some(containsAggregate);
     case 'binary_expr':
       return containsAggregate(expr.left) || containsAggregate(expr.right);
     case 'logical_expr':
@@ -764,13 +797,7 @@ export function selectToAlgebra(
   // Every pattern here is a root→child paginated traversal (the deep-pagination
   // guard above rejected anything else), so each maps 1:1 to a sub-SELECT.
   for (const pattern of paginatedTraversePatterns) {
-    const predicate = pattern.pathExpr
-      ? {
-          kind: 'path' as const,
-          value: pathExprToSparql(pattern.pathExpr),
-          uris: collectPathUris(pattern.pathExpr),
-        }
-      : resolvePropertyPredicateTerm(pattern.property);
+    const predicate = buildPredicateTerm(pattern);
     const innerTriple = tripleOf(
       iriTerm(singleSubjectIri!),
       predicate,
@@ -1180,9 +1207,7 @@ function processExpressionForProperties(
     case 'property_expr': {
       if (!registry.has(expr.sourceAlias, expr.property)) {
         const varName = registry.getOrCreate(expr.sourceAlias, expr.property);
-        const predicate = expr.pathExpr
-          ? {kind: 'path' as const, value: pathExprToSparql(expr.pathExpr), uris: collectPathUris(expr.pathExpr)}
-          : resolvePropertyPredicateTerm(expr.property);
+        const predicate = buildPredicateTerm(expr);
         const triple = tripleOf(
           varTerm(expr.sourceAlias),
           predicate,
@@ -1205,6 +1230,16 @@ function processExpressionForProperties(
       );
       processExpressionForProperties(
         expr.right,
+        registry,
+        optionalPropertyTriples,
+        requiredPropertyTriples,
+        requiredPropertyKeys,
+      );
+      break;
+    case 'in_expr':
+      // The tested value binds a property; list elements are constants.
+      processExpressionForProperties(
+        expr.value,
         registry,
         optionalPropertyTriples,
         requiredPropertyTriples,
@@ -1296,6 +1331,9 @@ function collectRequiredBindingKeys(expr: IRExpression): Set<string> {
       return new Set([bindingKey(expr.sourceAlias, expr.property)]);
     case 'context_property_expr':
       return new Set([bindingKey(contextAliasKey(resolvedContextIri(expr.contextIri, expr.contextName)), expr.property)]);
+    case 'in_expr':
+      // The tested value must be bound; list elements are constants.
+      return collectRequiredBindingKeys(expr.value);
     case 'binary_expr':
       return mergeKeySets(
         collectRequiredBindingKeys(expr.left),
@@ -1394,6 +1432,16 @@ function convertExpression(
       const varName = registry.getOrCreate(expr.sourceAlias, expr.property);
       return {kind: 'variable_expr', name: varName};
     }
+
+    case 'in_expr':
+      return {
+        kind: 'in_expr',
+        negated: expr.negated,
+        value: convertExpression(expr.value, registry, optionalPropertyTriples),
+        list: expr.source.list.map((e) =>
+          convertExpression(e, registry, optionalPropertyTriples),
+        ),
+      };
 
     case 'binary_expr':
       return {
@@ -1496,9 +1544,7 @@ function convertExistsPattern(
 ): SparqlAlgebraNode {
   switch (pattern.kind) {
     case 'traverse': {
-      const existsPredicate = pattern.pathExpr
-        ? {kind: 'path' as const, value: pathExprToSparql(pattern.pathExpr), uris: collectPathUris(pattern.pathExpr)}
-        : resolvePropertyPredicateTerm(pattern.property);
+      const existsPredicate = buildPredicateTerm(pattern);
       const triple = tripleOf(
         varTerm(pattern.from),
         existsPredicate,
@@ -1609,6 +1655,19 @@ function fieldValueToTerms(
 
   if (value instanceof Date) {
     return [literalTerm(value.toISOString(), XSD_DATETIME)];
+  }
+
+  // Computed/expression value in create: create lowers to INSERT DATA (ground
+  // triples, no WHERE), so an expression can't be evaluated here. Fail loudly
+  // instead of silently emitting no triple (report 021 §3, G4).
+  if (
+    value &&
+    typeof value === 'object' &&
+    (isIRExpression(value) || 'ir' in (value as object))
+  ) {
+    throw new Error(
+      'Computed/expression values are not supported in create (INSERT DATA has no WHERE clause to evaluate them). Use a literal value, or use update.',
+    );
   }
 
   // NodeReferenceValue
@@ -2037,11 +2096,21 @@ function shapeHasContainsProperty(shapeId: string): boolean {
     .some((ps) => (ps as {contains?: boolean}).contains);
 }
 
+// Memoized registry scan for cascade lowering — called once per update/delete and
+// again per owned-cascade item inside loops. Guarded by registry size (same rationale
+// as predicateTermCache). Callers treat the result as read-only.
+let containmentCache: {containsPreds: string[]; dependentTypes: string[]} | null = null;
+let containmentCacheSize = -1;
+
 /** Gather contains-predicate IRIs and dependent targetClass IRIs from the registry. */
 function collectContainment(): {containsPreds: string[]; dependentTypes: string[]} {
+  const shapeClasses = getAllShapeClasses();
+  if (containmentCache && shapeClasses.size === containmentCacheSize) {
+    return containmentCache;
+  }
   const containsPreds = new Set<string>();
   const dependentTypes = new Set<string>();
-  for (const [, shapeClass] of getAllShapeClasses()) {
+  for (const [, shapeClass] of shapeClasses) {
     const nodeShape = shapeClass?.shape;
     if (!nodeShape) continue;
     if ((nodeShape as {dependent?: boolean}).dependent && nodeShape.targetClass?.id) {
@@ -2058,7 +2127,9 @@ function collectContainment(): {containsPreds: string[]; dependentTypes: string[
       }
     }
   }
-  return {containsPreds: [...containsPreds], dependentTypes: [...dependentTypes]};
+  containmentCache = {containsPreds: [...containsPreds], dependentTypes: [...dependentTypes]};
+  containmentCacheSize = shapeClasses.size;
+  return containmentCache;
 }
 
 /**

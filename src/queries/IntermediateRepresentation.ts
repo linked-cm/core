@@ -121,7 +121,21 @@ export type IRExpression =
   | IRNotExpression
   | IRFunctionExpression
   | IRAggregateExpression
-  | IRExistsExpression;
+  | IRExistsExpression
+  | IRInExpression;
+
+/**
+ * Membership test — `value IN (…)` / `NOT IN (…)`.
+ * `source` is forward-shaped: today only the explicit-`list` arm exists (Rung 1);
+ * a `{query}` arm (Rung 2 — membership against a subquery, lowering to EXISTS)
+ * can be added without changing the node's identity or the `oneOf`/`notOneOf` DSL.
+ */
+export type IRInExpression = {
+  kind: 'in_expr';
+  negated: boolean;
+  value: IRExpression;
+  source: {list: IRExpression[]};
+};
 
 export type IRLiteralExpression = {
   kind: 'literal_expr';
@@ -133,7 +147,7 @@ export type IRReferenceExpression = {
   /** The referenced node IRI. Optional only while a `contextName` is unresolved. */
   value?: string;
   /**
-   * A query-context reference (`{$ctx}` on the wire). When set, `value` is filled
+   * A query-context reference (`{@ctx}` on the wire). When set, `value` is filled
    * by `lower()` from the live context map — resolved or thrown there, never baked
    * at build time. Absent for a plain node reference.
    */

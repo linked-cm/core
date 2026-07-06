@@ -1,4 +1,3 @@
-import {CoreMap} from '../collections/CoreMap.js';
 import {CoreSet} from '../collections/CoreSet.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
@@ -31,8 +30,8 @@ linkedStorageGlobal.__linkedStorageInstanceCount =
  */
 export abstract class LinkedStorage {
   private static defaultDataset?: IDataset;
-  private static shapeToDataset: CoreMap<Function, IDataset> =
-    new CoreMap();
+  private static shapeToDataset: Map<Function, IDataset> =
+    new Map();
 
   /** plan-011 — how many physical copies of this module have evaluated. */
   static getLoadedInstanceCount(): number {
@@ -80,7 +79,7 @@ export abstract class LinkedStorage {
   }
 
   /** Read-only view of the shape→IDataset map. */
-  static getShapeToDatasetMap(): CoreMap<Function, IDataset> {
+  static getShapeToDatasetMap(): Map<Function, IDataset> {
     return this.shapeToDataset;
   }
 

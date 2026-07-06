@@ -50,32 +50,32 @@ describe('DslJsonExpression — value tier', () => {
 
   test('property → {path}', () => {
     const p = prop(nameSegs);
-    expect(encodeValueExpr(p.ir, p._refs)).toEqual({path: 'name'});
+    expect(encodeValueExpr(p.ir, p._refs)).toEqual({'@path': 'name'});
   });
 
   test('node reference → {id}', () => {
-    expect(encodeValueExpr({kind: 'reference_expr', value: 'x:1'}, new Map())).toEqual({id: 'x:1'});
+    expect(encodeValueExpr({kind: 'reference_expr', value: 'x:1'}, new Map())).toEqual({'@id': 'x:1'});
   });
 
-  test('context ref → {$ctx} and {$ctx,path}', () => {
+  test('context ref → {@ctx} and {@ctx,@path}', () => {
     expect(encodeValueExpr({kind: 'reference_expr', contextName: 'user'}, new Map())).toEqual({
-      $ctx: 'user',
+      '@ctx': 'user',
     });
     expect(
       encodeValueExpr(
         {kind: 'context_property_expr', contextName: 'user', property: nameSegs[0]},
         new Map(),
       ),
-    ).toEqual({$ctx: 'user', path: 'name'});
+    ).toEqual({'@ctx': 'user', '@path': 'name'});
   });
 
   test('arithmetic → S-expr', () => {
     const p = prop(ageSegs);
-    expect(encodeValueExpr(cmp('+', p.ir, lit(1)), p._refs)).toEqual(['+', {path: 'birthDate'}, 1]);
+    expect(encodeValueExpr(cmp('+', p.ir, lit(1)), p._refs)).toEqual(['+', {'@path': 'birthDate'}, 1]);
   });
 
   test('decode {path} → property_expr with refs', () => {
-    const {ir, refs} = decodeValueExpr({path: 'name'}, shape);
+    const {ir, refs} = decodeValueExpr({'@path': 'name'}, shape);
     expect(ir.kind).toBe('property_expr');
     expect([...refs.values()][0]).toEqual(nameSegs);
   });
@@ -114,7 +114,7 @@ describe('DslJsonExpression — condition tier', () => {
     const p = prop(pathToSegmentIds(shape, 'bestFriend'));
     const node = new ExpressionNode(cmp('=', p.ir, {kind: 'reference_expr', value: 'p:3'}), p._refs);
     const zc = encodeCondition(node, shape);
-    expect(zc).toEqual({bestFriend: {id: 'p:3'}});
+    expect(zc).toEqual({bestFriend: {'@id': 'p:3'}});
     const where: any = decodeCondition(zc, shape);
     expect(where.expressionNode.ir.left.kind).toBe('property_expr');
   });
@@ -123,7 +123,7 @@ describe('DslJsonExpression — condition tier', () => {
     const a = tracedAliasExpression([]);
     const node = new ExpressionNode(cmp('=', a.ir, {kind: 'reference_expr', value: 'p:1'}), a._refs);
     const zc = encodeCondition(node, shape);
-    expect(zc).toEqual({'': {id: 'p:1'}});
+    expect(zc).toEqual({'': {'@id': 'p:1'}});
     const where: any = decodeCondition(zc, shape);
     expect(where.expressionNode.ir.left.kind).toBe('alias_expr');
   });
@@ -181,7 +181,7 @@ describe('DslJsonExpression — S-expr fallback wire shape', () => {
     // strlen(name) > 5
     const p = prop(nameSegs);
     const node = new ExpressionNode(cmp('>', fn('STRLEN', p.ir), lit(5)), p._refs);
-    expect(encodeCondition(node, shape)).toEqual(['>', ['STRLEN', {path: 'name'}], 5]);
+    expect(encodeCondition(node, shape)).toEqual(['>', ['STRLEN', {'@path': 'name'}], 5]);
   });
 
   test('chained arithmetic → nested S-expr, round-trips structurally', () => {
@@ -190,7 +190,7 @@ describe('DslJsonExpression — S-expr fallback wire shape', () => {
     const inner = cmp('+', fn('STRLEN', p.ir), lit(10));
     const node = new ExpressionNode(cmp('<', inner, lit(100)), p._refs);
     const zc = encodeCondition(node, shape);
-    expect(zc).toEqual(['<', ['+', ['STRLEN', {path: 'name'}], 10], 100]);
+    expect(zc).toEqual(['<', ['+', ['STRLEN', {'@path': 'name'}], 10], 100]);
     const w: any = decodeCondition(zc as any, shape);
     expect(w.expressionNode.ir.kind).toBe('binary_expr');
     expect(w.expressionNode.ir.operator).toBe('<');

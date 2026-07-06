@@ -1144,3 +1144,43 @@ describe('output structure', () => {
     expect(result).not.toContain('@prefix');
   });
 });
+
+// G1 (report 021 §3): binary_expr must parenthesize nested operands so SPARQL
+// parses arithmetic/relational precedence correctly.
+describe('binary_expr operator precedence (G1)', () => {
+  const v = (name: string): SparqlExpression => ({kind: 'variable_expr', name});
+  const bin = (op: string, left: SparqlExpression, right: SparqlExpression): SparqlExpression =>
+    ({kind: 'binary_expr', op, left, right} as SparqlExpression);
+
+  test('lower-precedence left operand is parenthesized: (a+b)*c', () => {
+    // binary(*, binary(+, a, b), c) must NOT serialize as "a + b * c"
+    expect(serializeExpression(bin('*', bin('+', v('a'), v('b')), v('c')))).toBe('(?a + ?b) * ?c');
+  });
+
+  test('higher-precedence child stays bare: a + b*c', () => {
+    expect(serializeExpression(bin('+', v('a'), bin('*', v('b'), v('c'))))).toBe('?a + ?b * ?c');
+  });
+
+  test('left-associativity: a - (b - c) keeps parens on the right', () => {
+    expect(serializeExpression(bin('-', v('a'), bin('-', v('b'), v('c'))))).toBe('?a - (?b - ?c)');
+    // ...but (a - b) - c does not need them
+    expect(serializeExpression(bin('-', bin('-', v('a'), v('b')), v('c')))).toBe('?a - ?b - ?c');
+  });
+
+  test('arithmetic child of a relational parent stays bare: a + b < c', () => {
+    expect(serializeExpression(bin('<', bin('+', v('a'), v('b')), v('c')))).toBe('?a + ?b < ?c');
+  });
+
+  test('relational-in-relational is parenthesized (non-associative): (a = b) = c', () => {
+    expect(serializeExpression(bin('=', bin('=', v('a'), v('b')), v('c')))).toBe('(?a = ?b) = ?c');
+  });
+
+  test('logical child of a binary parent is parenthesized', () => {
+    const or: SparqlExpression = {
+      kind: 'logical_expr',
+      op: 'or',
+      exprs: [v('a'), v('b')],
+    } as SparqlExpression;
+    expect(serializeExpression(bin('=', or, v('c')))).toBe('(?a || ?b) = ?c');
+  });
+});
