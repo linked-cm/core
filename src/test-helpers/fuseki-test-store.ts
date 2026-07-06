@@ -48,14 +48,13 @@ export async function isFusekiAvailable(): Promise<boolean> {
  * Works from both source (src/) and compiled (lib/esm/) paths.
  */
 function findComposeFile(): string | null {
-  // __dirname works in both CJS and ts-jest; for ESM builds the lincd
-  // toolchain injects a __dirname shim.
+  // Resolve from the package root (process.cwd() when jest/tsc runs) rather
+  // than this module's dir. Avoids `import.meta.url`, which ts-jest cannot
+  // compile in the CJS-mode globalSetup path (TS1343) — while the test always
+  // runs from the package root, so cwd is stable.
   const candidates = [
-    resolve(__dirname, '../tests/docker-compose.test.yml'),
-    resolve(__dirname, '../../src/tests/docker-compose.test.yml'),
-    // Built helpers live under lib/{cjs,esm}/test-helpers, so we need to
-    // climb back to the package root before looking in src/tests.
-    resolve(__dirname, '../../../src/tests/docker-compose.test.yml'),
+    resolve(process.cwd(), 'src/tests/docker-compose.test.yml'),
+    resolve(process.cwd(), 'tests/docker-compose.test.yml'),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
