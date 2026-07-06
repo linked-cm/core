@@ -122,7 +122,8 @@ export type DesugaredExistsWhere = {
 export type DesugaredWhere = DesugaredExpressionWhere | DesugaredExistsWhere;
 
 export type DesugaredSortBy = {
-  direction: 'ASC' | 'DESC';
+  /** Per-path sort direction (parallel to `paths`). */
+  directions: ('ASC' | 'DESC')[];
   paths: DesugaredSelectionPath[];
 };
 
@@ -368,7 +369,7 @@ const toSortBy = (query: RawSelectInput): DesugaredSortBy | undefined => {
   }
 
   return {
-    direction: query.sortBy.direction,
+    directions: query.sortBy.directions,
     paths: query.sortBy.paths.map((path) => ({
       kind: 'selection_path' as const,
       steps: path.segments.map((seg) => {

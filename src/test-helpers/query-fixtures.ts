@@ -342,6 +342,14 @@ export const queryFactories = {
     ),
   whereNeq: () =>
     Person.select((p) => p.name).where(((p: any) => p.name.neq('Alice')) as any),
+  whereHobbyOneOf: () =>
+    Person.select((p) => p.name).where((p) => p.hobby.oneOf(['Chess', 'Go'])),
+  whereHobbyNotOneOf: () =>
+    Person.select((p) => p.name).where((p) => p.hobby.notOneOf(['Golf'])),
+  whereBestFriendOneOf: () =>
+    Person.select((p) => p.name).where((p) =>
+      p.bestFriend.oneOf([entity('p1'), entity('p2')]),
+    ),
   // Unbound-tolerant functions in a where-filter: their arguments must not be
   // inner-joined, or the fallback/untaken branch can never match
   whereExprDefaultTo: () =>

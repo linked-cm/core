@@ -47,7 +47,7 @@ describe('FieldSet — serialization', () => {
   test('fromJSON — preserves alias', () => {
     const json = {
       shape: personShape.id,
-      fields: [{path: 'name', as: 'personName'}],
+      fields: [{name: {as: 'personName'}}],
     };
     const restored = FieldSet.fromJSON(json);
     expect(restored.entries[0].alias).toBe('personName');
@@ -78,7 +78,7 @@ describe('QueryBuilder — serialization', () => {
     expect(json.shape).toBe(personShape.id);
     expect(json.fields.length).toBeGreaterThan(0);
     // All unique property labels should be present
-    const paths = json.fields.map((f) => (typeof f === "string" ? f : f.path));
+    const paths = json.fields.map((f) => (typeof f === 'string' ? f : Object.keys(f)[0]));
     expect(paths).toContain('name');
     expect(paths).toContain('hobby');
     expect(paths).toContain('friends');
@@ -148,7 +148,7 @@ describe('QueryBuilder — serialization', () => {
   test('fromJSON — with offset and limit', () => {
     const json: QueryBuilderJSON = {
       shape: personShape.id,
-      fields: [{path: 'name'}],
+      fields: ['name'],
       limit: 5,
       offset: 10,
     };
@@ -205,7 +205,8 @@ describe('QueryBuilder — serialization', () => {
       .select((p) => [p.friends.size()])
       .toJSON();
     expect(json.fields).toHaveLength(1);
-    expect((json.fields![0] as any).aggregation).toBe('count');
+    // Relation-keyed: aggregation lives under the relation key.
+    expect((json.fields![0] as any).friends.aggregation).toBe('count');
   });
 
   test('fromJSON — round-trip callback select', () => {
@@ -256,7 +257,7 @@ describe('QueryBuilder — where clause serialization', () => {
       .where((p) => p.bestFriend.equals({id: `${tmpEntityBase}p1`}))
       .toJSON();
 
-    expect(json.where).toEqual({bestFriend: {id: `${tmpEntityBase}p1`}});
+    expect(json.where).toEqual({bestFriend: {'@id': `${tmpEntityBase}p1`}});
   });
 
   test('toJSON — where with AND (DSL-JSON implicit-AND multi-key)', () => {
@@ -418,7 +419,7 @@ describe('QueryBuilder — nullSubject & pendingContextName serialization', () =
   test('fromJSON — nullSubject restored', () => {
     const json: QueryBuilderJSON = {
       shape: personShape.id,
-      fields: [{path: 'name'}],
+      fields: ['name'],
       nullSubject: true,
       one: true,
     };
@@ -475,11 +476,13 @@ describe('QueryBuilder — preload serialization', () => {
     // Should have 2 fields: name + bestFriend (with subSelect from preload)
     expect(json.fields!.length).toBe(2);
     const bestFriendField = json.fields!.find(
-      (f) => typeof f !== 'string' && f.path === 'bestFriend',
+      (f) => typeof f !== 'string' && 'bestFriend' in f,
     ) as any;
     expect(bestFriendField).toBeDefined();
-    expect(bestFriendField!.subSelect).toBeDefined();
-    expect(bestFriendField!.subSelect!.fields.length).toBeGreaterThan(0);
+    // Relation-keyed: sub-fields live under the relation key (array or {fields}).
+    const sub = bestFriendField.bestFriend;
+    const subFields = Array.isArray(sub) ? sub : sub.fields;
+    expect(subFields.length).toBeGreaterThan(0);
   });
 
   test('round-trip — preload produces same IR', () => {

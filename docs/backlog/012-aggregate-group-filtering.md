@@ -47,7 +47,7 @@ Interpretation to validate:
 
 ## Evaluation criteria
 
-- Fits fluent default style from idea 006.
+- Fits fluent default style from backlog 006.
 - Avoids ambiguous semantics between row filtering and group filtering.
 - Type-safety and error clarity.
 - Minimal API surface increase for v1.

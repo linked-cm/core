@@ -275,13 +275,13 @@ const updated = await Person.update({name: 'Alicia'}).for({id: 'https://my.app/n
 import {LinkedStorage} from '@_linked/core';
 import {InMemoryStore} from '@_linked/rdf-mem-store';
 
-LinkedStorage.setDefaultStore(new InMemoryStore());
+LinkedStorage.setDefaultDataset(new InMemoryStore());
 ```
 
 You can also route specific shapes to specific stores:
 
 ```typescript
-LinkedStorage.setStoreForShapes(new InMemoryStore(), Person);
+LinkedStorage.setDatasetForShapes(new InMemoryStore(), Person);
 ```
 
 ### Config-driven setup: `parseDatasetsConfig` + `loadStores`
@@ -545,7 +545,7 @@ const labeled = await Person.select((p) => ({
 
 // First non-null value
 const display = await Person.select((p) => ({
-  display: Expr.firstDefined(p.name, p.nickNames, Expr.str('Unknown')),
+  display: Expr.firstDefined(p.name, p.nickNames, 'Unknown'),
 }));
 ```
 

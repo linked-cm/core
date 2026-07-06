@@ -5,8 +5,8 @@
  *
  * Two tiers:
  *  - VALUE   (`encodeValueExpr`/`decodeValueExpr`): a computed value or an
- *            operand — bare scalar, `{path}`, `{id}`, `{$ctx}`, `{date}`,
- *            `{list}`, or an S-expr array `["op", …]`.
+ *            operand — bare scalar, `{@path}`, `{@id}`, `{@ctx}`, `{@date}`,
+ *            `{@list}`, or an S-expr array `["op", …]`.
  *  - CONDITION (`encodeCondition`/`decodeCondition`): a boolean where-clause —
  *            path-keyed object (implicit equals / operator map / quantifier),
  *            `{and|or|not}`, or an S-expr array fallback.
@@ -36,11 +36,11 @@ import {walkPropertyPath} from './PropertyPath.js';
 // ---------------------------------------------------------------------------
 
 export type DslJsonScalar = string | number | boolean | null;
-export type DslJsonRef = {id: string};
-export type DslJsonCtx = {$ctx: string; path?: string};
-export type DslJsonDate = {date: string};
-export type DslJsonList = {list: DslJsonValue[]};
-export type DslJsonPath = {path: string};
+export type DslJsonRef = {'@id': string};
+export type DslJsonCtx = {'@ctx': string; '@path'?: string};
+export type DslJsonDate = {'@date': string};
+export type DslJsonList = {'@list': DslJsonValue[]};
+export type DslJsonPath = {'@path': string};
 export type DslJsonSExpr = [string, ...DslJsonValue[]];
 export type DslJsonValue =
   | DslJsonScalar
@@ -70,6 +70,17 @@ const COMPARISON_OPS = new Set<IRBinaryOperator>([
   '<',
   '<=',
 ]);
+
+// Word-operator aliases accepted on input (LLM/human-friendly). Symbols remain
+// the canonical/emitted form — these normalize to a symbol on decode.
+const OP_ALIASES: Record<string, IRBinaryOperator> = {
+  equals: '=',
+  notEquals: '!=',
+  gt: '>',
+  gte: '>=',
+  lt: '<',
+  lte: '<=',
+};
 
 const COMBINATORS = new Set(['and', 'or', 'not']);
 
@@ -113,23 +124,29 @@ export function encodeValueExpr(
   switch (ir.kind) {
     case 'literal_expr': {
       const v = ir.value as unknown;
-      if (v instanceof Date) return {date: v.toISOString()};
+      if (v instanceof Date) return {'@date': v.toISOString()};
       return v as DslJsonScalar;
     }
     case 'reference_expr':
-      if (ir.contextName !== undefined) return {$ctx: ir.contextName};
-      return {id: ir.value as string};
+      if (ir.contextName !== undefined) return {'@ctx': ir.contextName};
+      return {'@id': ir.value as string};
     case 'context_property_expr':
-      return {$ctx: ir.contextName as string, path: labelOf(ir.property)};
+      return {'@ctx': ir.contextName as string, '@path': labelOf(ir.property)};
     case 'property_expr': {
       const segs = refs.get(ir.sourceAlias);
-      return {path: segs ? segmentsToPath(segs) : labelOf(ir.property)};
+      return {'@path': segs ? segmentsToPath(segs) : labelOf(ir.property)};
     }
     case 'alias_expr': {
       const segs = refs.get(ir.alias);
       // A bare alias_expr as a value is the node at the end of the traversal.
-      return {path: segs ? segmentsToPath(segs) : ir.alias};
+      return {'@path': segs ? segmentsToPath(segs) : ir.alias};
     }
+    case 'in_expr':
+      return [
+        ir.negated ? 'not-in' : 'in',
+        encodeValueExpr(ir.value, refs),
+        ...ir.source.list.map((e) => encodeValueExpr(e, refs)),
+      ];
     case 'binary_expr':
       return [
         ir.operator,
@@ -149,8 +166,29 @@ export function encodeValueExpr(
   }
 }
 
+// Bound S-expr decode recursion so a deeply-nested expression from `fromJSON()`
+// cannot exhaust the stack (RangeError DoS). Real expressions nest a handful of
+// levels; 128 is far beyond any legitimate query.
+const MAX_EXPR_DEPTH = 128;
+let _exprDepth = 0;
+
 /** Decode a DSL-JSON value back into an IR expression + its placeholder refs. */
 export function decodeValueExpr(
+  json: DslJsonValue,
+  shape: NodeShape,
+): {ir: IRExpression; refs: PropertyRefMap} {
+  if (++_exprDepth > MAX_EXPR_DEPTH) {
+    _exprDepth = 0;
+    throw new Error('DSL-JSON expression nested too deeply');
+  }
+  try {
+    return decodeValueExprInner(json, shape);
+  } finally {
+    _exprDepth--;
+  }
+}
+
+function decodeValueExprInner(
   json: DslJsonValue,
   shape: NodeShape,
 ): {ir: IRExpression; refs: PropertyRefMap} {
@@ -168,27 +206,27 @@ export function decodeValueExpr(
   // Objects: recognized value-objects
   if (json !== null && typeof json === 'object') {
     const o = json as Record<string, unknown>;
-    if ('id' in o) {
-      return {ir: {kind: 'reference_expr', value: o.id as string}, refs: new Map()};
+    if ('@id' in o) {
+      return {ir: {kind: 'reference_expr', value: o['@id'] as string}, refs: new Map()};
     }
-    if ('$ctx' in o) {
-      if (typeof o.path === 'string') {
-        const property = pathToSegmentIds(shape, o.path).pop() as string;
+    if ('@ctx' in o) {
+      if (typeof o['@path'] === 'string') {
+        const property = pathToSegmentIds(shape, o['@path']).pop() as string;
         return {
-          ir: {kind: 'context_property_expr', contextName: o.$ctx as string, property},
+          ir: {kind: 'context_property_expr', contextName: o['@ctx'] as string, property},
           refs: new Map(),
         };
       }
-      return {ir: {kind: 'reference_expr', contextName: o.$ctx as string}, refs: new Map()};
+      return {ir: {kind: 'reference_expr', contextName: o['@ctx'] as string}, refs: new Map()};
     }
-    if ('date' in o) {
-      return {ir: {kind: 'literal_expr', value: new Date(o.date as string) as never}, refs: new Map()};
+    if ('@date' in o) {
+      return {ir: {kind: 'literal_expr', value: new Date(o['@date'] as string) as never}, refs: new Map()};
     }
-    if ('path' in o) {
-      return propertyOrAlias(shape, o.path as string);
+    if ('@path' in o) {
+      return propertyOrAlias(shape, o['@path'] as string);
     }
-    if ('list' in o) {
-      throw new Error('A {list} value is only valid as an in/nin operand');
+    if ('@list' in o) {
+      throw new Error('A {@list} value is only valid as an in/nin operand');
     }
   }
   // bare scalar literal
@@ -219,6 +257,9 @@ function headToIR(head: string, args: IRExpression[]): IRExpression {
   }
   if (head === 'not') {
     return {kind: 'not_expr', expression: args[0]};
+  }
+  if (head === 'in' || head === 'not-in') {
+    return {kind: 'in_expr', negated: head === 'not-in', value: args[0], source: {list: args.slice(1)}};
   }
   if (COMPARISON_OPS.has(head as IRBinaryOperator) || '+-*/'.includes(head)) {
     return {kind: 'binary_expr', operator: head as IRBinaryOperator, left: args[0], right: args[1]};
@@ -291,6 +332,13 @@ function encodeBoolExpr(
   }
   if (ir.kind === 'not_expr') {
     return {not: encodeBoolExpr(ir.expression, refs, shape)};
+  }
+  if (ir.kind === 'in_expr') {
+    const key = pathKeyOf(ir.value, refs);
+    if (key !== null) {
+      const list = ir.source.list.map((e) => encodeValueExpr(e, refs));
+      return {[key]: {[ir.negated ? 'notOneOf' : 'oneOf']: list}} as DslJsonCondition;
+    }
   }
   if (ir.kind === 'binary_expr' && COMPARISON_OPS.has(ir.operator)) {
     const key = pathKeyOf(ir.left, refs);
@@ -419,12 +467,27 @@ function comparisonsFor(
   shape: NodeShape,
   refs: Map<string, readonly string[]>,
 ): IRExpression[] {
-  // operator map: { ">": 18, "<": 65 }
+  // Membership: { "oneOf": [...] } / { "notOneOf": [...] } → IN / NOT IN.
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const o = value as Record<string, unknown>;
+    if (Array.isArray(o.oneOf) || Array.isArray(o.notOneOf)) {
+      const negated = Array.isArray(o.notOneOf);
+      const listRaw = (negated ? o.notOneOf : o.oneOf) as DslJsonValue[];
+      const list = listRaw.map((el) => {
+        const r = decodeValueExpr(el, shape);
+        mergeRefs(refs, r.refs);
+        return r.ir;
+      });
+      return [{kind: 'in_expr', negated, value: left, source: {list}}];
+    }
+  }
+  // operator map: { ">": 18, "<": 65 } (symbols) or { "gt": 18 } (word aliases)
   if (isOpMap(value)) {
     return Object.entries(value as DslJsonOpMap).map(([op, v]) => {
       const r = decodeValueExpr(v as DslJsonValue, shape);
       mergeRefs(refs, r.refs);
-      return {kind: 'binary_expr', operator: op as IRBinaryOperator, left, right: r.ir};
+      const operator = (OP_ALIASES[op] ?? op) as IRBinaryOperator;
+      return {kind: 'binary_expr', operator, left, right: r.ir};
     });
   }
   // implicit equals
@@ -438,13 +501,14 @@ function isOpMap(value: unknown): boolean {
   if (Array.isArray(value) || value === null || typeof value !== 'object') return false;
   const keys = Object.keys(value as object);
   if (keys.length === 0) return false;
-  if (keys.some((k) => k === 'id' || k === '$ctx' || k === 'path' || k === 'date' || k === 'list')) {
+  if (keys.some((k) => k === '@id' || k === '@ctx' || k === '@path' || k === '@date' || k === '@list')) {
     return false;
   }
-  // Only comparison operators form an op-map. `in`/`nin` are intentionally NOT
-  // recognized here: there is no matching IR operator or encoder path yet, so
-  // accepting them would only produce a broken decode (backlog 002, G7).
-  return keys.every((k) => COMPARISON_OPS.has(k as IRBinaryOperator));
+  // Comparison operators (symbols) or their word aliases (`equals`/`gt`/…) form
+  // an op-map. `in`/`nin` are handled separately (oneOf/notOneOf, see decode).
+  return keys.every(
+    (k) => COMPARISON_OPS.has(k as IRBinaryOperator) || k in OP_ALIASES,
+  );
 }
 
 function matchQuantifier(

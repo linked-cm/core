@@ -2,6 +2,7 @@ import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {resolveShape} from './resolveShape.js';
 import type {DeleteResponse} from './DeleteQuery.js';
 import type {NodeId} from './MutationQuery.js';
+import {MutationThenable} from './MutationThenable.js';
 import {resolveMutationDispatch} from './queryDispatch.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
@@ -42,8 +43,9 @@ interface DeleteBuilderInit<S extends Shape> {
  * R is the resolved type: DeleteResponse for ID-based, void for bulk operations.
  */
 export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
-  implements PromiseLike<R>, Promise<R>
+  extends MutationThenable<R>
 {
+  protected readonly _tag = 'DeleteBuilder';
   private readonly _shape: ShapeConstructor<S>;
   private readonly _ids?: DeleteId[];
   private readonly _mode?: DeleteMode;
@@ -51,6 +53,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   private readonly _where?: WherePath;
 
   private constructor(init: DeleteBuilderInit<S>) {
+    super();
     this._shape = init.shape;
     this._ids = init.ids;
     this._mode = init.mode;
@@ -80,7 +83,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     const resolved = resolveShape<S>(shape);
     if (ids !== undefined) {
       // Normalize any context reference (unset PendingQueryContext or a resolved
-      // context shape) to a {$ctx} marker so set/unset behave identically.
+      // context shape) to a {@ctx} marker so set/unset behave identically.
       const idsArray = (Array.isArray(ids) ? ids : [ids]).map(
         (id) => asContextRef(id) ?? id,
       );
@@ -94,9 +97,9 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     assertWireVersion(json.v);
     const resolved = resolveShape(json.shape);
     if (json.mode === 'ids') {
-      // A `{$ctx}` id rehydrates as a live context ref (resolved at lower).
+      // A `{@ctx}` id rehydrates as a live context ref (resolved at lower).
       const ids: DeleteId[] = json.ids.map((id) =>
-        isContextRefJSON(id) ? new PendingQueryContext(id.$ctx) : {id},
+        isContextRefJSON(id) ? new PendingQueryContext(id['@ctx']) : {id},
       );
       return new DeleteBuilder({shape: resolved, ids, mode: 'ids'});
     }
@@ -190,7 +193,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       shape,
       mode: 'ids',
       ids: this._ids.map((id) =>
-        // An unresolved context ref travels as a `{$ctx}` marker; a concrete id
+        // An unresolved context ref travels as a `{@ctx}` marker; a concrete id
         // (string or `{id}`, incl. a resolved context shape) as a plain string.
         id instanceof PendingQueryContext
           ? encodeContextRef(id.contextName)
@@ -218,28 +221,4 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     return result as Promise<R>;
   }
 
-  // ---------------------------------------------------------------------------
-  // Promise interface
-  // ---------------------------------------------------------------------------
-
-  then<TResult1 = R, TResult2 = never>(
-    onfulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
-  ): Promise<TResult1 | TResult2> {
-    return this.exec().then(onfulfilled, onrejected);
-  }
-
-  catch<TResult = never>(
-    onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null,
-  ): Promise<R | TResult> {
-    return this.then().catch(onrejected);
-  }
-
-  finally(onfinally?: (() => void) | null): Promise<R> {
-    return this.then().finally(onfinally);
-  }
-
-  get [Symbol.toStringTag](): string {
-    return 'DeleteBuilder';
-  }
 }

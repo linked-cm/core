@@ -185,6 +185,25 @@ export class ExpressionNode {
   }
 
   // ---------------------------------------------------------------------------
+  // Membership — `value IN (…)` / `NOT IN (…)`
+  // ---------------------------------------------------------------------------
+
+  /** True when this value is one of `values` (SPARQL `IN`). Empty list → matches nothing. */
+  oneOf(values: ExpressionInput[]): ExpressionNode {
+    return this._derive(
+      {kind: 'in_expr', negated: false, value: this.ir, source: {list: values.map(toIRExpression)}},
+      ...values,
+    );
+  }
+  /** True when this value is NOT one of `values` (SPARQL `NOT IN`). Empty list → matches everything. */
+  notOneOf(values: ExpressionInput[]): ExpressionNode {
+    return this._derive(
+      {kind: 'in_expr', negated: true, value: this.ir, source: {list: values.map(toIRExpression)}},
+      ...values,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // String
   // ---------------------------------------------------------------------------
 
@@ -439,6 +458,12 @@ export function resolveExpressionRefs(
           ...e,
           left: resolve(e.left),
           right: resolve(e.right),
+        };
+      case 'in_expr':
+        return {
+          ...e,
+          value: resolve(e.value),
+          source: {list: e.source.list.map(resolve)},
         };
       case 'function_expr':
         return {...e, args: e.args.map(resolve)};

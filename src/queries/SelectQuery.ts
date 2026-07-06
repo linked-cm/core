@@ -4,7 +4,6 @@ import type {RawSelectInput} from './IRDesugar.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
 import {shacl} from '../ontologies/shacl.js';
 import {CoreSet} from '../collections/CoreSet.js';
-import {CoreMap} from '../collections/CoreMap.js';
 import {getPropertyShapeByLabel,getShapeClass} from '../utils/ShapeClass.js';
 import {NodeReferenceValue,type Prettify,type ShapeReferenceValue} from './QueryFactory.js';
 import {xsd} from '../ontologies/xsd.js';
@@ -15,6 +14,23 @@ import {PropertyPath} from './PropertyPath.js';
 import type {QueryBuilder, QueryBuilderJSON} from './QueryBuilder.js';
 import {ExpressionNode, ExistsCondition, isExpressionNode, isExistsCondition, tracedPropertyExpression, tracedAliasExpression} from '../expressions/ExpressionNode.js';
 import {PendingQueryContext} from './QueryContext.js';
+
+/**
+ * String keys the query-shape proxy must let through *without* treating them as
+ * a property access — promise-awaiting (`then`), React (`$$typeof`), and common
+ * serializer/object-protocol probes. Everything else that isn't a decorated
+ * property is a genuine misuse and throws. (Symbol keys always pass through.)
+ */
+const INTEROP_PASSTHROUGH_KEYS = new Set<string>([
+  'then',
+  '$$typeof',
+  'toJSON',
+  'toString',
+  'valueOf',
+  'constructor',
+  'asymmetricMatch', // jest matchers probe this
+  'nodeType', // some DOM/serializer probes
+]);
 
 /**
  * The closed, read-only select query a dataset receives (implemented by
@@ -68,13 +84,10 @@ export type QueryBuildFn<T extends Shape, ResponseType> = (
   p: ToQueryBuilderObject<T>,
 ) => ResponseType;
 
-export type QueryWrapperObject<ShapeType extends Shape = any> = {
-  [key: string]: FieldSet<any, any>;
-};
-
 export type SortByPath = {
   paths: PropertyPath[];
-  direction: 'ASC' | 'DESC';
+  /** Per-path sort direction (parallel to `paths`). */
+  directions: ('ASC' | 'DESC')[];
 };
 
 /**
@@ -203,17 +216,6 @@ export type WherePath = WhereExpressionPath | WhereExistsPath;
  * An argument can be a direct reference to a node, a js primitive (boolean,number), a path to resolve (like from a query context variables)
  * Or a wherePath in the case of some() or every() (e.g. x.where(x.friends.some(f => f.age > 18) -> the argument is a wherePath)
  */
-export type QueryArg =
-  | NodeReferenceValue
-  | JSNonNullPrimitive
-  | ArgPath
-  | WherePath;
-export type ArgPath = {
-  path: QueryPropertyPath;
-  subject: ShapeReferenceValue;
-};
-
-
 export type QueryComponentLike<ShapeType extends Shape, CompQueryResult> = {
   query:
     | QueryBuilder<ShapeType>
@@ -242,36 +244,10 @@ export interface LinkedComponentInterface<S extends Shape = Shape, R = any> {
  * ###################################
  */
 
-export type NodeResultMap = CoreMap<string, QResult<any, any>>;
-
 export type QResult<ShapeType extends Shape = Shape, Object = {}> = Object & {
   id: string;
   // shape?: ShapeType;
 };
-
-export type QueryControllerProps = {
-  query?: QueryController;
-};
-export type QueryController = {
-  nextPage: () => void;
-  previousPage: () => void;
-  setLimit: (limit: number) => void;
-  setPage: (page: number) => void;
-};
-
-
-export type GetCustomObjectKeys<T> = T extends QueryWrapperObject
-  ? {
-      [P in keyof T]: T[P] extends FieldSet<any, any>
-        ? ToQueryResultSet<T[P]>
-        : never;
-    }
-  : [];
-
-export type ToQueryResultSet<T> =
-  T extends FieldSet<infer ResponseType, any>
-    ? QueryResponseToResultType<ResponseType>[]
-    : null;
 
 /**
  * MAIN ENTRY to convert the response of a query into a result object
@@ -345,31 +321,6 @@ export type GetQueryObjectResultType<
                 : QV extends QueryPrimitive<boolean, any, any>
                   ? 'bool'
                   : never & {__error: 'GetQueryObjectResultType: unmatched query value type'};
-
-export type GetShapesResultTypeWithSource<Source> =
-  QueryResponseToResultType<Source>;
-
-type GetQueryObjectProperty<T> =
-  T extends QueryBuilderObject<any, any, infer Property>
-    ? Property
-    : T extends FieldSet<infer SubResponse, infer SubSource>
-      ? GetQueryObjectProperty<SubSource>
-      : never;
-type GetQueryObjectOriginal<T> =
-  T extends QueryBuilderObject<infer Original>
-    ? Original
-    : T extends FieldSet<infer SubResponse, infer SubSource>
-      ? GetNestedQueryResultType<SubResponse, SubSource>
-      : never;
-/**
- * Converts an intersection of QueryBuilderObjects into a plain JS object
- * i.e. QueryPrimitive<string,Person,"name"> | QueryPrimitive<string,Person,"hobby"> --> {name: string, hobby: string}
- * To do this we get the Property of each QueryBuilderObject, and use it as the key in the resulting object
- * and, we get the Original type of each QueryBuilderObject, and use it as the value in the resulting object
- */
-type QueryValueIntersectionToObject<Items> = {
-  [Type in Items as GetQueryObjectProperty<Type>]: true; //GetQueryObjectOriginal<Type>;
-};
 
 export type SetSizeToQueryResult<Source, HasName = false> =
   Source extends QueryShapeSet<
@@ -527,10 +478,6 @@ export type ObjectToPlainResult<T> = {
   [P in keyof T]: QueryResponseToResultType<T[P], null, true>;
 };
 
-export type GetSource<Source, Overwrite> = Overwrite extends null
-  ? Source
-  : Overwrite;
-
 type GetNestedQueryResultType<Response, Source> =
   Source extends QueryBuilderObject
     ? //if the linked query originates from within another query (like with select())
@@ -547,16 +494,6 @@ type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (
   ? I
   : never;
 
-/**
- * Converts the response of a nested query into a QResult object
- */
-type ResponseToObject<R> =
-  R extends Array<infer Type extends QueryBuilderObject>
-    ? QueryValueIntersectionToObject<Type>
-    : Prettify<ObjectToPlainResult<R>>;
-
-export type GetQueryResponseType<Q> =
-  Q extends FieldSet<infer ResponseType, any> ? ResponseType : Q;
 
 /**
  * ###################################
@@ -579,58 +516,6 @@ export class QueryBuilderObject<
     public property?: PropertyShape,
     public subject?: QueryShape<any> | QueryShapeSet<any> | QueryPrimitiveSet,
   ) {}
-
-  /**
-   * Converts an original value into a query value
-   * @param originalValue
-   * @param requestedPropertyShape the property shape that is connected to the get accessor that returned the original value
-   */
-  static convertOriginal(
-    originalValue: AccessorReturnValue,
-    property: PropertyShape,
-    subject: QueryShape<any> | QueryShapeSet<any> | QueryShape<any>,
-  ): QueryBuilderObject {
-    if (originalValue instanceof Shape) {
-      return QueryShape.create(originalValue, property, subject);
-    } else if (originalValue instanceof ShapeSet) {
-      return QueryShapeSet.create(originalValue, property, subject);
-    } else if (typeof originalValue === 'string') {
-      return new QueryPrimitive<string>(originalValue, property, subject);
-    } else if (typeof originalValue === 'number') {
-      return new QueryPrimitive<number>(originalValue, property, subject);
-    } else if (typeof originalValue === 'boolean') {
-      return new QueryPrimitive<boolean>(originalValue, property, subject);
-    } else if (originalValue instanceof Date) {
-      return new QueryPrimitive<Date>(originalValue, property, subject);
-    } else if (Array.isArray(originalValue)) {
-      return new QueryPrimitiveSet(originalValue, property, subject);
-    } else if (
-      originalValue &&
-      typeof originalValue === 'object' &&
-      'id' in originalValue
-    ) {
-      //Support accessors that return NodeReferenceValue when a value shape is known.
-      if (property.valueShape) {
-        const shapeClass = getShapeClass(property.valueShape);
-        if (!shapeClass) {
-          throw new Error(
-            `Shape class not found for ${property.valueShape.id}`,
-          );
-        }
-        const shape = new shapeClass();
-        shape.id = (originalValue as NodeReferenceValue).id;
-        return QueryShape.create(shape, property, subject);
-      }
-      throw new Error(
-        subject.getOriginalValue().nodeShape.label +
-          '.' +
-          property.label +
-          ': A property accessor should return a Shape or a primitive value. Returning a NodeReferenceValue is currently not supported.',
-      );
-    } else {
-      throw new Error('Unknown query path result type: ' + originalValue);
-    }
-  }
 
   /**
    * Create a Query Builder Object based on the requested PropertyShape
@@ -706,62 +591,6 @@ export class QueryBuilderObject<
     throw Error(
       `No shape set for objectProperty ${property.parentNodeShape.label}.${property.label}`,
     );
-  }
-
-  static getOriginalSource(
-    endValue: ShapeSet<Shape> | Shape[] | QueryPrimitiveSet,
-  ): // | QueryValueSetOfSets,
-  ShapeSet;
-
-  static getOriginalSource(endValue: Shape): Shape;
-
-  static getOriginalSource(endValue: QueryPrimitive<any>): Shape | string;
-
-  static getOriginalSource(
-    endValue: string[] | QueryBuilderObject,
-  ): Shape | ShapeSet;
-
-  static getOriginalSource(
-    endValue:
-      | ShapeSet
-      | Shape[]
-      | Shape
-      | string[]
-      | QueryBuilderObject
-      | QueryPrimitiveSet,
-  ): AccessorReturnValue {
-    if (typeof endValue === 'undefined') return undefined;
-    if (endValue instanceof QueryPrimitiveSet) {
-      return new ShapeSet(
-        endValue.contents.map(
-          (endValue) => this.getOriginalSource(endValue) as any as Shape,
-        ),
-      ) as ShapeSet;
-    }
-    if (endValue instanceof QueryPrimitive) {
-      return endValue.subject
-        ? this.getOriginalSource(endValue.subject as QueryShapeSet)
-        : endValue.originalValue;
-    }
-    if (endValue instanceof QueryShape) {
-      if (endValue.subject && !endValue.isSource) {
-        return this.getOriginalSource(
-          endValue.subject as QueryShape<any> | QueryShapeSet<any>,
-        );
-      }
-      return endValue.originalValue;
-    } else if (endValue instanceof Shape) {
-      return endValue;
-    } else if (endValue instanceof QueryShapeSet) {
-      return new ShapeSet(
-        (endValue as QueryShapeSet).queryShapes.map(
-          (queryShape: QueryShape) =>
-            this.getOriginalSource(queryShape) as Shape,
-        ),
-      );
-    } else {
-      throw new Error('Unimplemented. Return as is?');
-    }
   }
 
   getOriginalValue() {
@@ -872,7 +701,7 @@ export const processWhereClause = (
 const EXPRESSION_METHODS = new Set([
   'plus', 'minus', 'times', 'divide', 'abs', 'round', 'ceil', 'floor', 'power',
   'equals', 'eq', 'neq', 'notEquals', 'gt', 'greaterThan', 'gte', 'greaterThanOrEqual',
-  'lt', 'lessThan', 'lte', 'lessThanOrEqual',
+  'lt', 'lessThan', 'lte', 'lessThanOrEqual', 'oneOf', 'notOneOf',
   'concat', 'contains', 'startsWith', 'endsWith', 'substr', 'before', 'after',
   'replace', 'ucase', 'lcase', 'strlen', 'encodeForUri', 'matches',
   'year', 'month', 'day', 'hours', 'minutes', 'seconds', 'timezone', 'tz',
@@ -889,7 +718,7 @@ const EXPRESSION_METHODS = new Set([
  */
 function toExpressionNode(qbo: QueryBuilderObject): ExpressionNode {
   // Check if this is a query context reference. We carry the context *name*
-  // (not the resolved id): it serializes as `{$ctx}` and is resolved by `lower()`.
+  // (not the resolved id): it serializes as `{@ctx}` and is resolved by `lower()`.
   const contextName = findContextName(qbo);
   if (contextName) {
     const segments = FieldSet.collectPropertySegments(qbo);
@@ -913,7 +742,7 @@ function toExpressionNode(qbo: QueryBuilderObject): ExpressionNode {
   return tracedPropertyExpression(segmentIds);
 }
 
-/** Walk up the QueryBuilderObject chain to find a query context *name* (for `{$ctx}`). */
+/** Walk up the QueryBuilderObject chain to find a query context *name* (for `{@ctx}`). */
 function findContextName(qbo: QueryBuilderObject): string | undefined {
   let current: QueryBuilderObject | undefined = qbo;
   while (current) {
@@ -995,7 +824,9 @@ export const evaluateSortCallback = <S extends Shape>(
       }
     }
   }
-  return {paths, direction};
+  // The DSL callback carries a single direction for all its paths; per-path
+  // directions come from the wire form (deserializeSortByPath).
+  return {paths, directions: paths.map(() => direction)};
 };
 
 export class QueryShapeSet<
@@ -1074,19 +905,20 @@ export class QueryShapeSet<
           if (propertyShape) {
             return queryShapeSet.callPropertyShapeAccessor(propertyShape);
           } else if (
-            //else if a method of the original shape is called, like .forEach() or similar
+            //else if a genuine collection method of the ShapeSet is called
+            //(.forEach()/.map()/… — including symbol methods like iteration)
             originalShapeSet[key] &&
             typeof originalShapeSet[key] === 'function'
           ) {
             //then return that method and bind the original value as 'this'
             return originalShapeSet[key].bind(originalShapeSet);
-          } else if (key !== 'then' && key !== '$$typeof') {
-            console.warn(
-              'Could not find property shape for key ' +
-                key +
-                ' on shape ' +
-                valueShape?.label +
-                '. Make sure the get method exists and is decorated with @linkedProperty / @objectProperty / @literalProperty',
+          } else if (typeof key === 'string' && !INTEROP_PASSTHROUGH_KEYS.has(key)) {
+            // Same policy as the single-node proxy: an undecorated string key
+            // is a genuine misuse (it would silently return a broken path over
+            // the set → silently-wrong results). Throw. Interop/framework keys
+            // and symbols pass through.
+            throw new Error(
+              `${valueShape?.label ?? 'shape'}.${key} is accessed in a query, but it does not have a @linkedProperty decorator. Queries can only access decorated get/set methods (@objectProperty / @literalProperty).`,
             );
           }
         }
@@ -1136,22 +968,6 @@ export class QueryShapeSet<
       }
     }
     return this;
-  }
-
-  filter(filterFn): QueryShapeSet {
-    let clone = new QueryShapeSet(
-      new ShapeSet(),
-      this.property,
-      this.subject as QueryShape<any> | QueryShapeSet<any>,
-    );
-    clone.queryShapes = this.queryShapes.filter(filterFn);
-    return clone;
-  }
-
-  setSource(val: boolean) {
-    this.queryShapes.forEach((shape) => {
-      shape.isSource = val;
-    });
   }
 
   getOriginalValue() {
@@ -1292,7 +1108,6 @@ export class QueryShape<
   Source = any,
   Property extends string | number | symbol = any,
 > extends QueryBuilderObject<S, Source, Property> {
-  public isSource: boolean;
   private proxy;
 
   constructor(
@@ -1348,14 +1163,14 @@ export class QueryShape<
             return QueryBuilderObject.generatePathValue(propertyShape, target);
           }
         }
-        if (key !== 'then' && key !== '$$typeof') {
-          //   //otherwise return the value of the property on the original shape
-          //generate stack trace for debugging
-          let stack = new Error().stack;
-          //https://stackoverflow.com/a/49725198/977206
-          const stackLines = stack.split('\n').slice(1); //remove the "Error" line
-          console.warn(
-            `${originalShape.constructor.name}.${key.toString()} is accessed in a query, but it does not have a @linkedProperty decorator. Queries can only access decorated get/set methods. ${stackLines.join('\n')}`,
+        // A string key that is neither a QueryShape member nor a decorated
+        // property is a genuine misuse: it would silently return the raw value
+        // and the query would run with a broken path (silently-wrong results).
+        // Throw. Symbols and framework/interop keys pass through untouched so
+        // promise-awaiting, React, and serializers can still introspect the proxy.
+        if (typeof key === 'string' && !INTEROP_PASSTHROUGH_KEYS.has(key)) {
+          throw new Error(
+            `${originalShape.constructor.name}.${key} is accessed in a query, but it does not have a @linkedProperty decorator. Queries can only access decorated get/set methods (@objectProperty / @literalProperty).`,
           );
         }
         return originalShape[key];
@@ -1381,7 +1196,7 @@ export class QueryShape<
   equals(otherValue: NodeReferenceValue | QShape<any> | PendingQueryContext): ExpressionNode {
     const self = toExpressionNode(this);
     // An unresolved query-context reference (`getQueryContext('user')` before it
-    // is set) carries no `.id` yet — keep it as a `{$ctx}` ref, resolved at lower.
+    // is set) carries no `.id` yet — keep it as a `{@ctx}` ref, resolved at lower.
     if (otherValue instanceof PendingQueryContext) {
       return self.eq(otherValue as any);
     }
@@ -1393,6 +1208,17 @@ export class QueryShape<
       ? toExpressionNode(otherValue)
       : otherValue;
     return self.eq(arg as any);
+  }
+
+  oneOf(values: (NodeReferenceValue | QShape<any>)[]): ExpressionNode {
+    return toExpressionNode(this).oneOf(
+      values.map((v) => (v instanceof QueryBuilderObject ? toExpressionNode(v) : v)) as any,
+    );
+  }
+  notOneOf(values: (NodeReferenceValue | QShape<any>)[]): ExpressionNode {
+    return toExpressionNode(this).notOneOf(
+      values.map((v) => (v instanceof QueryBuilderObject ? toExpressionNode(v) : v)) as any,
+    );
   }
 
   select<QF = unknown>(
@@ -1459,6 +1285,17 @@ export class QueryPrimitive<
       ? toExpressionNode(otherValue)
       : otherValue;
     return self.eq(arg as any);
+  }
+
+  oneOf(values: (JSPrimitive | QueryBuilderObject)[]): ExpressionNode {
+    return toExpressionNode(this).oneOf(
+      values.map((v) => (v instanceof QueryBuilderObject ? toExpressionNode(v) : v)) as any,
+    );
+  }
+  notOneOf(values: (JSPrimitive | QueryBuilderObject)[]): ExpressionNode {
+    return toExpressionNode(this).notOneOf(
+      values.map((v) => (v instanceof QueryBuilderObject ? toExpressionNode(v) : v)) as any,
+    );
   }
 
   where(validation: WhereClause<string>): this {
@@ -1558,19 +1395,30 @@ export class SetSize<Source = null> extends QueryPrimitive<number, Source> {
     super();
   }
 
-  // Build an aggregate_expr(count, ...) ExpressionNode for the counted property
-  equals(otherValue: any): ExpressionNode {
+  // Build an aggregate_expr(count, …) ExpressionNode for the counted property.
+  private toCountExpr(): ExpressionNode {
     const countedSegments = FieldSet.collectPropertySegments(this.subject);
-    const countedIds = countedSegments.map(s => s.id);
+    const countedIds = countedSegments.map((s) => s.id);
     const countedNode = tracedPropertyExpression(countedIds);
-    // Wrap in aggregate_expr(count)
-    const countExpr = new ExpressionNode({
-      kind: 'aggregate_expr',
-      name: 'count',
-      args: [countedNode.ir],
-    } as any, countedNode._refs);
-    return countExpr.eq(otherValue);
+    return new ExpressionNode(
+      {kind: 'aggregate_expr', name: 'count', args: [countedNode.ir]} as any,
+      countedNode._refs,
+    );
   }
+
+  // Comparisons on the count (lowered to a HAVING clause on COUNT(…)).
+  equals(v: any): ExpressionNode { return this.toCountExpr().eq(v); }
+  eq(v: any): ExpressionNode { return this.toCountExpr().eq(v); }
+  neq(v: any): ExpressionNode { return this.toCountExpr().neq(v); }
+  notEquals(v: any): ExpressionNode { return this.toCountExpr().neq(v); }
+  gt(v: any): ExpressionNode { return this.toCountExpr().gt(v); }
+  greaterThan(v: any): ExpressionNode { return this.toCountExpr().gt(v); }
+  gte(v: any): ExpressionNode { return this.toCountExpr().gte(v); }
+  greaterThanOrEqual(v: any): ExpressionNode { return this.toCountExpr().gte(v); }
+  lt(v: any): ExpressionNode { return this.toCountExpr().lt(v); }
+  lessThan(v: any): ExpressionNode { return this.toCountExpr().lt(v); }
+  lte(v: any): ExpressionNode { return this.toCountExpr().lte(v); }
+  lessThanOrEqual(v: any): ExpressionNode { return this.toCountExpr().lte(v); }
 
   as(label: string) {
     this.label = label;

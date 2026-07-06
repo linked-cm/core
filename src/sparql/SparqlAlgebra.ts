@@ -110,7 +110,16 @@ export type SparqlExpression =
   | SparqlFunctionExpr
   | SparqlAggregateExpr
   | SparqlExistsExpr
-  | SparqlBoundExpr;
+  | SparqlBoundExpr
+  | SparqlInExpr;
+
+/** Membership test — `value IN (list)` / `value NOT IN (list)`. */
+export type SparqlInExpr = {
+  kind: 'in_expr';
+  negated: boolean;
+  value: SparqlExpression;
+  list: SparqlExpression[];
+};
 
 export type SparqlVariableExpr = {
   kind: 'variable_expr';

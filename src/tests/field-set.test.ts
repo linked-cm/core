@@ -1,7 +1,7 @@
 import {describe, expect, test} from '@jest/globals';
 import {Person, Pet} from '../test-helpers/query-fixtures';
 import {sanitize} from '../test-helpers/test-utils';
-import {FieldSet} from '../queries/FieldSet';
+import {FieldSet, type FieldSetFieldJSON} from '../queries/FieldSet';
 import {PropertyPath, walkPropertyPath} from '../queries/PropertyPath';
 import {QueryBuilder} from '../queries/QueryBuilder';
 import {lower} from '../queries/lower';
@@ -288,13 +288,12 @@ describe('FieldSet — callback tracing (ProxiedPathBuilder)', () => {
 // =============================================================================
 
 describe('FieldSet — extended entries', () => {
-  const buildExtended = (fields: Array<{path: string; subSelect?: any; aggregation?: string; customKey?: string}>) =>
+  // Relation-keyed DSL-JSON projection form (plan 003, D1).
+  const buildExtended = (fields: FieldSetFieldJSON[]) =>
     FieldSet.fromJSON({shape: personShape.id, fields});
 
   test('entry with subSelect preserved through add()', () => {
-    const fs = buildExtended([
-      {path: 'friends', subSelect: {shape: personShape.id, fields: [{path: 'name'}]}},
-    ]);
+    const fs = buildExtended([{friends: ['name']}]);
     const fs2 = fs.add(['hobby']);
     expect(fs2.entries.length).toBe(2);
     expect(fs2.entries[0].subSelect).toBeDefined();
@@ -302,17 +301,14 @@ describe('FieldSet — extended entries', () => {
   });
 
   test('entry with aggregation preserved through pick()', () => {
-    const fs = buildExtended([
-      {path: 'friends', aggregation: 'count'},
-      {path: 'name'},
-    ]);
+    const fs = buildExtended([{friends: {aggregation: 'count'}}, 'name']);
     const fs2 = fs.pick(['friends']);
     expect(fs2.entries.length).toBe(1);
     expect(fs2.entries[0].aggregation).toBe('count');
   });
 
   test('entry with customKey preserved through merge()', () => {
-    const fs1 = buildExtended([{path: 'friends', customKey: 'numFriends'}]);
+    const fs1 = buildExtended([{friends: {customKey: 'numFriends'}}]);
     const fs2 = FieldSet.for(personShape, ['name']);
     const merged = FieldSet.merge([fs1, fs2]);
     expect(merged.entries.length).toBe(2);
@@ -321,7 +317,7 @@ describe('FieldSet — extended entries', () => {
 
   test('entries with same path but different aggregation are distinct in merge()', () => {
     const fs1 = FieldSet.for(personShape, ['friends']);
-    const fs2 = buildExtended([{path: 'friends', aggregation: 'count'}]);
+    const fs2 = buildExtended([{friends: {aggregation: 'count'}}]);
     const merged = FieldSet.merge([fs1, fs2]);
     expect(merged.entries.length).toBe(2);
   });
@@ -332,41 +328,36 @@ describe('FieldSet — extended entries', () => {
 // =============================================================================
 
 describe('FieldSet — extended serialization', () => {
-  test('toJSON — entry with subSelect', () => {
-    const inner = FieldSet.for(personShape, ['name']);
+  test('toJSON — entry with subSelect (relation-keyed array)', () => {
     const fs = FieldSet.fromJSON({
       shape: personShape.id,
-      fields: [{path: 'friends', subSelect: inner.toJSON()}],
+      fields: [{friends: ['name']}],
     });
     const json = fs.toJSON();
-    expect((json.fields[0] as any).subSelect).toBeDefined();
-    expect((json.fields[0] as any).subSelect.fields).toHaveLength(1);
-    expect((json.fields[0] as any).subSelect.fields[0]).toBe("name");
+    // Relation with only sub-fields → array shorthand under the relation key.
+    expect((json.fields[0] as any).friends).toEqual(['name']);
   });
 
   test('toJSON — entry with aggregation', () => {
     const fs = FieldSet.fromJSON({
       shape: personShape.id,
-      fields: [{path: 'friends', aggregation: 'count'}],
+      fields: [{friends: {aggregation: 'count'}}],
     });
     const json = fs.toJSON();
-    expect((json.fields[0] as any).aggregation).toBe('count');
+    expect((json.fields[0] as any).friends.aggregation).toBe('count');
   });
 
   test('toJSON — entry with customKey', () => {
     const fs = FieldSet.fromJSON({
       shape: personShape.id,
-      fields: [{path: 'friends', customKey: 'numFriends'}],
+      fields: [{friends: {customKey: 'numFriends'}}],
     });
     const json = fs.toJSON();
-    expect((json.fields[0] as any).customKey).toBe('numFriends');
+    expect((json.fields[0] as any).friends.customKey).toBe('numFriends');
   });
 
   test('fromJSON — round-trip subSelect', () => {
-    const json = {
-      shape: personShape.id,
-      fields: [{path: 'friends', subSelect: {shape: personShape.id, fields: [{path: 'name'}]}}],
-    };
+    const json = {shape: personShape.id, fields: [{friends: ['name']}]};
     const fs = FieldSet.fromJSON(json);
     const roundTripped = FieldSet.fromJSON(fs.toJSON());
     expect(roundTripped.entries[0].subSelect).toBeDefined();
@@ -374,20 +365,14 @@ describe('FieldSet — extended serialization', () => {
   });
 
   test('fromJSON — round-trip aggregation', () => {
-    const json = {
-      shape: personShape.id,
-      fields: [{path: 'friends', aggregation: 'count'}],
-    };
+    const json = {shape: personShape.id, fields: [{friends: {aggregation: 'count'}}]};
     const fs = FieldSet.fromJSON(json);
     const roundTripped = FieldSet.fromJSON(fs.toJSON());
     expect(roundTripped.entries[0].aggregation).toBe('count');
   });
 
   test('fromJSON — round-trip customKey', () => {
-    const json = {
-      shape: personShape.id,
-      fields: [{path: 'friends', customKey: 'numFriends'}],
-    };
+    const json = {shape: personShape.id, fields: [{friends: {customKey: 'numFriends'}}]};
     const fs = FieldSet.fromJSON(json);
     const roundTripped = FieldSet.fromJSON(fs.toJSON());
     expect(roundTripped.entries[0].customKey).toBe('numFriends');

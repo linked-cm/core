@@ -14,16 +14,27 @@
  * marker and resolved at lowering time against whatever context map is
  * available (client-side React context, server-side auth, …).
  *
- * The same `{$ctx: "<name>"}` marker is used in *every* position a node id can
+ * The same `{@ctx: "<name>"}` marker is used in *every* position a node id can
  * appear: the select subject, the update target, where-clause arguments, and
  * mutation field values. One marker, one resolver, everywhere.
  */
 import {getQueryContext, UnresolvedContextError} from './QueryContext.js';
 
-/** The reserved key that tags a context reference in DSL-JSON. */
-export const CONTEXT_REF_KEY = '$ctx';
+/**
+ * The reserved key that tags a **context reference** in DSL-JSON (`{@ctx: name}`).
+ *
+ * It is one of the DSL-JSON system value-tags — the `@`-sigiled vocabulary for
+ * tagged *values* (`@id`, `@date`, `@list`, `@add`/`@remove`, `@unset`, `@path`,
+ * `@ctx`). The `@` sigil frees every user property name: a property literally
+ * named `date`/`id`/`path`/… no longer collides with a tag. (Structural
+ * node-data keys stay `__id`/`__shape`.) The full tag set is defined by the
+ * `MutationValueJSON` union (MutationSerialization.ts) + the DSL-JSON codecs and
+ * documented in `documentation/dsl-json.md`; only `@ctx` needs a named constant
+ * because it is shared across the select/mutation builders and the IR resolver.
+ */
+export const CONTEXT_REF_KEY = '@ctx';
 
-/** The wire shape of a context reference: `{$ctx: "<contextName>"}`. */
+/** The wire shape of a context reference: `{@ctx: "<contextName>"}`. */
 export interface ContextRefJSON {
   [CONTEXT_REF_KEY]: string;
 }
@@ -33,7 +44,7 @@ export function encodeContextRef(name: string): ContextRefJSON {
   return {[CONTEXT_REF_KEY]: name};
 }
 
-/** Type guard: is this value a `{$ctx: "..."}` context-reference marker? */
+/** Type guard: is this value a `{@ctx: "..."}` context-reference marker? */
 export function isContextRefJSON(value: unknown): value is ContextRefJSON {
   return (
     !!value &&

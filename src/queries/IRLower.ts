@@ -23,7 +23,6 @@ import type {
   IRShapeScanPattern,
   IRTraversePattern,
 } from './IntermediateRepresentation.js';
-import {canonicalizeWhere} from './IRCanonicalize.js';
 import {lowerSelectionPathExpression, projectionKeyFromPath} from './IRProjection.js';
 import {IRAliasScope} from './IRAliasScope.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
@@ -154,7 +153,7 @@ const lowerPath = (
 ): IRExpression => lowerSelectionPathExpression(path, options);
 
 /**
- * Resolve any `{$ctx}` context references carried in a lowered expression tree —
+ * Resolve any `{@ctx}` context references carried in a lowered expression tree —
  * whether it came from a where-clause filter OR a projected (expression-select)
  * value.
  *
@@ -180,6 +179,12 @@ const resolveContextRefs = (expr: IRExpression): IRExpression => {
       return expr;
     case 'binary_expr':
       return {...expr, left: resolveContextRefs(expr.left), right: resolveContextRefs(expr.right)};
+    case 'in_expr':
+      return {
+        ...expr,
+        value: resolveContextRefs(expr.value),
+        source: {list: expr.source.list.map(resolveContextRefs)},
+      };
     case 'logical_expr':
       return {...expr, expressions: expr.expressions.map(resolveContextRefs)};
     case 'not_expr':
@@ -397,7 +402,7 @@ export const lowerSelectQuery = (
 
     if (selection.kind === 'expression_select') {
       const exprSelect = selection as DesugaredExpressionSelect;
-      // Resolve property refs AND any {$ctx} context references — a projected
+      // Resolve property refs AND any {@ctx} context references — a projected
       // expression (e.g. `select(p => ({flag: p.x.equals(getQueryContext('user'))}))`)
       // reaches the SPARQL algebra just like a where-filter, so its context refs
       // must be resolved here too, not only in lowerWhere.
@@ -429,8 +434,7 @@ export const lowerSelectQuery = (
   // Inline filter handler: when a property step has `.where()`, canonicalize
   // and lower the where predicate, then attach it to the traverse pattern.
   const inlineFilterHandler = (traverseAlias: string, where: DesugaredWhere) => {
-    const canonical = canonicalizeWhere(where);
-    const filterExpr = lowerWhere(canonical, ctx, {
+    const filterExpr = lowerWhere(where, ctx, {
       rootAlias: traverseAlias,
       resolveTraversal: pathOptions.resolveTraversal,
     });
@@ -457,9 +461,9 @@ export const lowerSelectQuery = (
   const where = canonical.where ? lowerWhere(canonical.where, ctx, pathOptions) : undefined;
 
   const orderBy: IROrderByItem[] | undefined = canonical.sortBy
-    ? canonical.sortBy.paths.map((path) => ({
+    ? canonical.sortBy.paths.map((path, i) => ({
         expression: lowerPath(path, pathOptions),
-        direction: canonical.sortBy.direction,
+        direction: canonical.sortBy!.directions[i],
       }))
     : undefined;
 

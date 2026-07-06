@@ -63,7 +63,7 @@ function notifyContextChange(name: string): void {
  *
  * A context appears in two runtime forms: a `PendingQueryContext` (the context was unset
  * when `getQueryContext()` was called) or a resolved `QueryShape` stamped with
- * `__queryContextName` (it was already set). Both must be treated as the same `{$ctx}`
+ * `__queryContextName` (it was already set). Both must be treated as the same `{@ctx}`
  * reference wherever a node value/id is accepted (mutation field values, delete ids), so
  * that context-bound mutations behave identically whether the context is set or unset at
  * build time — resolution always happens at lowering.
@@ -73,7 +73,8 @@ export function asContextRef(value: unknown): PendingQueryContext | undefined {
   if (!value || typeof value !== 'object') return undefined;
   // A resolved context is a QueryShape proxy wrapping a Shape stamped with
   // `__queryContextName`. Read it via `originalValue` (a known QueryShape field)
-  // so we don't trip the proxy's "undecorated property" warning; a bare Shape
+  // so we don't trip the proxy's "undecorated property" guard (it now throws);
+  // a bare Shape
   // carries the stamp directly.
   const v = value as {originalValue?: {__queryContextName?: unknown}; __queryContextName?: unknown};
   const source = v.originalValue ?? v;
@@ -126,11 +127,11 @@ export function setQueryContext(name: string, value: any, shapeType?) {
   // A plain QResult `{id}` — materialize a shape (requires shapeType).
   if (typeof value.id === 'string') {
     if (!shapeType) {
-      console.warn(
-        'setQueryContext: value is a QResult but no shapeType provided',
-        value,
+      // A silent no-op here is a trap: the context never sets and the caller
+      // gets no signal. A `{id}` value cannot be materialized without its shape.
+      throw new Error(
+        `setQueryContext('${name}'): a {id} value requires a shapeType so the shape can be materialized. Pass the Shape class as the third argument.`,
       );
-      return;
     }
     const shape = new (shapeType as any)();
     shape.id = value.id;
@@ -141,5 +142,7 @@ export function setQueryContext(name: string, value: any, shapeType?) {
     return;
   }
 
-  console.warn('setQueryContext: value is not a QueryShape, Shape, or {id} result', value);
+  throw new Error(
+    `setQueryContext('${name}'): value is not a QueryShape, Shape, or {id} result. Got ${typeof value}. Pass a Shape instance, a query-context shape, or a {id} result (with its shapeType).`,
+  );
 }

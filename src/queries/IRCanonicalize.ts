@@ -2,7 +2,6 @@ import type {
   DesugaredExpressionWhere,
   DesugaredExistsWhere,
   DesugaredSelectQuery,
-  DesugaredWhere,
   PropertyPathSegment,
 } from './IRDesugar.js';
 
@@ -23,38 +22,20 @@ export type CanonicalDesugaredSelectQuery = Omit<DesugaredSelectQuery, 'where' |
 };
 
 /**
- * Recursively rewrites a desugared where-clause into canonical form.
- * With the Evaluation class retired, this is now a simple passthrough
- * for expression and exists where types.
- */
-export const canonicalizeWhere = (
-  where: DesugaredWhere,
-): CanonicalWhereExpression => {
-  // ExpressionNode-based WHERE — passthrough (already canonical)
-  if (where.kind === 'where_expression') {
-    return where;
-  }
-  // ExistsCondition-based WHERE — passthrough to lowering
-  if (where.kind === 'where_exists_condition') {
-    return where;
-  }
-  const _exhaustive: never = where;
-  throw new Error(`Unknown where kind: ${(_exhaustive as {kind: string}).kind}`);
-};
-
-/**
- * Canonicalizes a desugared select query by normalizing its where-clause.
- * All other fields pass through unchanged.
+ * Normalizes a desugared select query into its canonical shape. The
+ * where-clause is already canonical (`DesugaredWhere` === `CanonicalWhereExpression`),
+ * so this only reshapes MINUS entries to the canonical field set; all other
+ * fields pass through unchanged.
  */
 export const canonicalizeDesugaredSelectQuery = (
   query: DesugaredSelectQuery,
 ): CanonicalDesugaredSelectQuery => {
   return {
     ...query,
-    where: query.where ? canonicalizeWhere(query.where) : undefined,
+    where: query.where,
     minusEntries: query.minusEntries?.map((entry) => ({
       shapeId: entry.shapeId,
-      where: entry.where ? canonicalizeWhere(entry.where) : undefined,
+      where: entry.where,
       propertyPaths: entry.propertyPaths,
     })),
   };

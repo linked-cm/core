@@ -3,6 +3,7 @@ import {resolveShape} from './resolveShape.js';
 import type {UpdatePartial} from './QueryFactory.js';
 import type {CreateResponse} from './CreateQuery.js';
 import {MutationQueryFactory} from './MutationQuery.js';
+import {MutationThenable} from './MutationThenable.js';
 import {resolveMutationDispatch} from './queryDispatch.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
@@ -33,13 +34,15 @@ interface CreateBuilderInit<S extends Shape> {
  * the free `lower()` function (the builder itself imports no IR).
  */
 export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> = UpdatePartial<S>>
-  implements PromiseLike<CreateResponse<U>>, Promise<CreateResponse<U>>
+  extends MutationThenable<CreateResponse<U>>
 {
+  protected readonly _tag = 'CreateBuilder';
   private readonly _shape: ShapeConstructor<S>;
   private readonly _data?: UpdatePartial<S>;
   private readonly _fixedId?: string;
 
   private constructor(init: CreateBuilderInit<S>) {
+    super();
     this._shape = init.shape;
     this._data = init.data;
     this._fixedId = init.fixedId;
@@ -167,30 +170,5 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
    */
   async exec(target?: IDataset): Promise<CreateResponse<U>> {
     return resolveMutationDispatch('create', target).createQuery(this) as Promise<CreateResponse<U>>;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Promise interface
-  // ---------------------------------------------------------------------------
-
-  then<TResult1 = CreateResponse<U>, TResult2 = never>(
-    onfulfilled?: ((value: CreateResponse<U>) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
-  ): Promise<TResult1 | TResult2> {
-    return this.exec().then(onfulfilled, onrejected);
-  }
-
-  catch<TResult = never>(
-    onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null,
-  ): Promise<CreateResponse<U> | TResult> {
-    return this.then().catch(onrejected);
-  }
-
-  finally(onfinally?: (() => void) | null): Promise<CreateResponse<U>> {
-    return this.then().finally(onfinally);
-  }
-
-  get [Symbol.toStringTag](): string {
-    return 'CreateBuilder';
   }
 }

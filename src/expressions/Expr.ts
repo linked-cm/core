@@ -22,71 +22,32 @@ function mergedRefs(inputs: readonly ExpressionInput[]): PropertyRefMap {
   return merged;
 }
 
+/**
+ * `Expr` — static builders for expressions that have **no natural fluent host**.
+ *
+ * The fluent form (`p.age.plus(1)`, `p.name.matches(/^A/)`) is the one true way to
+ * build a *property-first* expression; every arithmetic/comparison/string/date/hash
+ * operation lives there. `Expr` deliberately does **not** mirror them — that
+ * duplication is what drifted (two names for one op). `Expr` carries only the
+ * operations that can't start from a property proxy:
+ *
+ * - `now()`        — nullary; there is nothing to chain off.
+ * - `ifThen(c,t,e)`— ternary conditional; the condition is not a natural receiver.
+ * - `firstDefined(…)` — variadic COALESCE; no natural first operand.
+ * - `concat(…)`    — variadic; also reads best literal-first (`Expr.concat('Hi ', p.name)`).
+ * - `not(x)`       — prefix negation; `Expr.not(cond)` reads better than `cond.not()`.
+ */
 export const Expr = {
-  // ---------------------------------------------------------------------------
-  // Arithmetic
-  // ---------------------------------------------------------------------------
-
-  plus(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).plus(b);
-  },
-  minus(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).minus(b);
-  },
-  times(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).times(b);
-  },
-  divide(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).divide(b);
-  },
-  abs(a: ExpressionInput): ExpressionNode {
-    return wrap(a).abs();
-  },
-  round(a: ExpressionInput): ExpressionNode {
-    return wrap(a).round();
-  },
-  ceil(a: ExpressionInput): ExpressionNode {
-    return wrap(a).ceil();
-  },
-  floor(a: ExpressionInput): ExpressionNode {
-    return wrap(a).floor();
-  },
-  power(a: ExpressionInput, b: number): ExpressionNode {
-    return wrap(a).power(b);
+  /** SPARQL `NOW()` — the current dateTime. */
+  now(): ExpressionNode {
+    return new ExpressionNode({kind: 'function_expr', name: 'NOW', args: []});
   },
 
-  // ---------------------------------------------------------------------------
-  // Comparison (short names only)
-  // ---------------------------------------------------------------------------
-
-  eq(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).eq(b);
-  },
-  neq(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).neq(b);
-  },
-  gt(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).gt(b);
-  },
-  gte(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).gte(b);
-  },
-  lt(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).lt(b);
-  },
-  lte(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).lte(b);
-  },
-
-  // ---------------------------------------------------------------------------
-  // String
-  // ---------------------------------------------------------------------------
-
+  /** SPARQL `CONCAT(...)` — string concatenation of two or more parts. */
   concat(...parts: ExpressionInput[]): ExpressionNode {
     if (parts.length < 2) {
       throw new Error('Expr.concat() requires at least 2 arguments');
     }
-    const [first, ...rest] = parts;
     return new ExpressionNode(
       {
         kind: 'function_expr',
@@ -96,106 +57,8 @@ export const Expr = {
       mergedRefs(parts),
     );
   },
-  contains(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).contains(b);
-  },
-  startsWith(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).startsWith(b);
-  },
-  endsWith(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).endsWith(b);
-  },
-  substr(
-    a: ExpressionInput,
-    start: number,
-    len?: number,
-  ): ExpressionNode {
-    return wrap(a).substr(start, len);
-  },
-  before(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).before(b);
-  },
-  after(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).after(b);
-  },
-  replace(
-    a: ExpressionInput,
-    pat: string,
-    rep: string,
-    flags?: string,
-  ): ExpressionNode {
-    return wrap(a).replace(pat, rep, flags);
-  },
-  ucase(a: ExpressionInput): ExpressionNode {
-    return wrap(a).ucase();
-  },
-  lcase(a: ExpressionInput): ExpressionNode {
-    return wrap(a).lcase();
-  },
-  strlen(a: ExpressionInput): ExpressionNode {
-    return wrap(a).strlen();
-  },
-  encodeForUri(a: ExpressionInput): ExpressionNode {
-    return wrap(a).encodeForUri();
-  },
-  regex(
-    a: ExpressionInput,
-    pat: string,
-    flags?: string,
-  ): ExpressionNode {
-    return wrap(a).matches(pat, flags);
-  },
 
-  // ---------------------------------------------------------------------------
-  // Date/Time
-  // ---------------------------------------------------------------------------
-
-  now(): ExpressionNode {
-    return new ExpressionNode({kind: 'function_expr', name: 'NOW', args: []});
-  },
-  year(a: ExpressionInput): ExpressionNode {
-    return wrap(a).year();
-  },
-  month(a: ExpressionInput): ExpressionNode {
-    return wrap(a).month();
-  },
-  day(a: ExpressionInput): ExpressionNode {
-    return wrap(a).day();
-  },
-  hours(a: ExpressionInput): ExpressionNode {
-    return wrap(a).hours();
-  },
-  minutes(a: ExpressionInput): ExpressionNode {
-    return wrap(a).minutes();
-  },
-  seconds(a: ExpressionInput): ExpressionNode {
-    return wrap(a).seconds();
-  },
-  timezone(a: ExpressionInput): ExpressionNode {
-    return wrap(a).timezone();
-  },
-  tz(a: ExpressionInput): ExpressionNode {
-    return wrap(a).tz();
-  },
-
-  // ---------------------------------------------------------------------------
-  // Logical
-  // ---------------------------------------------------------------------------
-
-  and(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).and(b);
-  },
-  or(a: ExpressionInput, b: ExpressionInput): ExpressionNode {
-    return wrap(a).or(b);
-  },
-  not(a: ExpressionInput): ExpressionNode {
-    return wrap(a).not();
-  },
-
-  // ---------------------------------------------------------------------------
-  // Null-handling / Conditional
-  // ---------------------------------------------------------------------------
-
+  /** SPARQL `COALESCE(...)` — the first bound/defined value among two or more. */
   firstDefined(...args: ExpressionInput[]): ExpressionNode {
     if (args.length < 2) {
       throw new Error('Expr.firstDefined() requires at least 2 arguments');
@@ -209,6 +72,8 @@ export const Expr = {
       mergedRefs(args),
     );
   },
+
+  /** SPARQL `IF(cond, then, else)`. */
   ifThen(
     cond: ExpressionInput,
     thenVal: ExpressionInput,
@@ -223,50 +88,9 @@ export const Expr = {
       mergedRefs([cond, thenVal, elseVal]),
     );
   },
-  bound(a: ExpressionInput): ExpressionNode {
-    return wrap(a).isDefined();
-  },
 
-  // ---------------------------------------------------------------------------
-  // RDF introspection
-  // ---------------------------------------------------------------------------
-
-  lang(a: ExpressionInput): ExpressionNode {
-    return wrap(a).lang();
-  },
-  datatype(a: ExpressionInput): ExpressionNode {
-    return wrap(a).datatype();
-  },
-  str(a: ExpressionInput): ExpressionNode {
-    return wrap(a).str();
-  },
-  iri(a: ExpressionInput): ExpressionNode {
-    return wrap(a).iri();
-  },
-  isIri(a: ExpressionInput): ExpressionNode {
-    return wrap(a).isIri();
-  },
-  isLiteral(a: ExpressionInput): ExpressionNode {
-    return wrap(a).isLiteral();
-  },
-  isBlank(a: ExpressionInput): ExpressionNode {
-    return wrap(a).isBlank();
-  },
-  isNumeric(a: ExpressionInput): ExpressionNode {
-    return wrap(a).isNumeric();
-  },
-
-  // ---------------------------------------------------------------------------
-  // Hash
-  // ---------------------------------------------------------------------------
-
-  md5(a: ExpressionInput): ExpressionNode {
-    return wrap(a).md5();
-  },
-  sha256(a: ExpressionInput): ExpressionNode {
-    return wrap(a).sha256();
-  },
-  sha512(a: ExpressionInput): ExpressionNode {
-    return wrap(a).sha512();
+  /** Prefix logical negation — `Expr.not(p.name.equals('Alice'))`. */
+  not(a: ExpressionInput): ExpressionNode {
+    return wrap(a).not();
   },
 } as const;
