@@ -153,7 +153,7 @@ const lowerPath = (
 ): IRExpression => lowerSelectionPathExpression(path, options);
 
 /**
- * Resolve any `{$ctx}` context references carried in a lowered expression tree —
+ * Resolve any `{@ctx}` context references carried in a lowered expression tree —
  * whether it came from a where-clause filter OR a projected (expression-select)
  * value.
  *
@@ -402,7 +402,7 @@ export const lowerSelectQuery = (
 
     if (selection.kind === 'expression_select') {
       const exprSelect = selection as DesugaredExpressionSelect;
-      // Resolve property refs AND any {$ctx} context references — a projected
+      // Resolve property refs AND any {@ctx} context references — a projected
       // expression (e.g. `select(p => ({flag: p.x.equals(getQueryContext('user'))}))`)
       // reaches the SPARQL algebra just like a where-filter, so its context refs
       // must be resolved here too, not only in lowerWhere.

@@ -718,7 +718,7 @@ const EXPRESSION_METHODS = new Set([
  */
 function toExpressionNode(qbo: QueryBuilderObject): ExpressionNode {
   // Check if this is a query context reference. We carry the context *name*
-  // (not the resolved id): it serializes as `{$ctx}` and is resolved by `lower()`.
+  // (not the resolved id): it serializes as `{@ctx}` and is resolved by `lower()`.
   const contextName = findContextName(qbo);
   if (contextName) {
     const segments = FieldSet.collectPropertySegments(qbo);
@@ -742,7 +742,7 @@ function toExpressionNode(qbo: QueryBuilderObject): ExpressionNode {
   return tracedPropertyExpression(segmentIds);
 }
 
-/** Walk up the QueryBuilderObject chain to find a query context *name* (for `{$ctx}`). */
+/** Walk up the QueryBuilderObject chain to find a query context *name* (for `{@ctx}`). */
 function findContextName(qbo: QueryBuilderObject): string | undefined {
   let current: QueryBuilderObject | undefined = qbo;
   while (current) {
@@ -905,19 +905,20 @@ export class QueryShapeSet<
           if (propertyShape) {
             return queryShapeSet.callPropertyShapeAccessor(propertyShape);
           } else if (
-            //else if a method of the original shape is called, like .forEach() or similar
+            //else if a genuine collection method of the ShapeSet is called
+            //(.forEach()/.map()/… — including symbol methods like iteration)
             originalShapeSet[key] &&
             typeof originalShapeSet[key] === 'function'
           ) {
             //then return that method and bind the original value as 'this'
             return originalShapeSet[key].bind(originalShapeSet);
-          } else if (key !== 'then' && key !== '$$typeof') {
-            console.warn(
-              'Could not find property shape for key ' +
-                key +
-                ' on shape ' +
-                valueShape?.label +
-                '. Make sure the get method exists and is decorated with @linkedProperty / @objectProperty / @literalProperty',
+          } else if (typeof key === 'string' && !INTEROP_PASSTHROUGH_KEYS.has(key)) {
+            // Same policy as the single-node proxy: an undecorated string key
+            // is a genuine misuse (it would silently return a broken path over
+            // the set → silently-wrong results). Throw. Interop/framework keys
+            // and symbols pass through.
+            throw new Error(
+              `${valueShape?.label ?? 'shape'}.${key} is accessed in a query, but it does not have a @linkedProperty decorator. Queries can only access decorated get/set methods (@objectProperty / @literalProperty).`,
             );
           }
         }
@@ -1195,7 +1196,7 @@ export class QueryShape<
   equals(otherValue: NodeReferenceValue | QShape<any> | PendingQueryContext): ExpressionNode {
     const self = toExpressionNode(this);
     // An unresolved query-context reference (`getQueryContext('user')` before it
-    // is set) carries no `.id` yet — keep it as a `{$ctx}` ref, resolved at lower.
+    // is set) carries no `.id` yet — keep it as a `{@ctx}` ref, resolved at lower.
     if (otherValue instanceof PendingQueryContext) {
       return self.eq(otherValue as any);
     }

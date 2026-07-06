@@ -147,7 +147,7 @@ export type IRReferenceExpression = {
   /** The referenced node IRI. Optional only while a `contextName` is unresolved. */
   value?: string;
   /**
-   * A query-context reference (`{$ctx}` on the wire). When set, `value` is filled
+   * A query-context reference (`{@ctx}` on the wire). When set, `value` is filled
    * by `lower()` from the live context map — resolved or thrown there, never baked
    * at build time. Absent for a plain node reference.
    */

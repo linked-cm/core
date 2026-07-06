@@ -866,4 +866,24 @@ describe('undecorated property access in a query', () => {
       Person.select((p: any) => [p.notADecoratedProperty]).toJSON(),
     ).toThrow(/does not have a @linkedProperty decorator/);
   });
+
+  test('an undecorated property across a SET-valued relation also throws (no policy hole)', () => {
+    // The set-valued proxy (p.friends…) must enforce the same rule as the
+    // single-node proxy — otherwise multi-hop paths silently produce broken
+    // results.
+    expect(() =>
+      Person.select((p: any) => [p.friends.notADecoratedProperty]).toJSON(),
+    ).toThrow(/does not have a @linkedProperty decorator/);
+  });
+
+  test('a decorated property across a set-valued relation still resolves', () => {
+    expect(() => Person.select((p: any) => [p.friends.name]).toJSON()).not.toThrow();
+  });
+
+  test('genuine ShapeSet collection methods still pass through', () => {
+    // A real set method (not an undecorated property) must not throw.
+    expect(() =>
+      Person.select((p: any) => [p.friends.size()]).toJSON(),
+    ).not.toThrow();
+  });
 });

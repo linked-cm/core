@@ -203,8 +203,19 @@ export class MutationQueryFactory extends QueryFactory {
    * — the resulting count depends on the node's current state).
    */
   protected validateAgainstShape(value, propShape: PropertyShape): void {
+    // A `null` value clears the property. Clearing a required (minCount>=1)
+    // property is a cardinality violation — the same as providing zero values —
+    // so it is rejected exactly like an empty array (both spellings of "clear
+    // it" behave identically).
+    if (value === null) {
+      if (typeof propShape.minCount === 'number' && propShape.minCount > 0) {
+        throw new Error(
+          `Property '${propShape.label || propShape.id}' requires at least ${propShape.minCount} value(s) and cannot be cleared.`,
+        );
+      }
+      return;
+    }
     if (
-      value === null ||
       value === undefined ||
       isExpressionNode(value) ||
       asContextRef(value) ||
@@ -284,7 +295,7 @@ export class MutationQueryFactory extends QueryFactory {
 
     // Query-context reference → preserve the live ref (do NOT collapse to {id},
     // which would read an unresolved `.id` as undefined). Handles both an unset
-    // PendingQueryContext and a resolved context shape; both serialize as a {$ctx}
+    // PendingQueryContext and a resolved context shape; both serialize as a {@ctx}
     // marker and are resolved — or throw — at lowering time.
     {
       const ctx = asContextRef(value);

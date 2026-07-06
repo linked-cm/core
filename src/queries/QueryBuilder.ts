@@ -41,7 +41,7 @@ export type QueryBuilderJSON = {
   fields?: FieldSetFieldJSON[];
   limit?: number;
   offset?: number;
-  /** A node id, or a `{$ctx: name}` context reference resolved at lowering. */
+  /** A node id, or a `{@ctx: name}` context reference resolved at lowering. */
   subject?: string | ContextRefJSON;
   subjects?: string[];
   /** `.one()` — unwrap a single result. */
@@ -517,7 +517,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       builder = builder.offset(json.offset) as SelectBuilder<S>;
     }
     if (json.subject) {
-      // A `{$ctx}` subject rehydrates as a pending context (preserving the name
+      // A `{@ctx}` subject rehydrates as a pending context (preserving the name
       // so it re-serializes as a context reference and resolves live).
       const subject = isContextRefJSON(json.subject)
         ? new PendingQueryContext(json.subject['@ctx'])

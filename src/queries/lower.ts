@@ -62,7 +62,7 @@ function lowerWherePath(where: WherePath) {
 /**
  * Resolve any query-context reference carried as a mutation field value. The
  * builder preserves a live `PendingQueryContext` through normalization (so it can
- * serialize as `{$ctx}`); at lowering a mutation must hit a concrete node, so the
+ * serialize as `{@ctx}`); at lowering a mutation must hit a concrete node, so the
  * context is resolved here and an unset one throws `UnresolvedContextError`.
  */
 function resolveValueContexts(val: unknown): unknown {
@@ -129,7 +129,7 @@ function lowerDelete(spec: DeleteLowerSpec): IRDeleteQuery {
     const {where, wherePatterns} = lowerWherePath(spec.wherePath!);
     return buildCanonicalDeleteWhereMutationIR({shape, where, wherePatterns});
   }
-  // Resolve any context-ref ids ({$ctx}) against the live map — a delete must hit
+  // Resolve any context-ref ids ({@ctx}) against the live map — a delete must hit
   // a concrete node, so an unresolved one throws (never a silent `{id: undefined}`).
   const resolvedIds = spec.ids!.map((id) =>
     id instanceof PendingQueryContext

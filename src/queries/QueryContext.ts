@@ -63,7 +63,7 @@ function notifyContextChange(name: string): void {
  *
  * A context appears in two runtime forms: a `PendingQueryContext` (the context was unset
  * when `getQueryContext()` was called) or a resolved `QueryShape` stamped with
- * `__queryContextName` (it was already set). Both must be treated as the same `{$ctx}`
+ * `__queryContextName` (it was already set). Both must be treated as the same `{@ctx}`
  * reference wherever a node value/id is accepted (mutation field values, delete ids), so
  * that context-bound mutations behave identically whether the context is set or unset at
  * build time — resolution always happens at lowering.
@@ -73,7 +73,8 @@ export function asContextRef(value: unknown): PendingQueryContext | undefined {
   if (!value || typeof value !== 'object') return undefined;
   // A resolved context is a QueryShape proxy wrapping a Shape stamped with
   // `__queryContextName`. Read it via `originalValue` (a known QueryShape field)
-  // so we don't trip the proxy's "undecorated property" warning; a bare Shape
+  // so we don't trip the proxy's "undecorated property" guard (it now throws);
+  // a bare Shape
   // carries the stamp directly.
   const v = value as {originalValue?: {__queryContextName?: unknown}; __queryContextName?: unknown};
   const source = v.originalValue ?? v;

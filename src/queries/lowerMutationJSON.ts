@@ -70,7 +70,7 @@ let _decodeDepth = 0;
 
 /**
  * Decode a DSL-JSON value to the normalized form the canonical-IR builders consume.
- * `currentShape` resolves computed `{path}`/S-expr; `prop` gives a nested node's shape.
+ * `currentShape` resolves computed `{@path}`/S-expr; `prop` gives a nested node's shape.
  * Depth-guarded wrapper around {@link decodeValueInner}.
  */
 function decodeValue(
@@ -191,7 +191,7 @@ export function lowerMutationJSON(
       const shape = requireShape(json.shape);
       const updates = decodeNodeData(json.data, shape);
       if (json.mode === 'for') {
-        // A `{$ctx}` target resolves against the current context map; a mutation
+        // A `{@ctx}` target resolves against the current context map; a mutation
         // must hit a concrete subject, so an unresolved context throws.
         const id = isContextRefJSON(json.targetId)
           ? resolveContextId(json.targetId['@ctx'], true)

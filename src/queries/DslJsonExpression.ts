@@ -5,8 +5,8 @@
  *
  * Two tiers:
  *  - VALUE   (`encodeValueExpr`/`decodeValueExpr`): a computed value or an
- *            operand — bare scalar, `{path}`, `{id}`, `{$ctx}`, `{date}`,
- *            `{list}`, or an S-expr array `["op", …]`.
+ *            operand — bare scalar, `{@path}`, `{@id}`, `{@ctx}`, `{@date}`,
+ *            `{@list}`, or an S-expr array `["op", …]`.
  *  - CONDITION (`encodeCondition`/`decodeCondition`): a boolean where-clause —
  *            path-keyed object (implicit equals / operator map / quantifier),
  *            `{and|or|not}`, or an S-expr array fallback.

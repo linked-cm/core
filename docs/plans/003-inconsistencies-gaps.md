@@ -182,3 +182,19 @@ The report's Tier 4/5 was one dense paragraph pointing at an unwritten "catalogu
 - **Plain-object update without a value shape** — kept throwing, but the ergonomic fix (a typed builder/`Shape` value, `update(id, {rel: Person.create({…})})`) captured as `docs/backlog/013-nested-builder-values-for-shapeless-properties.md`. Clarified that a generic `owl:Thing` value-shape does *not* solve nested-create (only references), and `.as()`-on-write is redundant with the nested-builder.
 
 Suite 1453 green / typecheck green.
+
+## Review
+
+A three-agent parallel review over everything this thread touched (G8 wire-codec, G12/G13, Tier 4/5) confirmed the **code shipped correct** — the G8 codec is encode/decode symmetric with no bugs, the Expr trim has no broken calls, the SHACL path guards are spec-correct, and `validateAgainstShape` / the `setQueryContext` throws are sound and well-tested. Full suite green (1453) at review time; `npx semantu-agents docs architecture` returns empty (no dedicated arch docs — the architectural contract is `documentation/dsl-json.md`, checked below). Seven gaps surfaced; all addressed:
+
+- **Gap 1 [HIGH] — error policy was half-applied.** The throw-on-undecorated-property flip landed on the single-node `QueryShape` proxy but **not** the set-valued `QueryShapeSet` proxy, so `p.friends.notDecorated` (any multi-hop / `where`/`some`/`every` segment) still warned-and-limped (silently-wrong results). **Fixed:** `SelectQuery.ts` — the set proxy now throws for undecorated string keys (keeping its legit collection-method passthrough) via the shared `INTEROP_PASSTHROUGH_KEYS`. Tests: set-valued undecorated throws, decorated resolves, collection methods pass through.
+- **Gap 2 [MEDIUM] — throw is a behavior change for undecorated helper methods.** Decision (with user): **keep the hard rule** ("only decorated properties in queries"). The example — a non-decorated `get fullName()` used in a callback — *never worked* anyway: the getter ran against a dummy instance and returned a garbage constant, so it was already silently-wrong. Throwing surfaces it. No code change beyond Gap 1.
+- **Gap 3 [MEDIUM] — G8 doc drift.** `dsl-json-llm-prompt.md` was fully stale (every value-tag bare → an LLM authoring from it emits rejected payloads). **Fixed:** migrated all tags to `@`-forms; also fixed two leftover `{path}` spots in `dsl-json.md`.
+- **Gap 4 [MED-LOW] — `WIRE_TAG` was 7/8 dead.** Only `.ctx` was consumed; the other seven members were never read while codecs hardcoded the literals, yet the JSDoc claimed "one marker … everywhere." Considered wiring codecs through it (rejected — the TS type unions can't consume a runtime const, so full SoT is infeasible; marginal benefit, high churn). **Fixed (Option B):** trimmed to `export const CONTEXT_REF_KEY = '@ctx'`, dead map deleted; the tag set's SoT is the `MutationValueJSON` union + `dsl-json.md`.
+- **Gap 5 [LOW] — stale `{$ctx}`/`{path}` code comments** across ~15 files → migrated to `@`-forms (`$ctx` comment refs were unambiguously wire, replaced globally; `{path}` operand-comments fixed per file). DSL-API `{id}` comments left bare (correct).
+- **Gap 6 [LOW] — test-coverage holes** → added: set-valued undecorated throw (Gap 1), nested-description validation catches an invalid value, ambiguous-`nodeKind` skip, and `null`-clears-required (Gap 7).
+- **Gap 7 [LOW] — `null` vs `[]` asymmetry.** Decision (with user): clearing a `minCount>=1` property must be rejected **both** ways. **Fixed:** `validateAgainstShape` now throws when `null` clears a required property (parity with the empty-array path).
+
+**Architecture compliance:** the DSL-JSON wire contract (`documentation/dsl-json.md` + the LLM-prompt) is the cited architectural doc; after Gap 3 both docs match the `@`-sigiled codec. No violations found. Suite 1460 green (+7 review tests) / typecheck green.
+
+**Status:** all Chapter-3 gaps and review findings resolved. Ready for wrapup (plan → report, PR).

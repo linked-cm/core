@@ -63,7 +63,7 @@ export type MutationValueJSON =
   | {'@add'?: MutationValueJSON[]; '@remove'?: string[]}
   | {'@unset': true}
   | MutationNodeDataJSON // nested-node create (bare, path-keyed)
-  | DslJsonValue; // computed expression (S-expr) / {path}
+  | DslJsonValue; // computed expression (S-expr) / {@path}
 
 /**
  * A node description in **path-keyed** form: `label → value`, plus two reserved
@@ -200,7 +200,7 @@ let _decodeDepth = 0;
 
 /**
  * Decode a DSL-JSON value back to a raw DSL value (the form `.set()` accepts).
- * `currentShape` resolves computed `{path}`/S-expr; `prop` gives a nested node's shape.
+ * `currentShape` resolves computed `{@path}`/S-expr; `prop` gives a nested node's shape.
  * Depth-guarded wrapper around {@link decodeValueToRawInner}.
  */
 function decodeValueToRaw(

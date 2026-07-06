@@ -82,7 +82,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     const resolved = resolveShape<S>(shape);
     if (ids !== undefined) {
       // Normalize any context reference (unset PendingQueryContext or a resolved
-      // context shape) to a {$ctx} marker so set/unset behave identically.
+      // context shape) to a {@ctx} marker so set/unset behave identically.
       const idsArray = (Array.isArray(ids) ? ids : [ids]).map(
         (id) => asContextRef(id) ?? id,
       );
@@ -96,7 +96,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
     assertWireVersion(json.v);
     const resolved = resolveShape(json.shape);
     if (json.mode === 'ids') {
-      // A `{$ctx}` id rehydrates as a live context ref (resolved at lower).
+      // A `{@ctx}` id rehydrates as a live context ref (resolved at lower).
       const ids: DeleteId[] = json.ids.map((id) =>
         isContextRefJSON(id) ? new PendingQueryContext(id['@ctx']) : {id},
       );
@@ -192,7 +192,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
       shape,
       mode: 'ids',
       ids: this._ids.map((id) =>
-        // An unresolved context ref travels as a `{$ctx}` marker; a concrete id
+        // An unresolved context ref travels as a `{@ctx}` marker; a concrete id
         // (string or `{id}`, incl. a resolved context shape) as a plain string.
         id instanceof PendingQueryContext
           ? encodeContextRef(id.contextName)

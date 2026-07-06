@@ -251,7 +251,7 @@ structural keys `__id` / `__shape` (below), which stay `__`-prefixed, not `@`-pr
 
 Because a mutation field is written `{ propBeingSet: value }`, the **key is the property being
 written**, so a computed value must be a **self-contained expression** with its own explicit
-receiver. Use a literal, `{path}`, or an S-expr — **not** the path-keyed condition form:
+receiver. Use a literal, `{@path}`, or an S-expr — **not** the path-keyed condition form:
 
 ```jsonc
 { "guardDogLevel": ["+", {"@path":"guardDogLevel"}, 1] }  // count = count + 1
@@ -288,7 +288,7 @@ projections, and values. A **no-arg** call rides in the path (`"fullName()"`,
 
 ```jsonc
 { "fullName()": "Alice Smith" }                          // no-arg, in the key
-{ "as": "len", "value": { "path": "name.strlen()" } }    // no-arg, as a value
+{ "as": "len", "value": { "@path": "name.strlen()" } }   // no-arg, as a value
 { "call": "distanceTo", "args": [ { "@id": "…/office" } ] }  // with args
 ```
 

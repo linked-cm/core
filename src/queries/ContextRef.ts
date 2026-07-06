@@ -21,25 +21,18 @@
 import {getQueryContext, UnresolvedContextError} from './QueryContext.js';
 
 /**
- * DSL-JSON system value-tags. These `@`-prefixed keys are the reserved
- * vocabulary for tagged *values* (dates, node refs, lists, set-mods, unset,
- * computed paths, context refs). The `@` sigil frees every user property name —
- * a property literally named `date`/`id`/`path`/… no longer collides with a tag.
- * (Structural node-data keys stay `__id`/`__shape`.)
+ * The reserved key that tags a **context reference** in DSL-JSON (`{@ctx: name}`).
+ *
+ * It is one of the DSL-JSON system value-tags — the `@`-sigiled vocabulary for
+ * tagged *values* (`@id`, `@date`, `@list`, `@add`/`@remove`, `@unset`, `@path`,
+ * `@ctx`). The `@` sigil frees every user property name: a property literally
+ * named `date`/`id`/`path`/… no longer collides with a tag. (Structural
+ * node-data keys stay `__id`/`__shape`.) The full tag set is defined by the
+ * `MutationValueJSON` union (MutationSerialization.ts) + the DSL-JSON codecs and
+ * documented in `documentation/dsl-json.md`; only `@ctx` needs a named constant
+ * because it is shared across the select/mutation builders and the IR resolver.
  */
-export const WIRE_TAG = {
-  id: '@id',
-  date: '@date',
-  list: '@list',
-  add: '@add',
-  remove: '@remove',
-  unset: '@unset',
-  path: '@path',
-  ctx: '@ctx',
-} as const;
-
-/** The reserved key that tags a context reference in DSL-JSON. */
-export const CONTEXT_REF_KEY = WIRE_TAG.ctx;
+export const CONTEXT_REF_KEY = '@ctx';
 
 /** The wire shape of a context reference: `{@ctx: "<contextName>"}`. */
 export interface ContextRefJSON {

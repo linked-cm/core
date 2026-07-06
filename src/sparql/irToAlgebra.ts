@@ -220,7 +220,7 @@ function contextAliasKey(contextIri: string): string {
 /**
  * Defense-in-depth: a `reference_expr`/`context_property_expr` must arrive here with its
  * IRI already resolved (lowering's `resolveContextRefs` fills it from `contextName`). If it
- * didn't — an unresolved `{$ctx}` reaching the algebra through some path that bypassed
+ * didn't — an unresolved `{@ctx}` reaching the algebra through some path that bypassed
  * resolution — fail with a clear `UnresolvedContextError` instead of an opaque
  * `undefined.substring` crash deeper in URI formatting.
  */

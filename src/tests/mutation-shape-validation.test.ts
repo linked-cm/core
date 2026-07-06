@@ -7,7 +7,7 @@
  */
 import {describe, expect, test} from '@jest/globals';
 import {linkedShape} from '../package';
-import {literalProperty} from '../shapes/SHACL';
+import {literalProperty, linkedProperty} from '../shapes/SHACL';
 import {Shape} from '../shapes/Shape';
 import {NodeReferenceValue} from '../queries/QueryFactory';
 import {Person} from '../test-helpers/query-fixtures';
@@ -23,6 +23,13 @@ class Team extends Shape {
   @literalProperty({path: prop('members'), minCount: 2})
   get members(): string[] {
     return [];
+  }
+
+  // A property with no default nodeKind (linkedProperty leaves it ambiguous),
+  // so the literal-vs-relation kind check is skipped for it.
+  @linkedProperty({path: prop('anything')})
+  get anything(): unknown {
+    return null;
   }
 }
 
@@ -82,6 +89,36 @@ describe('mutation value validation — node kind', () => {
       Person.update({friends: {add: [{id: 'x:3'}], remove: [{id: 'x:p2'}]}} as any)
         .for({id: 'x:p1'})
         .toJSON(),
+    ).not.toThrow();
+  });
+
+  test('validation reaches NESTED node descriptions, not just the top level', () => {
+    // bestFriend is a nested create; its own `name` (a literal) given a {id}
+    // node ref must throw — proving validation recurses.
+    expect(() =>
+      Person.create({name: 'A', bestFriend: {name: {id: 'x:1'}}} as any).toJSON(),
+    ).toThrow(/literal property/);
+  });
+
+  test('an ambiguous node-kind property skips the kind check (accepts both)', () => {
+    expect(() => Team.create({anything: 'a-scalar'} as any).toJSON()).not.toThrow();
+    expect(() => Team.create({anything: {id: 'x:node'}} as any).toJSON()).not.toThrow();
+  });
+});
+
+describe('mutation value validation — clearing a required property', () => {
+  test('clearing a minCount>=1 property with null throws (parity with [])', () => {
+    expect(() => Team.create({members: null} as any).toJSON()).toThrow(
+      /cannot be cleared|at least 2/,
+    );
+    expect(() =>
+      Team.update({members: null} as any).for({id: 'x:t1'}).toJSON(),
+    ).toThrow(/cannot be cleared|at least 2/);
+  });
+
+  test('clearing a non-required property with null is allowed', () => {
+    expect(() =>
+      Person.update({hobby: null} as any).for({id: 'x:p1'}).toJSON(),
     ).not.toThrow();
   });
 });
