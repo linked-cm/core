@@ -13,7 +13,11 @@
  */
 import {execSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {resolve} from 'node:path';
+import {dirname, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+/** This module's directory — ESM-safe (`__dirname` doesn't exist under ESM). */
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 export const FUSEKI_BASE_URL = process.env.FUSEKI_BASE_URL || 'http://localhost:3939';
 const FUSEKI_ADMIN_PASSWORD = process.env.FUSEKI_ADMIN_PASSWORD || 'admin';
@@ -48,14 +52,12 @@ export async function isFusekiAvailable(): Promise<boolean> {
  * Works from both source (src/) and compiled (lib/esm/) paths.
  */
 function findComposeFile(): string | null {
-  // __dirname works in both CJS and ts-jest; for ESM builds the lincd
-  // toolchain injects a __dirname shim.
   const candidates = [
-    resolve(__dirname, '../tests/docker-compose.test.yml'),
-    resolve(__dirname, '../../src/tests/docker-compose.test.yml'),
-    // Built helpers live under lib/{cjs,esm}/test-helpers, so we need to
+    resolve(HERE, '../tests/docker-compose.test.yml'),
+    resolve(HERE, '../../src/tests/docker-compose.test.yml'),
+    // Built helpers live under lib/esm/test-helpers, so we need to
     // climb back to the package root before looking in src/tests.
-    resolve(__dirname, '../../../src/tests/docker-compose.test.yml'),
+    resolve(HERE, '../../../src/tests/docker-compose.test.yml'),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
