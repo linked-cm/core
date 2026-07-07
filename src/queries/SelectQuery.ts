@@ -587,10 +587,26 @@ export class QueryBuilderObject<
       }
     }
 
-    //if an object is expected and no value shape is set, then warn
-    throw Error(
-      `No shape set for objectProperty ${property.parentNodeShape.label}.${property.label}`,
-    );
+    // An object-valued property with no value shape and a non-Literal node kind
+    // (e.g. `sh:path` — a raw predicate IRI, or any bare IRI reference). Project
+    // it as a generic node reference via the base `Shape`, so the query returns
+    // the value's IRI `{id}` — identical to how a *shaped* object property
+    // resolves (cf. `sh:targetClass`, registered `shape: Shape`). This lets the
+    // DSL read raw IRI predicates back out of a store (SHACL shape catalog etc.).
+    //
+    // NOTE: a polymorphic value (an `rdf:List` sequence path or a `PathNode`
+    // operator) resolves to its *node reference* here, not its structure. Full
+    // structural projection ("if List → members, if PathNode → operands") is the
+    // `byShape` polymorphic-projection follow-up — see
+    // packages/core/docs/backlog/031-byshape-polymorphic-projection.md.
+    // `Shape` is `abstract` at the type level but instantiable at runtime — the
+    // `valueShape` branch above effectively does the same via `getShapeClass`
+    // (e.g. for `sh:targetClass`, registered `shape: Shape`). Cast past the
+    // abstract check to build the generic node-reference projection.
+    const genericShape = new (Shape as unknown as {new (): Shape})();
+    return singleValue
+      ? QueryShape.create(genericShape, property, subject)
+      : QueryShapeSet.create(new ShapeSet([genericShape]), property, subject);
   }
 
   getOriginalValue() {
