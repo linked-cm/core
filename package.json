@@ -1,6 +1,6 @@
 {
   "name": "@_linked/core",
-  "version": "2.13.0",
+  "version": "2.13.1",
   "license": "MIT",
   "linkedPackage": true,
   "type": "module",
@@ -20,17 +20,14 @@
   "exports": {
     ".": {
       "types": "./lib/esm/index.d.ts",
-      "development": "./src/index.ts",
       "import": "./lib/esm/index.js"
     },
     "./sparql": {
       "types": "./lib/esm/sparql/index.d.ts",
-      "development": "./src/sparql/index.ts",
       "import": "./lib/esm/sparql/index.js"
     },
     "./*": {
       "types": "./lib/esm/*.d.ts",
-      "development": "./src/*.ts",
       "import": "./lib/esm/*.js"
     }
   },
