@@ -331,6 +331,16 @@ predefined id (and `__shape` records a concrete subclass — see mutation node d
 `mode` is `"for"` (single target — `targetId` is an id or `{@ctx}`), `"forAll"` (every instance),
 or `"where"` (a `where` condition, same as select's).
 
+**`__id` in `update` — only for *new* nodes.** Use `__id` to fix the id of a node being
+**created**: in a `create` `data`, or when **adding** a node to a relation
+(`{ "someRel": { "@add": { "__id": "…", … } } }` — the added node self-identifies). Do **not**
+put `__id` on the value of a plain single-valued property *replace*
+(`update({ image: { __id, contentUrl } })`): it re-targets that *same* node and **adds** another
+value instead of replacing (violating `sh:maxCount 1`, so reads become ambiguous). For a replace,
+**omit `__id`** — the engine drops the old edge and writes a fresh node, so the value replaces
+cleanly. (For a `contains`/owned relation the old node's own triples are currently left behind on
+replace — see core backlog 032; use `delete()` or `{ "@remove": … }` for full cleanup.)
+
 ### Delete
 
 ```jsonc
