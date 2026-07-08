@@ -1791,10 +1791,11 @@ function processUpdateFields(
   const insertPatterns: SparqlTriple[] = [];
   const oldValueTriples: SparqlTriple[] = [];
   const extends_: Array<{variable: string; expression: SparqlExpression}> = [];
-  // Owned-subtree cascade: replacing a `contains` property must also
-  // delete the old object's owned subtree, not just the one-hop edge.
+  // Owned cleanup on `contains` replace/remove: dropping a `contains` edge must delete
+  // the old object itself (its own triples) AND its owned subtree, not just unlink the
+  // one-hop edge — otherwise the old node orphans (backlog 032).
   const {containsPreds: updContainsPreds} = collectContainment();
-  const containsOldVars: string[] = [];
+  const containsOldVars: Array<{oldVar: string; propertyTerm: SparqlTerm}> = [];
   const cascadeOptionals: SparqlAlgebraNode[] = [];
 
   for (const field of data.fields) {
@@ -1820,8 +1821,17 @@ function processUpdateFields(
           const removeTerm = iriTerm((removeItem as NodeReferenceValue).id);
           deletePatterns.push(tripleOf(subjectTerm, propertyTerm, removeTerm));
           oldValueTriples.push(tripleOf(subjectTerm, propertyTerm, removeTerm));
-          // For a `contains` set, removing a value also removes its owned subtree.
+          // For a `contains` set, removing a value deletes the removed node itself
+          // (its own triples) and its owned subtree — exclusive ownership via the edge.
           if (isContainsField) {
+            const self = buildOwnedSelfDelete(
+              subjectTerm,
+              propertyTerm,
+              removeTerm,
+              `ucr_${suffix}_${ri}_`,
+            );
+            deletePatterns.push(...self.deletePatterns);
+            cascadeOptionals.push(...self.whereOptionals);
             const cascade = buildOwnedCascade(removeTerm, `ucr_${suffix}_${ri}_`);
             deletePatterns.push(...cascade.deletePatterns);
             cascadeOptionals.push(...cascade.whereOptionals);
@@ -1850,7 +1860,7 @@ function processUpdateFields(
     // Non-set-modification replace of a `contains` property: cascade the old value's
     // subtree (every branch below binds `old_${suffix}` in the WHERE).
     if (isContainsField) {
-      containsOldVars.push(`old_${suffix}`);
+      containsOldVars.push({oldVar: `old_${suffix}`, propertyTerm});
     }
 
     // Unset (undefined/null) — delete only
@@ -1948,9 +1958,14 @@ function processUpdateFields(
     }
   }
 
-  // Append cascade for each replaced `contains` property's old value.
-  containsOldVars.forEach((oldVar, n) => {
-    const cascade = buildOwnedCascade(varTerm(oldVar), `uc${n}_`);
+  // For each replaced `contains` property: delete the old value's own triples
+  // (exclusive ownership via the edge — backlog 032) then cascade any owned descendants.
+  containsOldVars.forEach(({oldVar, propertyTerm}, n) => {
+    const oldTerm = varTerm(oldVar);
+    const self = buildOwnedSelfDelete(subjectTerm, propertyTerm, oldTerm, `uc${n}_`);
+    deletePatterns.push(...self.deletePatterns);
+    cascadeOptionals.push(...self.whereOptionals);
+    const cascade = buildOwnedCascade(oldTerm, `uc${n}_`);
     deletePatterns.push(...cascade.deletePatterns);
     cascadeOptionals.push(...cascade.whereOptionals);
   });
@@ -2173,6 +2188,39 @@ export function buildOwnedCascade(
     });
   });
   return {deletePatterns, whereOptionals};
+}
+
+/**
+ * Build DELETE + WHERE OPTIONAL that removes the *old node's own* one-hop triples when a
+ * `contains` edge is replaced, unset, or set-removed. A `contains` edge asserts exclusive
+ * ownership, so overwriting it must delete the previously owned child fully — not merely
+ * unlink it — or the child orphans (backlog 032). This is `contains`-driven and deliberately
+ * does NOT require the child shape to be `dependent`: ownership via the edge is sufficient.
+ * Owned descendants *below* the old node are cascaded separately by `buildOwnedCascade`.
+ *
+ * The owning edge `<subject> <prop> ?old` is re-asserted INSIDE the WHERE group so `?old`
+ * is bound there: when no old value exists the group matches nothing and the DELETE is a
+ * no-op, rather than an unbound `?old` matching (and deleting) the whole graph. When
+ * `oldTerm` is a concrete IRI (set-remove), the guard just confirms the link still holds.
+ */
+export function buildOwnedSelfDelete(
+  subjectTerm: SparqlTerm,
+  propertyTerm: SparqlTerm,
+  oldTerm: SparqlTerm,
+  varPrefix: string,
+): {deletePatterns: SparqlTriple[]; whereOptionals: SparqlAlgebraNode[]} {
+  const p = varTerm(`${varPrefix}sp`);
+  const o = varTerm(`${varPrefix}so`);
+  const wildcard = tripleOf(oldTerm, p, o);
+  return {
+    deletePatterns: [wildcard],
+    whereOptionals: [
+      {
+        type: 'bgp',
+        triples: [tripleOf(subjectTerm, propertyTerm, oldTerm), wildcard],
+      },
+    ],
+  };
 }
 
 /**
