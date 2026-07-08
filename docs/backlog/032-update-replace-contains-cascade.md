@@ -39,6 +39,22 @@ subtree, and set-modification `update({prop: {remove: [x]}})` cascades `x`
 (`buildOwnedCascade` on the removed item) — but a plain replace does not delete
 the immediate old value.
 
+## Design decision — drive this off `contains`, not `dependent`
+The fix should be **`contains`-driven**, and `ImageObject` should NOT need to be marked
+`dependent`. Rationale:
+- Marking `ImageObject` `dependent` wouldn't fix it anyway: `buildOwnedCascade(old_value)`
+  roots at the *old value* and follows `contains` edges **from** it (its descendants), so the
+  immediate replaced node is never deleted regardless of its `dependent` flag.
+- `contains` on the property already asserts **exclusive ownership** of the child via that edge
+  — that's the correct, sufficient signal for "when this edge is replaced/removed, delete the old
+  child." Requiring `dependent` too is redundant and conflates two concepts.
+- `dependent` (shape-level "has no independent existence") is a *different* mechanism — for
+  reference-counted GC of a shape that may be reached many ways. Keep it separate; don't gate
+  the `contains` replace-cascade on it.
+
+So: leave `Thing.image` as `contains: true` (correct), do NOT add `dependent` to `ImageObject`,
+and fix the replace path below.
+
 ## Fix options
 1. **Replace-path delete of the old node's own triples.** In the replace branches,
    when `isContainsField`, also emit `DELETE { ?old ?p ?o } WHERE { OPTIONAL { <s> <prop> ?old . ?old ?p ?o } }`
