@@ -154,6 +154,14 @@ export abstract class Shape {
    * ```typescript
    * await Person.update({name: 'Alice'}).for({id: '...'});
    * ```
+   *
+   * **`__id` is for *new* nodes only** — a fixed id for a nested node being
+   * created (here, when **adding** to a relation: `update({friends: {add: {__id, name}}})`).
+   * Do NOT put `__id` on a plain single-valued *replace* (`update({image: {__id, contentUrl}})`):
+   * it re-targets that same node and *adds* another value instead of replacing
+   * (breaks `sh:maxCount 1`). For a replace, **omit `__id`** — the engine drops the
+   * old edge and writes a fresh node, so the value replaces cleanly. (Use `Shape.create`
+   * for `__id` at creation; use `.delete()` or `{remove: […]}` for full owned-node cleanup.)
    */
   static update<S extends Shape>(
     this: ShapeConstructor<S>,

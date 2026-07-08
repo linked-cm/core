@@ -3,13 +3,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import {describe, expect, test} from '@jest/globals';
+import {describe, expect, test, beforeAll, afterAll, beforeEach} from '@jest/globals';
+import {
+  ensureFuseki,
+  createTestDataset,
+  executeSparqlQuery,
+  executeSparqlUpdate,
+  clearAllData,
+} from '../test-helpers/fuseki-test-store';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
 import {objectProperty} from '../shapes/SHACL';
 import {DeleteBuilder} from '../queries/DeleteBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
-import {deleteToSparql, updateToSparql, buildOwnedCascade} from '../sparql/irToAlgebra';
+import {
+  deleteToSparql,
+  updateToSparql,
+  buildOwnedCascade,
+  buildOwnedSelfDelete,
+} from '../sparql/irToAlgebra';
 import type {IRDeleteMutation, IRUpdateMutation} from '../queries/IntermediateRepresentation';
 // Ensure List/PathNode (dependent shapes) are registered so the cascade has targets.
 import '../shapes/List';
@@ -46,6 +58,31 @@ class TBag extends Shape {
   static targetClass = ex('TBag');
   @objectProperty({path: ex('items'), shape: TCell, contains: true})
   get items(): TCell[] {
+    return [];
+  }
+}
+
+// A `contains` child that is deliberately NOT `dependent` — mirrors `schema:ImageObject`
+// owned via `Thing.image` (backlog 032). The replace/remove self-delete must fire on the
+// `contains` edge alone, without the child shape being marked `dependent`.
+@linkedShape
+class TPlainCell extends Shape {
+  static targetClass = ex('TPlainCell');
+  @objectProperty({path: ex('label'), maxCount: 1})
+  get label(): string {
+    return null;
+  }
+}
+
+@linkedShape
+class TCard extends Shape {
+  static targetClass = ex('TCard');
+  @objectProperty({path: ex('holds'), shape: TPlainCell, maxCount: 1, contains: true})
+  get holds(): TPlainCell {
+    return null;
+  }
+  @objectProperty({path: ex('cells'), shape: TPlainCell, contains: true})
+  get cells(): TPlainCell[] {
     return [];
   }
 }
@@ -106,6 +143,70 @@ describe('owned-subtree cascade', () => {
     expect(sparql).toContain('http://example.org/c#TCell');
   });
 
+  // --- backlog 032: replace/remove of a `contains` edge deletes the old node itself,
+  // even when the owned child shape is NOT `dependent` (contains = exclusive ownership). ---
+
+  test('replace of a non-dependent contains child deletes the old node\'s own triples', () => {
+    const sparql = updateToSparql(
+      lower(UpdateBuilder.from(TCard)
+        .for('http://example.org/c#card1')
+        .set({holds: {id: 'http://example.org/c#newplain'}})
+        ) as IRUpdateMutation,
+    );
+    const [deleteBlock] = sparql.split('INSERT');
+    // DELETE wildcards the old node's own one-hop triples (?old_holds ?p ?o).
+    expect(deleteBlock).toMatch(/\?old_holds \?\w+ \?\w+ \./);
+    // Safety: the owning edge is re-asserted INSIDE the self-delete WHERE group, so an
+    // absent old value is a no-op (never an unbound ?old matching the whole graph).
+    expect(sparql).toMatch(
+      /#holds>\s+\?old_holds\s*\.\s*\?old_holds\s+\?\w+\s+\?\w+\s*\./,
+    );
+  });
+
+  test('buildOwnedSelfDelete: one-hop wildcard delete with edge-bound WHERE group', () => {
+    const subject = {kind: 'iri', value: 'http://example.org/c#card1'} as const;
+    const prop = {kind: 'iri', value: 'http://example.org/c#holds'} as const;
+    const old = {kind: 'variable', name: 'old_holds'} as const;
+    const {deletePatterns, whereOptionals} = buildOwnedSelfDelete(
+      subject as any,
+      prop as any,
+      old as any,
+      'z_',
+    );
+    // Exactly one delete pattern: the old node's own triples.
+    expect(deletePatterns).toHaveLength(1);
+    expect(deletePatterns[0].subject).toEqual(old);
+    // Exactly one WHERE group holding BOTH the owning edge (binds ?old) and the wildcard.
+    expect(whereOptionals).toHaveLength(1);
+    const triples = (whereOptionals[0] as any).triples;
+    expect(triples).toHaveLength(2);
+    // First triple is the edge <subject> <prop> ?old — required to bind ?old in-group.
+    expect(triples[0].subject).toEqual(subject);
+    expect(triples[0].predicate).toEqual(prop);
+    expect(triples[0].object).toEqual(old);
+    // Second triple wildcards the old node; its subject is ?old, matching the delete pattern.
+    expect(triples[1].subject).toEqual(old);
+    expect(triples[1]).toEqual(deletePatterns[0]);
+  });
+
+  test('set-remove of a non-dependent contains child deletes the removed node\'s own triples', () => {
+    const sparql = updateToSparql(
+      lower(UpdateBuilder.from(TCard)
+        .for('http://example.org/c#card1')
+        .set({cells: {remove: [{id: 'http://example.org/c#oldplain'}]}} as any)
+        ) as IRUpdateMutation,
+    );
+    const [deleteBlock] = sparql.split('INSERT');
+    // The removed IRI's own triples are wildcard-deleted (not just the edge unlinked).
+    expect(deleteBlock).toMatch(
+      /<http:\/\/example\.org\/c#oldplain> \?\w+ \?\w+ \./,
+    );
+    // And the ownership link is confirmed in the WHERE before wiping the node.
+    expect(sparql).toMatch(
+      /#cells>\s+<http:\/\/example\.org\/c#oldplain>\s*\.\s*<http:\/\/example\.org\/c#oldplain>\s+\?\w+\s+\?\w+/,
+    );
+  });
+
   test('update replacing a contains property cascades the old value subtree', () => {
     const sparql = updateToSparql(
       lower(UpdateBuilder.from(TBox)
@@ -117,5 +218,79 @@ describe('owned-subtree cascade', () => {
     expect(sparql).toContain('owns');
     expect(sparql).toMatch(/\)\+ /);
     expect(sparql).toContain('http://example.org/c#TCell');
+  });
+});
+
+// Live end-to-end reproduction of backlog 032: replacing a `contains`-owned node whose
+// shape is NOT `dependent` must leave no orphan behind. Skips gracefully if Fuseki is down.
+describe('owned-subtree cascade — live Fuseki (backlog 032 orphan repro)', () => {
+  const C = 'http://example.org/c#';
+  const iri = (n: string) => `<${C}${n}>`;
+  const RDF = 'PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n';
+  let fusekiAvailable = false;
+
+  const countTriples = async (subject: string): Promise<number> => {
+    const res = await executeSparqlQuery(
+      `SELECT (COUNT(*) AS ?c) WHERE { ${iri(subject)} ?p ?o }`,
+    );
+    return Number(res.results.bindings[0]?.c?.value ?? 0);
+  };
+
+  const materializeCell = (id: string, label: string) =>
+    `${RDF}INSERT DATA { ${iri(id)} rdf:type ${iri('TPlainCell')} ; ${iri('label')} "${label}" . }`;
+
+  const replaceHolds = (target: string) =>
+    updateToSparql(
+      lower(UpdateBuilder.from(TCard).for(`${C}card1`).set({holds: {id: `${C}${target}`}})) as IRUpdateMutation,
+    );
+
+  beforeAll(async () => {
+    fusekiAvailable = await ensureFuseki();
+    if (fusekiAvailable) await createTestDataset();
+  });
+  afterAll(async () => {
+    if (fusekiAvailable) await clearAllData();
+  });
+  beforeEach(async () => {
+    if (fusekiAvailable) await clearAllData();
+  });
+
+  test('replacing a contains-owned node twice accumulates zero orphans', async () => {
+    if (!fusekiAvailable) return;
+
+    // Initial: card1 --holds--> plain1 (2 own triples: type + label).
+    await executeSparqlUpdate(
+      `${RDF}INSERT DATA { ${iri('card1')} rdf:type ${iri('TCard')} ; ${iri('holds')} ${iri('plain1')} . }`,
+    );
+    await executeSparqlUpdate(materializeCell('plain1', 'a'));
+    expect(await countTriples('plain1')).toBe(2);
+
+    // Replace #1: holds → plain2. The generated update removes plain1's own triples;
+    // plain2 is materialized separately (simulating a nested create on the new value).
+    await executeSparqlUpdate(replaceHolds('plain2'));
+    await executeSparqlUpdate(materializeCell('plain2', 'b'));
+    expect(await countTriples('plain1')).toBe(0); // orphan removed (was 2 before the fix)
+    expect(await countTriples('plain2')).toBe(2);
+
+    // Replace #2: holds → plain3. plain2 must now be fully removed too.
+    await executeSparqlUpdate(replaceHolds('plain3'));
+    await executeSparqlUpdate(materializeCell('plain3', 'c'));
+    expect(await countTriples('plain2')).toBe(0);
+    expect(await countTriples('plain3')).toBe(2);
+
+    // Read-correctness: the current link resolves to plain3.
+    const linked = await executeSparqlQuery(
+      `SELECT ?cell WHERE { ${iri('card1')} ${iri('holds')} ?cell }`,
+    );
+    expect(linked.results.bindings.map((b: any) => b.cell.value)).toEqual([`${C}plain3`]);
+
+    // No orphan TPlainCell nodes remain in the graph (only the currently-held one).
+    const orphans = await executeSparqlQuery(
+      `${RDF}SELECT (COUNT(DISTINCT ?cell) AS ?c) WHERE {
+        ?cell rdf:type ${iri('TPlainCell')} .
+        FILTER NOT EXISTS { ?card ${iri('holds')} ?cell }
+      }`,
+    );
+    expect(Number(orphans.results.bindings[0]?.c?.value ?? 0)).toBe(0);
   });
 });
