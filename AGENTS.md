@@ -13,6 +13,7 @@ Use this folder structure:
 - `docs/ideas` — brainstorming and exploration notes
 - `docs/plans` — architecture and implementation planning docs
 - `docs/reports` — implementation status, deviations, and wrap-up reports
+- `docs/architecture` — durable architecture/process references (e.g. [publishing](docs/architecture/publishing.md) — the release/npm-publish flow; **run only with explicit user consent**)
 - `docs/agents/skills` — workflow and mode skill definitions
 
 For `docs/ideas`, `docs/plans`, and `docs/reports`: files are numbered with a 3-digit prefix for ordering within each folder. Names should be explicit about contents (lowercase-dash format). Each file starts with YAML frontmatter:
