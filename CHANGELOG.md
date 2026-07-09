@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.14.3
+
+### Patch Changes
+
+- [#169](https://github.com/linked-cm/core/pull/169) [`806dbec`](https://github.com/linked-cm/core/commit/806dbec8aab355a636dc41dc91fa7ef8b703c5bc) Thanks [@flyon](https://github.com/flyon)! - docs: surface the owned-properties cleanup in the README overview — the "Full CRUD Operations" feature bullet now notes automatic cleanup of owned (`contains`) values on replace/remove/delete and links to the "Owned properties (`contains` / `dependent`)" section.
+
 ## 2.14.2
 
 ### Patch Changes
