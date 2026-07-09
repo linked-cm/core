@@ -236,6 +236,48 @@ export class Person extends Shape {
 }
 ```
 
+### Owned properties (`contains` / `dependent`)
+
+By default an object property is a plain *reference*: the two nodes exist independently, and
+removing the link leaves the referenced node untouched. Two optional flags let you model
+**composition** (ownership) instead, so the framework cleans owned nodes up automatically.
+
+**`contains: true` on an object property** — the edge asserts *exclusive ownership* of the
+value. Whenever that edge goes away, the owned node is deleted with it:
+
+- `parent.delete()` deletes the owned child (and its owned sub-tree).
+- `update({ownedProp: newValue})` **replaces** the owned node — the old one is deleted, not
+  orphaned.
+- `update({ownedProp: {remove: [x]}})` deletes `x` itself, not just the link.
+
+```typescript
+@linkedShape
+export class Person extends Shape {
+  static targetClass = ex.Person;
+
+  // Person exclusively owns its avatar image. Replacing or clearing `avatar`,
+  // or deleting the Person, deletes the old ImageObject too.
+  @objectProperty({path: ex.avatar, shape: ImageObject, maxCount: 1, contains: true})
+  declare avatar: ImageObject;
+}
+```
+
+**`dependent: true` on a shape** — marks the shape's *instances* as having no independent
+existence, so they are cascade-deleted when reached through a `contains` edge from a parent
+being deleted. Use it for structural nodes that are only ever owned (e.g. list cells, path
+nodes). It is **not** required for the replace/remove cleanup above — a `contains` edge alone
+is sufficient for the immediately-owned node; `dependent` extends the cascade to owned
+*descendants* several hops deep.
+
+```typescript
+@linkedShape({dependent: true})
+export class ListCell extends Shape { /* ... */ }
+```
+
+> Rule of thumb: put `contains` on the **property** that owns the value; put `dependent` on the
+> **shape** whose instances never stand alone. They are separate mechanisms — `contains` decides
+> *what to follow*, `dependent` decides *what may be deleted when reached*.
+
 ## Queries: Create, Select, Update, Delete
 
 Queries are expressed with the same Shape classes and compile to a query object that a store executes.
