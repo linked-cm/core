@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.14.2
+
+### Patch Changes
+
+- [#164](https://github.com/linked-cm/core/pull/164) [`17bfb35`](https://github.com/linked-cm/core/commit/17bfb35049aff5e3482ea54cbcc074639476adbe) Thanks [@flyon](https://github.com/flyon)! - docs: document **owned properties** in the README — a new "Owned properties (`contains` / `dependent`)" section under Shapes explaining exclusive-ownership object properties (`contains: true`) and the automatic cascade cleanup on update-replace, set-remove, and parent-delete, and how the property-level `contains` flag differs from the shape-level `dependent` flag. No code change.
+
 ## 2.14.1
 
 ### Patch Changes
