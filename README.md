@@ -11,7 +11,7 @@ Linked gives you a schema-parameterized query language and SHACL-driven Shape cl
 - **DSL-JSON, the standard wire format**: Every query — select, create, update, delete — serializes to a compact, lossless JSON structure with `query.toJSON()` and rehydrates with `fromJSON(json)`. This is the canonical interchange format for Linked queries: send it over HTTP, cache it, queue it, or implement it in another language. See **[DSL-JSON](./documentation/dsl-json.md)**.
 - **Dynamic Query Building**: Build queries programmatically with `SelectBuilder` (and `Create`/`Update`/`DeleteBuilder`), compose field selections with `FieldSet` — for CMS dashboards, dynamic forms, and API-driven query construction.
 - **Shape Classes (SHACL)**: TypeScript classes that generate SHACL shape metadata.
-- **Full CRUD Operations**: Query, create, update, and delete data using the same Shape-based API — including expression-based updates, conditional mutations, and bulk operations.
+- **Full CRUD Operations**: Query, create, update, and delete data using the same Shape-based API — including expression-based updates, conditional mutations, bulk operations, and automatic cleanup of owned (`contains`) values on replace/remove/delete (see [Owned properties](#owned-properties-contains--dependent)).
 - **Dataset Routing**: `LinkedStorage` routes query objects (by their target shape) to your configured dataset(s) that implement `IDataset`.
 - **Automatic Data Validation**: SHACL shapes can be synced to your store for schema-level validation, and enforced at runtime by stores that support it.
 

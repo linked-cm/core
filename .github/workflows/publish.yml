@@ -58,25 +58,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      # When changesets opened/updated the version PR (rather than publishing), enable
-      # auto-merge on it so the release ships without a manual click. Uses the App token so
-      # the merge's push to `main` re-triggers this workflow, which — now that no changesets
-      # remain — runs `changeset publish`. The App is on `main`'s review-bypass list, so it
-      # merges past the required approval; the required "Build & Test" check (the always-green
-      # ci-gate on version PRs) still gates auto-merge.
-      - name: Enable auto-merge on the version PR
+      # When changesets opened/updated the version PR (rather than publishing), merge it so the
+      # release ships without a manual click. The App token is used so the merge's push to `main`
+      # re-triggers this workflow, which — now that no changesets remain — runs `changeset publish`.
+      #
+      # NB: we DIRECT-merge (not `--auto`). The App is on `main`'s review-bypass list, which lets
+      # it merge past the required approval — but that bypass is only honored for a *direct* merge;
+      # GitHub's auto-merge queue ignores it and would wait forever on REVIEW_REQUIRED. The required
+      # "Build & Test" status check is NOT bypassable, so we retry until the ci-gate goes green.
+      - name: Merge the version PR to publish
         if: steps.changesets.outputs.hasChangesets == 'true' && steps.changesets.outputs.published != 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           pr=$(gh pr list --base main --head changeset-release/main --state open --json number --jq '.[0].number // empty')
-          if [ -n "$pr" ]; then
-            gh pr merge "$pr" --auto --merge \
-              && echo "Auto-merge enabled on version PR #$pr" \
-              || echo "Could not enable auto-merge on version PR #$pr — merge manually."
-          else
-            echo "No open version PR found (nothing to auto-merge)."
-          fi
+          if [ -z "$pr" ]; then echo "No open version PR (nothing to merge)."; exit 0; fi
+          for i in $(seq 1 40); do
+            if gh pr merge "$pr" --merge 2>/tmp/merge_err; then
+              echo "Merged version PR #$pr on attempt $i — publish will run on the resulting push to main."
+              exit 0
+            fi
+            echo "Attempt $i/40: version PR #$pr not mergeable yet ($(tr -d '\n' < /tmp/merge_err)); waiting for the Build & Test gate…"
+            sleep 15
+          done
+          echo "::warning::Version PR #$pr not merged after retries — merge it manually to publish."
 
   backmerge-to-dev:
     # Full back-merge of main into dev after a release. Unlike a version-only sync, this also
