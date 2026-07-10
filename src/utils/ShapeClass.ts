@@ -43,7 +43,34 @@ export function getShapeClass(
   }
   // SAFETY: The map stores `typeof Shape` (abstract), but registered shapes are always
   // concrete subclasses with a constructor and static .shape — i.e. ShapeConstructor.
-  return nodeShapeToShapeClass.get(id) as unknown as ShapeConstructor | undefined;
+  let found = nodeShapeToShapeClass.get(id);
+  if (!found) {
+    // Resilience to bundler-DUPLICATED shape classes. Shape URIs derive from
+    // `constructor.name` (getNodeShapeUri). A bundler that emits >1 copy of a
+    // package (e.g. Vite's dep-optimizer splitting per-subpath chunks, each
+    // inlining `@_linked/core`) renames the duplicates — `Person`→`Person2`/`3`,
+    // `BackendAPIStore`→`2`/`3` — to avoid a JS name collision. The renaming is
+    // NON-DETERMINISTIC and INDEPENDENT per runtime, so a URI serialized by one
+    // runtime (browser bundle) can carry a different suffix than this runtime's
+    // registration (Node backend) — an exact-string lookup then misses the SAME
+    // logical shape. `resolve.dedupe` (cli vite-config) reduces the duplication but
+    // can't reliably eliminate it, so we resolve by the suffix-stripped base:
+    // exact base first, else ANY registered key with the same base. Only runs on a
+    // miss, so a genuinely-registered `Foo3` still resolves exactly and never hits this.
+    const base = id.replace(/\d+$/, '');
+    if (base !== id) {
+      found = nodeShapeToShapeClass.get(base);
+      if (!found) {
+        for (const [key, cls] of nodeShapeToShapeClass) {
+          if (key.replace(/\d+$/, '') === base) {
+            found = cls;
+            break;
+          }
+        }
+      }
+    }
+  }
+  return found as unknown as ShapeConstructor | undefined;
 }
 
 /**
