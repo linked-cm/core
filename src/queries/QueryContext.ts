@@ -1,6 +1,5 @@
 import {type QShape, QueryShape} from './SelectQuery.js';
 import {Shape} from '../shapes/Shape.js';
-import {getShapeClass} from '../utils/ShapeClass.js';
 
 const queryContext = new Map<string, QShape<any, any, any>>();
 
@@ -141,18 +140,6 @@ export function setQueryContext(name: string, value: any, shapeType?) {
     queryContext.set(name, QueryShape.create(shape) as any);
     notifyContextChange(name);
     return;
-  }
-
-  // A serialized shape reference — JSONWriter's `{__s: nodeShapeURI, u: instanceURI}`
-  // format. This reaches us when a shape crosses a JSON boundary (e.g. a JWT/session
-  // payload) and is raw-parsed rather than run back through JSONParser. Resolve the
-  // shape class from `__s` (getShapeClass is resilient to bundler-duplicated URIs) and
-  // materialize via the `{id}` branch above with the instance URI `u`.
-  if (typeof value.__s === 'string' && typeof value.u === 'string') {
-    const cls = getShapeClass(value.__s);
-    if (cls) {
-      return setQueryContext(name, {id: value.u}, cls as any);
-    }
   }
 
   throw new Error(
