@@ -59,6 +59,38 @@ Whichever is chosen, `getNodeShapeUri(packageName, stableName)` becomes independ
 - Unblocks removing the standalone `optimizeDeps.exclude` reliance and makes prod
   minification safe.
 
+## Additional design notes
+
+- **Concrete decorator API (Option A, preferred).** `@linkedShape` gains an optional
+  explicit name: `@linkedShape('Person')` or `@linkedShape({ name: 'Person' })`. When
+  present it's authoritative for `getNodeShapeUri`; when absent, fall back to
+  `constructor.name` **and emit a one-time dev warning** ("shape X has no explicit
+  linkedShape name — its URI depends on `constructor.name` and may break under
+  minification/duplication"). This gives an incremental migration (annotate hot shapes
+  first) without a big-bang change.
+
+- **Registration is the only place to change.** All URI derivation funnels through
+  `getNodeShapeUri(packageName, name)` (SHACL.ts) called from `Package.ts` registration.
+  If the decorator captures the stable name and passes it here, nothing downstream
+  (serialization `{__s,u}`, `getShapeClass` lookup) needs to change — they already key
+  off whatever string registration produced.
+
+- **Dev-time drift detection.** Add an optional dev check that hashes each registered
+  shape's `(packageName, name)` and warns if two different constructors register the
+  same URI, or if a URI carries a numeric suffix (`…/Person2`) — a cheap early signal
+  that duplication/minification is mangling identity in a given build, instead of a
+  silent no-op at query-forward time.
+
+- **Production minification is the real prize.** The build-layer `optimizeDeps.exclude`
+  fix only addresses *duplication* in dev. A production bundle that minifies class names
+  (`Person`→`a`) would reintroduce the exact mismatch, independently per runtime. Stable
+  declared names make identity **transform-proof**, at which point `optimizeDeps.exclude`
+  and `callShapeMethod`'s null-guard become belt-and-suspenders rather than load-bearing.
+
+- **Relationship to [[033-no-live-shape-instances]].** Stable URIs (this doc) fix shape
+  *identity across serialization*; 033 removes live shape *instances* from crossing
+  boundaries at all. Complementary: 033 shrinks the surface that 032 must keep stable.
+
 ## Origin
 
 Surfaced during CN Phase 1.5 case-A (true standalone app) app-UI-CRUD: Vite dep-optimizer
