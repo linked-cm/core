@@ -14,6 +14,7 @@ let subShapesCache: Map<string, (typeof Shape)[]> = new Map();
 let mostSpecificSubShapesCache: Map<string, (typeof Shape)[]> = new Map();
 let nodeShapeToShapeClass: Map<string, typeof Shape> = new Map();
 let shouldResetCache = false;
+const warnedDuplicateBases = new Set<string>();
 
 export function addNodeShapeToShapeClass(
   nodeShape: NodeShape,
@@ -21,6 +22,34 @@ export function addNodeShapeToShapeClass(
 ) {
   if (!nodeShape?.id) {
     return;
+  }
+  // Dev guardrail for IDENTITY duplication. Shape URIs embed `constructor.name`
+  // (getNodeShapeUri). If a bundler emits >1 copy of a framework package, the copies
+  // are renamed `Person`→`Person2`/`3`, so a mangled URI registers alongside the clean
+  // one — the exact failure that silently breaks cross-runtime shape lookup (`Person3`
+  // on the FE ≠ `Person` on the backend). Warn ONCE per base so a build-config
+  // regression (e.g. a dropped `optimizeDeps.exclude`) surfaces loudly instead of
+  // no-op'ing a query at forward time. Dev-only — prod is minified and would false-fire.
+  if (process.env.NODE_ENV !== 'production') {
+    const id = nodeShape.id;
+    const base = id.replace(/\d+$/, '');
+    const existing = nodeShapeToShapeClass.get(base);
+    if (base !== id && existing && !warnedDuplicateBases.has(base)) {
+      // A real duplicate is the SAME logical shape (same targetClass) registered under
+      // a mangled name; a legit digit-suffixed sibling (e.g. `OAuth2` vs `OAuth`)
+      // targets a different class. Warn only when they match (or targetClass is absent).
+      const newTarget = (shapeClass as any).targetClass?.id;
+      const existingTarget = (existing as any).targetClass?.id;
+      if (!newTarget || !existingTarget || newTarget === existingTarget) {
+        warnedDuplicateBases.add(base);
+        console.warn(
+          `[linked] Shape identity duplication: '${id}' registered alongside '${base}'. ` +
+            `A bundler emitted >1 copy of this package — cross-runtime shape lookup will ` +
+            `break. Check the cli vite-config single-instance levers (optimizeDeps.exclude ` +
+            `/ ssr.noExternal).`,
+        );
+      }
+    }
   }
   nodeShapeToShapeClass.set(nodeShape.id, shapeClass);
   //make sure that the cache is reset after the next event loop
