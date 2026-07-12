@@ -952,7 +952,9 @@ export class QueryShapeSet<
     shape: ShapeClass,
   ): QShapeSet<InstanceType<ShapeClass>, Source, Property> {
     //if the shape is not the same as the original value, then we need to create a new query shape
-    if (!nodeShapeEquals(shape.shape, this.originalValue.getLeastSpecificShape().shape)) {
+    // `getLeastSpecificShape()` is `undefined` for an empty set; `?.` avoids a
+    // TypeError and `nodeShapeEquals(_, undefined)` is false, so we rebuild as needed.
+    if (!nodeShapeEquals(shape.shape, this.originalValue.getLeastSpecificShape()?.shape)) {
       let newOriginal = new ShapeSet(
         this.originalValue.map((existing) =>
           createShapeTarget(shape as any, existing?.id),

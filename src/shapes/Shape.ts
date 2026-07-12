@@ -177,7 +177,6 @@ export abstract class Shape {
     return QueryBuilder.from(this).selectAll() as QueryBuilder<S, any, ResultType>;
   }
 
-
   /**
    * Update properties of an instance of this shape.
    * Chain `.for(id)` to target a specific entity.

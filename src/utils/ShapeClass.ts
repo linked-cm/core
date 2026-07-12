@@ -114,7 +114,7 @@ export function getPropertyShapeByLabel(
   let propertyShape: PropertyShapeData;
   for (let sClass of shapeChain) {
     propertyShape = getPropertyShapes(sClass.shape).find(
-      (propertyShape) => propertyShape.label === label,
+      (ps) => ps.label === label,
     );
     if (propertyShape) {
       break;

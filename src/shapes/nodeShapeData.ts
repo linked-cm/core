@@ -189,7 +189,10 @@ export function getUniquePropertyShapes(
   return unique;
 }
 
-/** Find a property shape by label, optionally walking the inheritance chain. */
+/**
+ * Find a property shape by label. With `checkSubShapes` (default true), ascends the
+ * registered shape-class chain to superclasses if the label isn't found locally.
+ */
 export function getPropertyShape(
   nodeShape: NodeShapeData,
   label: string,

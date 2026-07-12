@@ -726,8 +726,8 @@ createPropertyShape(
 
 // ---------------------------------------------------------------------------
 // Remaining SHACL meta-model accessors for shape serialization.
-// Labels match PropertyShape.getResult() / NodeShape fields so syncShapes() can
-// build instances directly. `sh:in` is owned (contains, valueShape List).
+// Labels match the PropertyShapeData / NodeShapeData fields so syncShapes() can
+// build the create-pipeline data directly. `sh:in` is owned (contains, valueShape List).
 // ---------------------------------------------------------------------------
 
 // PropertyShape.class

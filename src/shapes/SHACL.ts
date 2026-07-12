@@ -10,7 +10,6 @@ import {getShapeClass} from '../utils/ShapeClass.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import {normalizePropertyPath, type PropertyPathDecoratorInput} from '../paths/normalizePropertyPath.js';
 import {
-  createNodeShapeData,
   createPropertyShapeData,
   getPropertyShape as getPropertyShapeData,
   addPropertyShape as addPropertyShapeData,
@@ -272,7 +271,7 @@ const EXPLICIT_NODE_KIND_SYMBOL = Symbol('explicitNodeKind');
 const EXPLICIT_MIN_COUNT_SYMBOL = Symbol('explicitMinCount');
 const EXPLICIT_MAX_COUNT_SYMBOL = Symbol('explicitMaxCount');
 
-/** Internal symbol-keyed flags on PropertyShape to track which fields were explicitly configured. */
+/** Internal symbol-keyed flags on a PropertyShapeData object to track which fields were explicitly configured. */
 interface ExplicitFlags {
   [EXPLICIT_NODE_KIND_SYMBOL]?: boolean;
   [EXPLICIT_MIN_COUNT_SYMBOL]?: boolean;
