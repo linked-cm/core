@@ -1,6 +1,6 @@
 {
   "name": "@_linked/core",
-  "version": "2.14.3",
+  "version": "2.14.4",
   "license": "MIT",
   "linkedPackage": true,
   "type": "module",
