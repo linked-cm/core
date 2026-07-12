@@ -136,9 +136,7 @@ export function getPropertyShapes(
   }
   const res: PropertyShapeData[] = [];
   while (shapeClass?.shape) {
-    // Cast bridges Phase 2A: `ShapeConstructor.shape` is retyped to NodeShapeData
-    // in Phase 2B, after which this is a no-op.
-    res.push(...ownPropertyShapes(shapeClass.shape as unknown as NodeShapeData));
+    res.push(...ownPropertyShapes(shapeClass.shape));
     // Stop at the base Shape class.
     if ((shapeClass as unknown) === (Shape as unknown)) {
       break;
@@ -175,9 +173,7 @@ export function getPropertyShape(
   }
   let res: PropertyShapeData | undefined;
   while (!res && shapeClass?.shape) {
-    res = ownPropertyShapes(shapeClass.shape as unknown as NodeShapeData).find(
-      (ps) => ps.label === label,
-    );
+    res = ownPropertyShapes(shapeClass.shape).find((ps) => ps.label === label);
     if (checkSubShapes) {
       if ((shapeClass as unknown) === (Shape as unknown)) {
         break;
