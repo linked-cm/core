@@ -42,6 +42,26 @@ export type ShapeConstructor<S extends Shape = Shape> = (new (
   targetClass?: NodeReferenceValue;
 };
 
+/**
+ * @internal
+ * Build a constructor-less, prototype-linked Shape used ONLY as a proxy /
+ * metadata-carrier target inside the query DSL (never handed to consumers and
+ * never persisted). It is a genuine `Shape` on the prototype chain — so
+ * `.constructor`, the `nodeShape` getter, `ShapeSet`, and `getLeastSpecificShape`
+ * all work — but it deliberately bypasses the `Shape` constructor, which is
+ * guarded to reject direct instantiation. Not exported from the package index.
+ */
+export function createShapeTarget<S extends Shape>(
+  shapeClass: ShapeConstructor<S> | typeof Shape,
+  id?: string,
+): S {
+  const target = Object.create(shapeClass.prototype) as S;
+  if (id !== undefined) {
+    target.id = id;
+  }
+  return target;
+}
+
 export abstract class Shape {
   static targetClass: NodeReferenceValue = null;
   static shape: NodeShape;
@@ -217,7 +237,7 @@ export abstract class Shape {
   ): ResponseType {
     // SAFETY: dummyShape is used as a dynamic proxy target — we assign .proxy and
     // access arbitrary property names on it, which S doesn't declare.
-    let dummyShape: any = new this();
+    let dummyShape: any = createShapeTarget(this);
     dummyShape.proxy = new Proxy(dummyShape, {
       get(target, key, receiver) {
         if (typeof key === 'string') {
@@ -251,8 +271,10 @@ export abstract class Shape {
       if (value instanceof Shape) {
         set.add(value as T);
       } else {
-        const instance = new this();
-        instance.id = typeof value === 'string' ? value : value.id;
+        const instance = createShapeTarget(
+          this,
+          typeof value === 'string' ? value : value.id,
+        );
         set.add(instance);
       }
     }

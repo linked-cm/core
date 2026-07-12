@@ -1,5 +1,5 @@
 import {type QShape, QueryShape} from './SelectQuery.js';
-import {Shape} from '../shapes/Shape.js';
+import {Shape, createShapeTarget} from '../shapes/Shape.js';
 
 const queryContext = new Map<string, QShape<any, any, any>>();
 
@@ -133,8 +133,7 @@ export function setQueryContext(name: string, value: any, shapeType?) {
         `setQueryContext('${name}'): a {id} value requires a shapeType so the shape can be materialized. Pass the Shape class as the third argument.`,
       );
     }
-    const shape = new (shapeType as any)();
-    shape.id = value.id;
+    const shape = createShapeTarget(shapeType as any, value.id);
     shape.__queryContextId = value.id;
     shape.__queryContextName = name;
     queryContext.set(name, QueryShape.create(shape) as any);

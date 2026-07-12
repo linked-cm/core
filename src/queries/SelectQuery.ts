@@ -1,4 +1,4 @@
-import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, createShapeTarget, type ShapeConstructor} from '../shapes/Shape.js';
 import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
 import type {RawSelectInput} from './IRDesugar.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
@@ -558,7 +558,7 @@ export class QueryBuilderObject<
         // but the problem remains that the ImageObject shape needs to be available, but thats easier, as its data
         throw new Error(`Shape class not found for ${valueShape.id}`);
       }
-      const shapeValue = new shapeClass();
+      const shapeValue = createShapeTarget(shapeClass);
       if (singleValue) {
         return QueryShape.create(shapeValue, property, subject);
       } else {
@@ -601,9 +601,9 @@ export class QueryBuilderObject<
     // packages/core/docs/backlog/031-byshape-polymorphic-projection.md.
     // `Shape` is `abstract` at the type level but instantiable at runtime — the
     // `valueShape` branch above effectively does the same via `getShapeClass`
-    // (e.g. for `sh:targetClass`, registered `shape: Shape`). Cast past the
-    // abstract check to build the generic node-reference projection.
-    const genericShape = new (Shape as unknown as {new (): Shape})();
+    // (e.g. for `sh:targetClass`, registered `shape: Shape`). Build a
+    // constructor-less generic node-reference target on the base `Shape`.
+    const genericShape = createShapeTarget(Shape);
     return singleValue
       ? QueryShape.create(genericShape, property, subject)
       : QueryShapeSet.create(new ShapeSet([genericShape]), property, subject);
@@ -951,13 +951,9 @@ export class QueryShapeSet<
     //if the shape is not the same as the original value, then we need to create a new query shape
     if (!shape.shape.equals(this.originalValue.getLeastSpecificShape().shape)) {
       let newOriginal = new ShapeSet(
-        this.originalValue.map((existing) => {
-          const instance = new (shape as any)();
-          if (existing?.id) {
-            instance.id = existing.id;
-          }
-          return instance;
-        }),
+        this.originalValue.map((existing) =>
+          createShapeTarget(shape as any, existing?.id),
+        ),
       );
       return QueryShapeSet.create(
         newOriginal,
@@ -1200,10 +1196,7 @@ export class QueryShape<
   ): QShape<InstanceType<ShapeClass>, Source, Property> {
     //if the shape is not the same as the original value, then we need to create a new query shape
     if (!shape.shape.equals(this.originalValue.nodeShape)) {
-      let newOriginal = new (shape as any)();
-      if (this.originalValue.id) {
-        newOriginal.id = this.originalValue.id;
-      }
+      const newOriginal = createShapeTarget(shape as any, this.originalValue.id);
       return QueryShape.create(newOriginal, this.property, this.subject as any);
     }
     return this as any as QShape<InstanceType<ShapeClass>, Source, Property>;

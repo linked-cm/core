@@ -1,4 +1,4 @@
-import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
+import {Shape, createShapeTarget, type ShapeConstructor} from '../shapes/Shape.js';
 import {QueryBuilderObject, QueryShape} from './SelectQuery.js';
 
 /**
@@ -20,10 +20,10 @@ export function createProxiedPathBuilder<S extends Shape>(
     // used as the shape for where-clause evaluation), use it as-is.
     return shape;
   }
-  // Create a dummy shape instance and wrap it in a QueryShape proxy.
-  // The proxy intercepts property access and resolves each property name
+  // Create a constructor-less dummy shape target and wrap it in a QueryShape
+  // proxy. The proxy intercepts property access and resolves each property name
   // to its PropertyShape, building a chain of QueryBuilderObjects that
   // records which path was traversed.
-  const dummyShape = new shape();
+  const dummyShape = createShapeTarget(shape);
   return QueryShape.create(dummyShape);
 }
