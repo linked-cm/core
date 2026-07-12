@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.14.4
+
+### Patch Changes
+
+- [#174](https://github.com/linked-cm/core/pull/174) [`55fcf97`](https://github.com/linked-cm/core/commit/55fcf97ec97ff03fce08a9ae0ff0d62bb896c5a2) Thanks [@flyon](https://github.com/flyon)! - Dev-only warning when a shape registers under a numerically-suffixed URI (e.g. `.../Person2`) with the same `targetClass` as its base — the signature of a bundler emitting more than one copy of a framework package, which silently breaks cross-runtime shape lookup. Surfaces a build-config regression loudly instead of a no-op at query-forward time.
+
 ## 2.14.3
 
 ### Patch Changes
