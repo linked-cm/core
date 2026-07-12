@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 import {describe, expect, test} from '@jest/globals';
+import {getPropertyShape} from '../shapes/SHACL';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
 import {literalProperty, objectProperty} from '../shapes/SHACL';
@@ -43,9 +44,9 @@ class Container extends Shape {
 
 describe('contains/dependent flags', () => {
   test('objectProperty contains stored on PropertyShape', () => {
-    expect(Container.shape.getPropertyShape('owns', false).contains).toBe(true);
+    expect(getPropertyShape(Container.shape, 'owns', false).contains).toBe(true);
     // a property without `contains` is falsy
-    expect(Container.shape.getPropertyShape('refs', false).contains).toBeFalsy();
+    expect(getPropertyShape(Container.shape, 'refs', false).contains).toBeFalsy();
   });
 
   test('linkedShape dependent stored on NodeShape', () => {

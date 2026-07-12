@@ -1,4 +1,4 @@
-import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
+import type {NodeShapeData, PropertyShapeData} from '../shapes/SHACL.js';
 import {Shape} from '../shapes/Shape.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
 import type {NodeReferenceValue} from '../utils/NodeReference.js';
@@ -148,7 +148,7 @@ export type SinglePropertyUpdateValue =
   | LiteralUpdateValue
   | UnsetValue;
 export type NodeDescriptionValue = {
-  shape: NodeShape;
+  shape: NodeShapeData;
   fields: UpdateNodePropertyValue[];
   /**
    * The id of the node to be created.
@@ -157,7 +157,7 @@ export type NodeDescriptionValue = {
   __id?: string;
 };
 export type UpdateNodePropertyValue = {
-  prop: PropertyShape;
+  prop: PropertyShapeData;
   val: PropUpdateValue;
 };
 export type ShapeReferenceValue = {id: string; shape: NodeReferenceValue};

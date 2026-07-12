@@ -6,7 +6,7 @@ import type {UpdateQuery} from '../queries/UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
 import {setQueryDispatch} from '../queries/queryDispatch.js';
 import {getShapeClass} from './ShapeClass.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 
 // plan-011 — count physical evaluations of THIS module on the one shared
 // global object. With the single-loader fix there should be exactly one copy;
@@ -99,7 +99,7 @@ export abstract class LinkedStorage {
   }
 
   private static resolveDatasetForQueryShape(
-    shape?: string | Function | NodeShape | null,
+    shape?: string | Function | NodeShapeData | null,
   ): IDataset | undefined {
     if (!shape) {
       return this.defaultDataset;
@@ -111,7 +111,7 @@ export abstract class LinkedStorage {
       const shapeClass = getShapeClass(shape);
       return this.getDatasetForShapeClass(shapeClass);
     }
-    // NodeShape (the closed query's `shape` accessor) — resolve via its IRI.
+    // NodeShapeData (the closed query's `shape` accessor) — resolve via its IRI.
     if (typeof shape === 'object' && 'id' in shape) {
       const shapeClass = getShapeClass((shape as {id: string}).id);
       return this.getDatasetForShapeClass(shapeClass);

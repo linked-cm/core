@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import type {NodeShape, PropertyShape} from './SHACL.js';
+import type {NodeShapeData, PropertyShapeData} from './nodeShapeData.js';
 import type {
   QueryBuildFn,
   QueryResponseToResultType,
@@ -22,7 +22,7 @@ import {ShapeSet} from '../collections/ShapeSet.js';
 
 //shape that returns property shapes for its keys
 type AccessPropertiesShape<T extends Shape> = {
-  [P in keyof T]: PropertyShape;
+  [P in keyof T]: PropertyShapeData;
 };
 type PropertyShapeMapFunction<T extends Shape, ResponseType> = (
   p: AccessPropertiesShape<T>,
@@ -32,19 +32,42 @@ type PropertyShapeMapFunction<T extends Shape, ResponseType> = (
  * Concrete constructor type for Shape subclasses — used at runtime boundaries
  * (Builder `from()` methods, Shape static `this` parameters, mutation factories).
  *
- * Uses concrete `new` (not `abstract new`), so TypeScript allows direct
- * instantiation (`new shape()`) and property access (`shape.shape`) without casts.
+ * Uses concrete `new` (not `abstract new`) so TypeScript accepts the class as a
+ * value and reads its static `.shape`/`.targetClass` without casts. NOTE: `new
+ * shape()` is only a *type-level* capability — at runtime the `Shape` constructor
+ * throws (shapes are metadata, not data). The framework builds proxy targets via
+ * `createShapeTarget()` (Object.create), never `new`.
  */
 export type ShapeConstructor<S extends Shape = Shape> = (new (
   ...args: any[]
 ) => S) & {
-  shape: NodeShape;
+  shape: NodeShapeData;
   targetClass?: NodeReferenceValue;
 };
 
+/**
+ * @internal
+ * Build a constructor-less, prototype-linked Shape used ONLY as a proxy /
+ * metadata-carrier target inside the query DSL (never handed to consumers and
+ * never persisted). It is a genuine `Shape` on the prototype chain — so
+ * `.constructor`, the `nodeShape` getter, `ShapeSet`, and `getLeastSpecificShape`
+ * all work — but it deliberately bypasses the `Shape` constructor, which is
+ * guarded to reject direct instantiation. Not exported from the package index.
+ */
+export function createShapeTarget<S extends Shape>(
+  shapeClass: ShapeConstructor<S> | typeof Shape,
+  id?: string,
+): S {
+  const target = Object.create(shapeClass.prototype) as S;
+  if (id !== undefined) {
+    target.id = id;
+  }
+  return target;
+}
+
 export abstract class Shape {
   static targetClass: NodeReferenceValue = null;
-  static shape: NodeShape;
+  static shape: NodeShapeData;
   static typesToShapes: Map<string, Set<typeof Shape>> = new Map();
 
   __queryContextId?: string;
@@ -52,13 +75,21 @@ export abstract class Shape {
   __queryContextName?: string;
   id?: string;
 
-  constructor(node?: string | NodeReferenceValue) {
-    if (node) {
-      this.id = typeof node === 'string' ? node : node.id;
-    }
+  constructor() {
+    // Shapes are metadata, not data: a Shape subclass carries no live per-instance
+    // values (its decorated getters return only typing stubs), so `new SomeShape()`
+    // is always a mistake. The query DSL never reaches here — it builds
+    // constructor-less proxy targets via `createShapeTarget()` (Object.create), and
+    // SHACL metadata is plain `NodeShapeData`/`PropertyShapeData` objects. Force
+    // consumers to the DSL instead of constructing broken instances.
+    const name = (new.target as {name?: string} | undefined)?.name || 'Shape';
+    throw new Error(
+      `Cannot instantiate shape \`${name}\` directly — shapes are metadata, not data. ` +
+        `Use the DSL instead: ${name}.select(...), .create(...), .update(...), or .delete(...).`,
+    );
   }
 
-  get nodeShape(): NodeShape {
+  get nodeShape(): NodeShapeData {
     return (this.constructor as typeof Shape).shape;
   }
 
@@ -146,7 +177,6 @@ export abstract class Shape {
     return QueryBuilder.from(this).selectAll() as QueryBuilder<S, any, ResultType>;
   }
 
-
   /**
    * Update properties of an instance of this shape.
    * Chain `.for(id)` to target a specific entity.
@@ -211,13 +241,17 @@ export abstract class Shape {
     return (DeleteBuilder.from(this) as DeleteBuilder<S>).where(fn);
   }
 
+  /**
+   * @deprecated Unused; the DSL reads property shapes via `nodeShapeData` free
+   * functions and static metadata. Scheduled for removal.
+   */
   static mapPropertyShapes<S extends Shape, ResponseType = unknown>(
     this: ShapeConstructor<S>,
     mapFunction?: PropertyShapeMapFunction<S, ResponseType>,
   ): ResponseType {
     // SAFETY: dummyShape is used as a dynamic proxy target — we assign .proxy and
     // access arbitrary property names on it, which S doesn't declare.
-    let dummyShape: any = new this();
+    let dummyShape: any = createShapeTarget(this);
     dummyShape.proxy = new Proxy(dummyShape, {
       get(target, key, receiver) {
         if (typeof key === 'string') {
@@ -242,6 +276,10 @@ export abstract class Shape {
     return mapFunction(dummyShape.proxy);
   }
 
+  /**
+   * @deprecated Unused; shapes are metadata and no longer materialized into
+   * `ShapeSet`s of instances. Scheduled for removal.
+   */
   static getSetOf<T extends Shape>(
     this: ShapeConstructor<T>,
     values: Iterable<T | NodeReferenceValue | string>,
@@ -251,8 +289,10 @@ export abstract class Shape {
       if (value instanceof Shape) {
         set.add(value as T);
       } else {
-        const instance = new this();
-        instance.id = typeof value === 'string' ? value : value.id;
+        const instance = createShapeTarget(
+          this,
+          typeof value === 'string' ? value : value.id,
+        );
         set.add(instance);
       }
     }

@@ -1,6 +1,6 @@
 import {describe, expect, test, jest, beforeEach} from '@jest/globals';
 import {linkedPackage} from '../utils/Package';
-import {Shape} from '../shapes/Shape';
+import {Shape, createShapeTarget} from '../shapes/Shape';
 import {literalProperty, objectProperty} from '../shapes/SHACL';
 import {CoreSet} from '../collections/CoreSet';
 import {
@@ -126,7 +126,11 @@ describe('ShapeClass utilities', () => {
   });
 
   test('getLeastSpecificShapeClasses filters to base shapes', () => {
-    const shapes = new CoreSet([new SubShape(), new SiblingSubShape(), new BaseShape()]);
+    const shapes = new CoreSet([
+      createShapeTarget(SubShape),
+      createShapeTarget(SiblingSubShape),
+      createShapeTarget(BaseShape),
+    ]);
     const leastSpecific = getLeastSpecificShapeClasses(shapes);
     expect(leastSpecific).toEqual(expect.arrayContaining([BaseShape]));
     expect(leastSpecific).not.toEqual(
@@ -267,7 +271,7 @@ describe('QueryContext edge cases', () => {
   test('setQueryContext accepts a Shape instance without a shapeType', () => {
     // A Shape is already a shape, so no shapeType is needed (previously this
     // silently no-op'd because the `{id}` guard intercepted it).
-    const s = new ContextPerson();
+    const s = createShapeTarget(ContextPerson);
     s.id = 'https://ex.org/ctx-shape';
     setQueryContext('shape-ctx', s);
     const ctx = getQueryContext('shape-ctx');
