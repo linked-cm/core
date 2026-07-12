@@ -1,6 +1,6 @@
 ---
 title: Disallow Shape instances — DSL uses proxies + guarded constructor
-status: Implementation
+status: Review
 branch: claude/shape-instantiation-prevention-4awjgt
 ---
 
@@ -266,6 +266,23 @@ Converted `NodeShape`/`PropertyShape` metadata containers to plain
 Validation: typecheck clean; `npm test` = 1478 passed / 117 skipped / 5 snapshots
 (full baseline parity — behavior-preserving).
 
-### Next: Phase 2C
-Add the unconditional constructor throw; update the 2 tests that construct domain
-shapes (`core-utils.test.ts`); add a `new Person()`-throws test.
+### Phase 2C — DONE ✅
+- `Shape` constructor now throws unconditionally (no args, no allowlist) with a
+  DSL-steering message.
+- Discovered `SparqlDataset` (parent of `FusekiStore`) extended `Shape` purely for an
+  aspirational-unused "persist dataset config as linked data" reason and is genuinely
+  instantiated as a live store — it uses no Shape members. Removed `extends Shape`
+  (a dataset is not a metadata shape). This unblocked the fuseki suites.
+- Updated `core-utils.test.ts` (2 sites) to build proxy targets via
+  `createShapeTarget()` instead of `new`.
+- Added `src/tests/shape-instantiation-guard.test.ts`: `new Person()` / `new Shape()`
+  throw; the DSL still builds queries/mutations without instantiating; metadata is a
+  plain object (`Object.getPrototypeOf(shape) === Object.prototype`).
+Validation: typecheck clean; `npm test` = 1481 passed / 117 skipped / 5 snapshots
+(1478 baseline + 3 guard tests).
+
+## Outcome
+No Shape subclass is instantiated anywhere: SHACL metadata is plain
+`NodeShapeData`/`PropertyShapeData` objects, the DSL builds constructor-less proxy
+targets via `createShapeTarget()`, and `new SomeShape()` throws a clear
+DSL-steering error. All three phases green.
