@@ -10,7 +10,7 @@
  * enforcement: these describe the shape for validators / introspection only.
  */
 import {describe, expect, test} from '@jest/globals';
-import {getPropertyShape, propertyShapeToResult} from '../shapes/SHACL';
+import {getPropertyShape} from '../shapes/SHACL';
 import '../utils/Package'; // runs the core meta-model setup (adds the constraint accessors)
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
@@ -77,12 +77,12 @@ describe('G5 — SHACL constraint serialization', () => {
     expect(code.pattern?.source).toBe('^[A-Z]+$');
   });
 
-  test('getResult() exposes the constraints (pattern as its source string)', () => {
-    const code: any = propertyShapeToResult(getPropertyShape(Measurement.shape, 'code', false));
+  test('the property shape captures the constraints', () => {
+    const code = getPropertyShape(Measurement.shape, 'code', false);
     expect(code.minLength).toBe(3);
     expect(code.maxLength).toBe(8);
-    expect(code.pattern).toBe('^[A-Z]+$'); // regex source, not a RegExp
-    const ratio: any = propertyShapeToResult(getPropertyShape(Measurement.shape, 'ratio', false));
+    expect(code.pattern?.source).toBe('^[A-Z]+$');
+    const ratio = getPropertyShape(Measurement.shape, 'ratio', false);
     expect(ratio.minExclusive).toBe(0);
     expect(ratio.maxExclusive).toBe(1);
   });

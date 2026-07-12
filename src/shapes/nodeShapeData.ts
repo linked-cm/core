@@ -70,7 +70,12 @@ export interface NodeShapeData {
   propertyShapes: PropertyShapeData[];
 }
 
-/** Result object produced by `propertyShapeToResult()` (SHACL projection). */
+/**
+ * Result object produced by `propertyShapeToResult()` (SHACL projection).
+ * @deprecated No production callers remain (the `NodeShape.properties` getter and
+ * `PropertyShape.getResult()` were removed with the plain-object conversion). Read
+ * the plain `PropertyShapeData` fields directly. Scheduled for removal.
+ */
 export interface PropertyShapeResult {
   id: string;
   label: string;
@@ -113,9 +118,32 @@ export function createPropertyShapeData(): PropertyShapeData {
 // Free functions (formerly NodeShape/PropertyShape instance methods)
 // ---------------------------------------------------------------------------
 
+/** One-time warning keys for shapes whose `propertyShapes` is missing/invalid. */
+const warnedMissingPropertyShapes = new Set<string>();
+
+/**
+ * Read a node shape's own property shapes, tolerating a missing/invalid array.
+ *
+ * A non-array `propertyShapes` almost always means a duplicate `@_linked/core`
+ * install or a non-normalized static shape on a superclass; warn once per shape id
+ * (diagnostic parity with the former `NodeShape.listPropertyShapesSafe`) and treat
+ * it as empty.
+ */
 function ownPropertyShapes(nodeShape: NodeShapeData): PropertyShapeData[] {
   const own = (nodeShape as {propertyShapes?: PropertyShapeData[]}).propertyShapes;
-  return Array.isArray(own) ? own : [];
+  if (Array.isArray(own)) {
+    return own;
+  }
+  const id = (nodeShape as {id?: string}).id ?? '';
+  if (!warnedMissingPropertyShapes.has(id)) {
+    warnedMissingPropertyShapes.add(id);
+    console.warn(
+      `[@_linked/core] static shape ${id ? `'${id}'` : '(unknown id)'} has missing ` +
+        `or invalid propertyShapes. Treating as []. Often caused by duplicate ` +
+        `@_linked/core installs or a non-normalized static shape on a superclass.`,
+    );
+  }
+  return [];
 }
 
 /**
@@ -210,7 +238,13 @@ export function clonePropertyShape(
   return {...propertyShape};
 }
 
-/** Project a property shape to its SHACL result object (used by introspection). */
+/**
+ * Project a property shape to its SHACL result object.
+ * @deprecated No production callers remain. Read the plain `PropertyShapeData`
+ * fields directly (note this projection renames `equalsConstraint`→`equals`,
+ * `hasValueConstraint`→`hasValue`, and serializes `pattern` to its source string).
+ * Scheduled for removal.
+ */
 export function propertyShapeToResult(ps: PropertyShapeData): PropertyShapeResult {
   const result: Record<string, unknown> & {id: string; label: string; path: PathExpr} = {
     id: ps.id,

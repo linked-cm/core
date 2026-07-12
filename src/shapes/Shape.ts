@@ -32,8 +32,11 @@ type PropertyShapeMapFunction<T extends Shape, ResponseType> = (
  * Concrete constructor type for Shape subclasses — used at runtime boundaries
  * (Builder `from()` methods, Shape static `this` parameters, mutation factories).
  *
- * Uses concrete `new` (not `abstract new`), so TypeScript allows direct
- * instantiation (`new shape()`) and property access (`shape.shape`) without casts.
+ * Uses concrete `new` (not `abstract new`) so TypeScript accepts the class as a
+ * value and reads its static `.shape`/`.targetClass` without casts. NOTE: `new
+ * shape()` is only a *type-level* capability — at runtime the `Shape` constructor
+ * throws (shapes are metadata, not data). The framework builds proxy targets via
+ * `createShapeTarget()` (Object.create), never `new`.
  */
 export type ShapeConstructor<S extends Shape = Shape> = (new (
   ...args: any[]
@@ -239,6 +242,10 @@ export abstract class Shape {
     return (DeleteBuilder.from(this) as DeleteBuilder<S>).where(fn);
   }
 
+  /**
+   * @deprecated Unused; the DSL reads property shapes via `nodeShapeData` free
+   * functions and static metadata. Scheduled for removal.
+   */
   static mapPropertyShapes<S extends Shape, ResponseType = unknown>(
     this: ShapeConstructor<S>,
     mapFunction?: PropertyShapeMapFunction<S, ResponseType>,
@@ -270,6 +277,10 @@ export abstract class Shape {
     return mapFunction(dummyShape.proxy);
   }
 
+  /**
+   * @deprecated Unused; shapes are metadata and no longer materialized into
+   * `ShapeSet`s of instances. Scheduled for removal.
+   */
   static getSetOf<T extends Shape>(
     this: ShapeConstructor<T>,
     values: Iterable<T | NodeReferenceValue | string>,

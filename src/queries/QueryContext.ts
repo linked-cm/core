@@ -115,7 +115,8 @@ export function setQueryContext(name: string, value: any, shapeType?) {
     return;
   }
 
-  // A Shape instance — stamp it and wrap as a QShape. Needs no shapeType (it is one).
+  // A Shape-shaped value (e.g. a `createShapeTarget` proxy target) — stamp it and
+  // wrap as a QShape. Needs no shapeType (it already carries its shape class).
   if (value instanceof Shape) {
     value.__queryContextName = name;
     if (typeof value.id === 'string') value.__queryContextId = value.id;

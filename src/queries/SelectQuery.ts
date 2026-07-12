@@ -600,10 +600,10 @@ export class QueryBuilderObject<
     // structural projection ("if List → members, if PathNode → operands") is the
     // `byShape` polymorphic-projection follow-up — see
     // packages/core/docs/backlog/031-byshape-polymorphic-projection.md.
-    // `Shape` is `abstract` at the type level but instantiable at runtime — the
-    // `valueShape` branch above effectively does the same via `getShapeClass`
-    // (e.g. for `sh:targetClass`, registered `shape: Shape`). Build a
-    // constructor-less generic node-reference target on the base `Shape`.
+    // Build a constructor-less generic node-reference target on the base `Shape`
+    // (like the `valueShape` branch above, but for the shapeless base). `Shape`'s
+    // constructor throws, so we use `createShapeTarget` (Object.create) — the
+    // target is only a proxy metadata carrier, never a live instance.
     const genericShape = createShapeTarget(Shape);
     return singleValue
       ? QueryShape.create(genericShape, property, subject)
