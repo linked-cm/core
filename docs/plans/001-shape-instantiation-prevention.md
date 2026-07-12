@@ -286,3 +286,33 @@ No Shape subclass is instantiated anywhere: SHACL metadata is plain
 `NodeShapeData`/`PropertyShapeData` objects, the DSL builds constructor-less proxy
 targets via `createShapeTarget()`, and `new SomeShape()` throws a clear
 DSL-steering error. All three phases green.
+
+## Review
+
+Commits: `9e509e6` (Phase 1), `89890d5` (Phase 2A+2B), `7f2318f` (Phase 2C),
+plus a no-op-cast cleanup. Final state: typecheck clean; 1481 passed / 117 skipped /
+5 snapshots; `git grep` confirms no `new <Shape subclass>()` remains in production.
+
+Verified invariants (C1–C4): `new Person()`/`new Shape()` throw (guard test); the DSL
+builds queries/mutations without instantiating; metadata objects are plain
+(`Object.getPrototypeOf === Object.prototype`); `NodeShapeData`/`createShapeTarget`
+are not exported from the public index.
+
+Gaps / notes for the user to weigh (candidate `iterate` items):
+1. **Behavior change — dropped diagnostic.** `nodeShapeData.getPropertyShapes` no
+   longer emits the one-time `console.warn` for a superclass whose `propertyShapes`
+   is missing/invalid (the old `listPropertyShapesSafe` warning, for duplicate-install
+   scenarios). Functionally it still treats such shapes as `[]`. Re-add the warning if
+   that diagnostic is valued.
+2. **`SparqlDataset` no longer `extends Shape`.** Removed because it was unused and
+   made every store construction hit the guard. If "persist a dataset config as linked
+   data" is a real future need, model the *config* as its own metadata shape rather
+   than making the live store a Shape.
+3. **`getSetOf` / `mapPropertyShapes`** now return constructor-less ghosts
+   (`createShapeTarget`) rather than `new this()`. They appear unused internally;
+   consider deleting them in wrapup if no consumer relies on them.
+4. **`propertyShapeToResult` / `PropertyShapeResult`** now have only test callers (the
+   `NodeShape.properties` getter and `getResult()` were removed). Kept for the SHACL
+   introspection projection; could be pruned if unused downstream.
+5. **Follow-up polish (wrapup):** the `createShapeTarget` docstring, and the residual
+   `NodeShapeData` type-only import in `MutationQuery.ts` if it became unused.
