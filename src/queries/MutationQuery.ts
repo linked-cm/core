@@ -10,7 +10,8 @@ import {
   type UpdateNodePropertyValue,
   type UpdatePartial,
 } from './QueryFactory.js';
-import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
+import {getPropertyShapes} from '../shapes/nodeShapeData.js';
+import type {NodeShapeData, PropertyShapeData} from '../shapes/SHACL.js';
 import {Shape} from '../shapes/Shape.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
@@ -28,7 +29,7 @@ export class MutationQueryFactory extends QueryFactory {
    * pulling the canonical-IR pipeline.
    */
   describe(
-    shape: NodeShape,
+    shape: NodeShapeData,
     data: unknown,
     allowTopLevelId: boolean = false,
   ): NodeDescriptionValue {
@@ -42,7 +43,7 @@ export class MutationQueryFactory extends QueryFactory {
 
   protected convertUpdateObject(
     obj,
-    shape: NodeShape,
+    shape: NodeShapeData,
     allowTopLevelId: boolean = false,
   ): NodeDescriptionValue {
     if (typeof obj === 'object' && !(obj instanceof Date) && obj !== null) {
@@ -82,7 +83,7 @@ export class MutationQueryFactory extends QueryFactory {
 
   protected convertSetModification(
     obj: SetModification<any>,
-    shape: PropertyShape,
+    shape: PropertyShapeData,
   ): SetModificationValue {
     if (!obj.add && !obj.remove) {
       throw new Error('Set modification should have either add or remove key');
@@ -99,7 +100,7 @@ export class MutationQueryFactory extends QueryFactory {
 
   protected convertSetRemoveValue(
     obj: UpdatePartial | UpdatePartial[],
-    shape: PropertyShape,
+    shape: PropertyShapeData,
   ): NodeReferenceValue[] {
     //the user can either pass an array of node references or a single node reference
     //either way we should return an array of node reference values
@@ -112,7 +113,7 @@ export class MutationQueryFactory extends QueryFactory {
 
   protected convertSetAddValue(
     obj: UpdatePartial | UpdatePartial[],
-    shape: PropertyShape,
+    shape: PropertyShapeData,
   ): UpdatePartial[] {
     if (Array.isArray(obj)) {
       return obj.map((o) => this.convertUpdateValue(o, shape) as UpdatePartial);
@@ -123,7 +124,7 @@ export class MutationQueryFactory extends QueryFactory {
 
   protected convertSingleRemoveValue(
     value,
-    shape: PropertyShape,
+    shape: PropertyShapeData,
   ): NodeReferenceValue {
     const ctx = asContextRef(value);
     if (ctx) {
@@ -140,11 +141,11 @@ export class MutationQueryFactory extends QueryFactory {
 
   protected convertNodeDescription(
     inputObj: Record<string, unknown>,
-    shape: NodeShape,
+    shape: NodeShapeData,
   ): NodeDescriptionValue {
     // Shallow-copy so we never mutate the caller's object
     const obj = {...inputObj};
-    const props = shape.getPropertyShapes(true);
+    const props = getPropertyShapes(shape, true);
     const fields: UpdateNodePropertyValue[] = [];
     let id;
     if ('__id' in obj) {
@@ -181,7 +182,7 @@ export class MutationQueryFactory extends QueryFactory {
 
   protected createNodePropertyValue(
     value,
-    propShape: PropertyShape,
+    propShape: PropertyShapeData,
   ): UpdateNodePropertyValue {
     this.validateAgainstShape(value, propShape);
     return {
@@ -192,7 +193,7 @@ export class MutationQueryFactory extends QueryFactory {
 
   /**
    * Lightweight structural validation of a single property value against its
-   * PropertyShape — cardinality (`minCount`/`maxCount`) and node-kind (literal
+   * PropertyShapeData — cardinality (`minCount`/`maxCount`) and node-kind (literal
    * vs relation). This is *structural* only (from metadata already in hand); it
    * does not duplicate datatype/deep validation, which the store performs. It
    * fails fast at the call site with a clear message instead of surfacing a
@@ -202,7 +203,7 @@ export class MutationQueryFactory extends QueryFactory {
    * context refs, `unset` (null/undefined), and set-modifications (`{add,remove}`
    * — the resulting count depends on the node's current state).
    */
-  protected validateAgainstShape(value, propShape: PropertyShape): void {
+  protected validateAgainstShape(value, propShape: PropertyShapeData): void {
     // A `null` value clears the property. Clearing a required (minCount>=1)
     // property is a cardinality violation — the same as providing zero values —
     // so it is rejected exactly like an empty array (both spellings of "clear
@@ -266,13 +267,13 @@ export class MutationQueryFactory extends QueryFactory {
   }
 
   /** True when the property clearly accepts only literal values. */
-  private expectsLiteral(ps: PropertyShape): boolean {
+  private expectsLiteral(ps: PropertyShapeData): boolean {
     if (ps.nodeKind) return ps.nodeKind.id === shacl.Literal.id;
     return !!ps.datatype && !ps.valueShape;
   }
 
   /** True when the property clearly accepts only nodes (IRIs/blank nodes). */
-  private expectsNode(ps: PropertyShape): boolean {
+  private expectsNode(ps: PropertyShapeData): boolean {
     if (ps.nodeKind) {
       return (
         ps.nodeKind.id === shacl.IRI.id ||
@@ -285,7 +286,7 @@ export class MutationQueryFactory extends QueryFactory {
 
   protected convertUpdateValue(
     value,
-    propShape?: PropertyShape,
+    propShape?: PropertyShapeData,
     allowArrays: boolean = true,
   ): PropUpdateValue {
     // ExpressionNode → pass through as-is (will be converted to IRExpression by IRMutation)
@@ -330,7 +331,7 @@ export class MutationQueryFactory extends QueryFactory {
       if (this.isNodeReference(value)) {
         return this.convertNodeReference(value);
       } else {
-        let valueShape: NodeShape = null;
+        let valueShape: NodeShapeData = null;
         if (propShape.valueShape) {
           const shapeClass = getShapeClass(propShape.valueShape);
           valueShape = shapeClass?.shape || null;
@@ -344,7 +345,7 @@ export class MutationQueryFactory extends QueryFactory {
         if (!propShape.valueShape) {
           //It's possible to define the shape of the value in the value itself for properties who do not define the shape in their objectProperty
           if (value.shape) {
-            if (!value.shape.shape || typeof (value.shape.shape as NodeShape).getPropertyShapes !== 'function') {
+            if (!value.shape.shape) {
               throw new Error(
                 `The value of property "shape" is invalid and should be a class that extends Shape.`,
               );

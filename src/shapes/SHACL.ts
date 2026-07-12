@@ -9,6 +9,31 @@ import {shacl} from '../ontologies/shacl.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import {normalizePropertyPath, type PropertyPathDecoratorInput} from '../paths/normalizePropertyPath.js';
+import {
+  createNodeShapeData,
+  createPropertyShapeData,
+  getPropertyShape as getPropertyShapeData,
+  addPropertyShape as addPropertyShapeData,
+  clonePropertyShape,
+  type NodeShapeData,
+  type PropertyShapeData,
+} from './nodeShapeData.js';
+
+// Metadata types now live in nodeShapeData.js (plain objects); re-exported here for
+// existing importers of `NodeShape`/`PropertyShape`-adjacent types.
+export type {NodeShapeData, PropertyShapeData, PropertyShapeResult} from './nodeShapeData.js';
+// Metadata operations (formerly NodeShape/PropertyShape instance methods).
+export {
+  getPropertyShapes,
+  getUniquePropertyShapes,
+  getPropertyShape,
+  addPropertyShape,
+  clonePropertyShape,
+  propertyShapeToResult,
+  nodeShapeEquals,
+  createNodeShapeData,
+  createPropertyShapeData,
+} from './nodeShapeData.js';
 
 /**
  * Default identity root for shape & package IRIs. Public/first-party packages
@@ -67,32 +92,6 @@ type NodeKindConfig = NodeReferenceValue | NodeReferenceValue[];
 
 export type PropertyPathInput = PropertyPathDecoratorInput;
 export type PropertyPathInputList = PropertyPathDecoratorInput;
-
-/** Result object returned by PropertyShape.getResult() and NodeShape.properties. */
-export interface PropertyShapeResult {
-  id: string;
-  label: string;
-  path: PathExpr;
-  nodeKind?: NodeReferenceValue;
-  datatype?: NodeReferenceValue;
-  minCount?: number;
-  maxCount?: number;
-  name?: string;
-  description?: string;
-  order?: number;
-  group?: string;
-  class?: NodeReferenceValue;
-  in?: (NodeReferenceValue | string | number | boolean)[];
-  equals?: NodeReferenceValue;
-  disjoint?: NodeReferenceValue;
-  lessThan?: NodeReferenceValue;
-  lessThanOrEquals?: NodeReferenceValue;
-  hasValue?: NodeReferenceValue | string | number | boolean;
-  defaultValue?: unknown;
-  sortBy?: PathExpr;
-  valueShape?: NodeReferenceValue;
-}
-
 
 const normalizeNodeKind = (
   nodeKind?: NodeKindConfig,
@@ -284,323 +283,28 @@ export interface ParameterConfig {
   optional?: number;
 }
 
+/**
+ * Static-only DSL handle for the SHACL `sh:NodeShape` meta-shape.
+ *
+ * Never instantiated — a shape's metadata is a plain {@link NodeShapeData} object
+ * (see nodeShapeData.js), and the instance methods that used to live here are now
+ * free functions in that module. This class exists only to carry the meta-shape's
+ * static `.shape` self-description and to serve as the DSL entry point for reading
+ * and writing node-shape SHACL data (`NodeShape.create/select/delete`).
+ */
 export class NodeShape extends Shape {
   static targetClass = shacl.NodeShape;
-  /** One-time keys for missing/invalid `propertyShapes` on superclass static `shape`. */
-  private static readonly _warnedMissingPropertyShapesKeys = new Set<string>();
-
-  /**
-   * Returns `propertyShapes` when it is a real array; otherwise `[]` and logs once per
-   * `(ownerClassName, shapeId)` — common when a superclass `static shape` is a plain object
-   * or came from another `@_linked/core` copy without field initializers.
-   *
-   * Label for logs / dedupe keys when walking the shape class chain.
-   * Prefer `class.name` (almost always set for `class X {}`); if missing, use the static
-   * shape's `id` so diagnostics stay useful without vague "(anonymous)".
-   */
-  private static shapeOwnerLabel(
-    shapeClass: ShapeConstructor,
-    nodeShape: NodeShape,
-  ): string {
-    const n = shapeClass.name?.trim();
-    if (n) {
-      return n;
-    }
-    const sid = (nodeShape as unknown as {id?: string}).id;
-    if (sid) {
-      return `<shape ${sid}>`;
-    }
-    return '(unknown-class)';
-  }
-
-  private static listPropertyShapesSafe(
-    nodeShape: NodeShape,
-    ownerClassName: string,
-    context: string,
-  ): PropertyShape[] {
-    const raw = (nodeShape as unknown as {propertyShapes?: PropertyShape[]})
-      .propertyShapes;
-    if (Array.isArray(raw)) {
-      return raw;
-    }
-    const id = (nodeShape as unknown as {id?: string}).id ?? '';
-    const key = `${ownerClassName}:${String(id)}`;
-    if (!NodeShape._warnedMissingPropertyShapesKeys.has(key)) {
-      NodeShape._warnedMissingPropertyShapesKeys.add(key);
-      console.warn(
-        `[@_linked/core] '${ownerClassName}' static shape has missing or invalid propertyShapes ` +
-          `(${context}). Treating as []. Often caused by duplicate @linked/core installs or a ` +
-          `non-normalized static shape on a superclass.`,
-      );
-    }
-    return [];
-  }
-
-  private _label?: string;
-  description?: string;
-  targetClass?: NodeReferenceValue;
-  extends?: NodeReferenceValue;
-  /**
-   * Composition marker: instances of this shape are *dependent* — they have no
-   * independent existence and may be cascade-deleted when reached through a `contains` property.
-   */
-  dependent?: boolean;
-  /** sh:closed — target nodes with undeclared properties are invalid. */
-  closed?: boolean;
-  /** sh:ignoredProperties — extra properties permitted when the shape is closed. */
-  ignoredProperties?: NodeReferenceValue[];
-  private propertyShapes: PropertyShape[] = [];
-
-  constructor(node?: string | NodeReferenceValue) {
-    super(node);
-    if (this.id) {
-      this.nodeRef = {id: this.id};
-    }
-  }
-
-  nodeRef?: NodeReferenceValue;
-
-  get label(): string {
-    return this._label;
-  }
-
-  set label(value: string) {
-    this._label = value;
-  }
-
-  get properties(): PropertyShapeResult[] {
-    return this.propertyShapes.map((propertyShape) => propertyShape.getResult());
-  }
-
-  addPropertyShape(propertyShape: PropertyShape) {
-    propertyShape.parentNodeShape = this;
-    this.propertyShapes.push(propertyShape);
-  }
-
-  getPropertyShapes(includeSuperClasses: boolean = false): PropertyShape[] {
-    if (!includeSuperClasses) {
-      const own = (this as unknown as {propertyShapes?: PropertyShape[]})
-        .propertyShapes;
-      return Array.isArray(own) ? [...own] : [];
-    }
-    const res: PropertyShape[] = [];
-    let shapeClass: ShapeConstructor | undefined = getShapeClass(this.id);
-    if (!shapeClass) {
-      const own = (this as unknown as {propertyShapes?: PropertyShape[]})
-        .propertyShapes;
-      return Array.isArray(own) ? [...own] : [];
-    }
-    while (shapeClass?.shape) {
-      res.push(
-        ...NodeShape.listPropertyShapesSafe(
-          shapeClass.shape,
-          NodeShape.shapeOwnerLabel(shapeClass, shapeClass.shape),
-          'getPropertyShapes(includeSuperClasses=true)',
-        ),
-      );
-      // Stop at Shape base class. Cast needed: ShapeConstructor (concrete new) vs
-      // typeof Shape (abstract new) are structurally incompatible for ===.
-      if (shapeClass === (Shape as unknown)) {
-        break;
-      }
-      shapeClass = Object.getPrototypeOf(shapeClass) as ShapeConstructor | undefined;
-    }
-    return res;
-  }
-
-  getUniquePropertyShapes(): PropertyShape[] {
-    const uniquePropertyShapes: PropertyShape[] = [];
-    const seen = new Set<string>();
-    this.getPropertyShapes(true).forEach((propertyShape) => {
-      if (!seen.has(propertyShape.label)) {
-        seen.add(propertyShape.label);
-        uniquePropertyShapes.push(propertyShape);
-      }
-    });
-    return uniquePropertyShapes;
-  }
-
-  getPropertyShape(
-    label: string,
-    checkSubShapes: boolean = true,
-  ): PropertyShape {
-    let shapeClass: ShapeConstructor | undefined = getShapeClass(this.id);
-    let res: PropertyShape;
-    if (!shapeClass) {
-      const own = (this as unknown as {propertyShapes?: PropertyShape[]})
-        .propertyShapes;
-      return Array.isArray(own)
-        ? own.find((shape) => shape.label === label)
-        : undefined;
-    }
-    while (!res && shapeClass?.shape) {
-      res = NodeShape.listPropertyShapesSafe(
-        shapeClass.shape,
-        NodeShape.shapeOwnerLabel(shapeClass, shapeClass.shape),
-        'getPropertyShape',
-      ).find((shape) => shape.label === label);
-      if (checkSubShapes) {
-        if (shapeClass === (Shape as unknown)) {
-          break;
-        }
-        shapeClass = Object.getPrototypeOf(shapeClass) as ShapeConstructor | undefined;
-      } else {
-        break;
-      }
-    }
-    return res;
-  }
-
-  validateNode(_node?: unknown): boolean {
-    return true;
-  }
-
-  equals(other: NodeShape): boolean {
-    return !!other && this.id === other.id;
-  }
 }
 
+/**
+ * Static-only DSL handle for the SHACL `sh:PropertyShape` meta-shape.
+ *
+ * Never instantiated — property-shape metadata is a plain {@link PropertyShapeData}
+ * object (see nodeShapeData.js). Exists only for its static `.shape` self-description
+ * and as a DSL entry point (`PropertyShape.create/select`).
+ */
 export class PropertyShape extends Shape {
   static targetClass = shacl.PropertyShape;
-  private _label?: string;
-  path: PathExpr;
-  nodeKind?: NodeReferenceValue;
-  datatype?: NodeReferenceValue;
-  minCount?: number;
-  maxCount?: number;
-  name?: string;
-  description?: string;
-  order?: number;
-  group?: string;
-  class?: NodeReferenceValue;
-  in?: (NodeReferenceValue | string | number | boolean)[];
-  equalsConstraint?: NodeReferenceValue;
-  disjoint?: NodeReferenceValue;
-  lessThan?: NodeReferenceValue;
-  lessThanOrEquals?: NodeReferenceValue;
-  /** Value-range constraints (SHACL sh:minInclusive / sh:maxInclusive / sh:minExclusive / sh:maxExclusive). */
-  minInclusive?: number;
-  maxInclusive?: number;
-  minExclusive?: number | string;
-  maxExclusive?: number;
-  /** String-length constraints (SHACL sh:minLength / sh:maxLength). */
-  minLength?: number;
-  maxLength?: number;
-  /** Regex constraint (SHACL sh:pattern); serialized as its source string. */
-  pattern?: RegExp;
-  hasValueConstraint?: NodeReferenceValue | string | number | boolean;
-  defaultValue?: unknown;
-  sortBy?: PathExpr;
-  valueShape?: NodeReferenceValue;
-  /**
-   * Composition marker: the value(s) of this property are *owned* by the subject.
-   * The delete/update cascade follows this edge and removes the owned subtree.
-   */
-  contains?: boolean;
-  parentNodeShape?: NodeShape;
-
-  constructor() {
-    super();
-  }
-
-  get label(): string {
-    return this._label;
-  }
-
-  set label(value: string) {
-    this._label = value;
-  }
-
-  getResult(): PropertyShapeResult {
-    const result: Record<string, unknown> & {id: string; label: string; path: PathExpr} = {
-      id: this.id,
-      label: this.label,
-      path: this.path,
-    };
-    if (this.nodeKind) {
-      result.nodeKind = this.nodeKind;
-    }
-    if (this.datatype) {
-      result.datatype = this.datatype;
-    }
-    if (typeof this.minCount === 'number') {
-      result.minCount = this.minCount;
-    }
-    if (typeof this.maxCount === 'number') {
-      result.maxCount = this.maxCount;
-    }
-    if (this.name) {
-      result.name = this.name;
-    }
-    if (this.description) {
-      result.description = this.description;
-    }
-    if (typeof this.order === 'number') {
-      result.order = this.order;
-    }
-    if (this.group) {
-      result.group = this.group;
-    }
-    if (this.class) {
-      result.class = this.class;
-    }
-    if (this.in) {
-      result.in = this.in;
-    }
-    if (this.equalsConstraint) {
-      result.equals = this.equalsConstraint;
-    }
-    if (this.disjoint) {
-      result.disjoint = this.disjoint;
-    }
-    if (this.lessThan) {
-      result.lessThan = this.lessThan;
-    }
-    if (this.lessThanOrEquals) {
-      result.lessThanOrEquals = this.lessThanOrEquals;
-    }
-    if (this.minInclusive !== undefined) {
-      result.minInclusive = this.minInclusive;
-    }
-    if (this.maxInclusive !== undefined) {
-      result.maxInclusive = this.maxInclusive;
-    }
-    if (this.minExclusive !== undefined) {
-      result.minExclusive = this.minExclusive;
-    }
-    if (this.maxExclusive !== undefined) {
-      result.maxExclusive = this.maxExclusive;
-    }
-    if (typeof this.minLength === 'number') {
-      result.minLength = this.minLength;
-    }
-    if (typeof this.maxLength === 'number') {
-      result.maxLength = this.maxLength;
-    }
-    if (this.pattern) {
-      result.pattern = this.pattern.source;
-    }
-    if (this.hasValueConstraint !== undefined) {
-      result.hasValue = this.hasValueConstraint;
-    }
-    if (this.defaultValue !== undefined) {
-      result.defaultValue = this.defaultValue;
-    }
-    if (this.sortBy) {
-      result.sortBy = this.sortBy;
-    }
-    if (this.valueShape) {
-      result.valueShape = this.valueShape;
-    }
-    return result as PropertyShapeResult;
-  }
-
-  clone(): this {
-    const constructor = this.constructor as new () => this;
-    const clone = new constructor();
-    Object.assign(clone, this);
-    return clone;
-  }
 }
 
 const connectValueShape = <
@@ -608,7 +312,7 @@ const connectValueShape = <
 >(
   config: Config,
   propertyKey: string,
-  property: PropertyShape,
+  property: PropertyShapeData,
 ) => {
   if ((config as ObjectPropertyShapeConfig).shape) {
     const shapeConfig = (config as ObjectPropertyShapeConfig).shape;
@@ -624,7 +328,7 @@ const connectValueShape = <
       } else {
         onShapeSetup(
           shapeConfig,
-          (nodeShape: NodeShape) => {
+          (nodeShape: NodeShapeData) => {
             property.valueShape = {id: nodeShape.id};
           },
           propertyKey,
@@ -642,8 +346,8 @@ const connectValueShape = <
 const RESERVED_PROPERTY_LABELS = new Set(['and', 'or', 'not']);
 
 export function registerPropertyShape(
-  shape: NodeShape,
-  propertyShape: PropertyShape,
+  shape: NodeShapeData,
+  propertyShape: PropertyShapeData,
 ) {
   if (RESERVED_PROPERTY_LABELS.has(propertyShape.label)) {
     throw new Error(
@@ -651,8 +355,8 @@ export function registerPropertyShape(
         `and cannot be used as a property name. See documentation/dsl-json.md (Reserved words).`,
     );
   }
-  const inherited = shape.getPropertyShape(propertyShape.label, true);
-  const existing = shape.getPropertyShape(propertyShape.label, false);
+  const inherited = getPropertyShapeData(shape, propertyShape.label, true);
+  const existing = getPropertyShapeData(shape, propertyShape.label, false);
   if (!existing && inherited) {
     if (!(propertyShape as unknown as ExplicitFlags)[EXPLICIT_MIN_COUNT_SYMBOL]) {
       propertyShape.minCount = inherited.minCount;
@@ -670,7 +374,7 @@ export function registerPropertyShape(
     return existing;
   }
   propertyShape.id = `${shape.id}/${propertyShape.label}`;
-  shape.addPropertyShape(propertyShape);
+  addPropertyShapeData(shape, propertyShape);
   return propertyShape;
 }
 
@@ -701,8 +405,8 @@ const nodeKindToAtomics = (nodeKind?: NodeReferenceValue): Set<string> => {
 };
 
 const throwOverrideError = (
-  shape: NodeShape,
-  propertyShape: PropertyShape,
+  shape: NodeShapeData,
+  propertyShape: PropertyShapeData,
   message: string,
 ) => {
   throw new Error(
@@ -711,9 +415,9 @@ const throwOverrideError = (
 };
 
 const validateOverrideTightening = (
-  shape: NodeShape,
-  base: PropertyShape,
-  override: PropertyShape,
+  shape: NodeShapeData,
+  base: PropertyShapeData,
+  override: PropertyShapeData,
 ) => {
   if (
     typeof base.minCount === 'number' &&
@@ -761,7 +465,7 @@ export function createPropertyShape<
   defaultNodeKind: NodeReferenceValue = null,
   shapeClass: typeof Shape | [string, string] = null,
 ) {
-  const propertyShape = new PropertyShape();
+  const propertyShape = createPropertyShapeData();
   propertyShape.path = normalizePropertyPath(config.path);
   propertyShape.label = propertyKey;
 
@@ -847,7 +551,7 @@ export function createPropertyShape<
     config.nodeKind !== undefined;
 
   if (shapeClass) {
-    onShapeSetup(shapeClass, (shape: NodeShape) => {
+    onShapeSetup(shapeClass, (shape: NodeShapeData) => {
       connectValueShape(config, propertyKey, propertyShape);
       registerPropertyShape(shape, propertyShape);
     });
@@ -858,12 +562,12 @@ export function createPropertyShape<
 
 export function onShapeSetup(
   shapeClass: typeof Shape | [string, string],
-  callback: (shape: NodeShape) => void,
+  callback: (shape: NodeShapeData) => void,
   propertyName?: string,
   waitForSuperShapes?: boolean,
 ) {
   const cb = waitForSuperShapes
-    ? (shape: NodeShape) => {
+    ? (shape: NodeShapeData) => {
         const superClass = Object.getPrototypeOf(shapeClass) as typeof Shape;
         if (superClass.name === 'Shape') {
           callback(shape);
@@ -888,7 +592,7 @@ export function onShapeSetup(
 
   const safeCallback = (
     targetShapeClass: typeof Shape,
-    innerCallback: (shape: NodeShape) => void,
+    innerCallback: (shape: NodeShapeData) => void,
   ) => {
     if (targetShapeClass.hasOwnProperty('shape')) {
       innerCallback((targetShapeClass as typeof Shape).shape);
@@ -958,10 +662,11 @@ export function disallowProperty(
 ) {
   onShapeSetup(
     target.constructor,
-    (shape: NodeShape) => {
+    (shape: NodeShapeData) => {
       const superClass = Object.getPrototypeOf(target.constructor) as typeof Shape;
       const superNodeShape = superClass.shape;
-      const superPropertyShape = superNodeShape.getPropertyShape(
+      const superPropertyShape = getPropertyShapeData(
+        superNodeShape,
         propertyKey,
         true,
       );
@@ -971,7 +676,7 @@ export function disallowProperty(
         );
         return;
       }
-      const clonedPropertyShape = superPropertyShape.clone();
+      const clonedPropertyShape = clonePropertyShape(superPropertyShape);
       clonedPropertyShape.maxCount = 0;
       registerPropertyShape(shape, clonedPropertyShape);
     },
@@ -986,17 +691,17 @@ export function getNodeShapeUri(packageName: string, shapeName: string): string 
   return `${resolveBaseUri(packageName)}shape/${packageNameToSlug(packageName)}/${shapeName}`;
 }
 
-const nodeShapeCallbacks = new Map<string, ((shape: NodeShape) => void)[]>();
+const nodeShapeCallbacks = new Map<string, ((shape: NodeShapeData) => void)[]>();
 export function getAndClearCallbacks(
   nodeShapeId: string,
-): ((shape: NodeShape) => void)[] {
+): ((shape: NodeShapeData) => void)[] {
   const callbacks = nodeShapeCallbacks.get(nodeShapeId);
   nodeShapeCallbacks.delete(nodeShapeId);
   return callbacks;
 }
 export const addNodeShapeCallback = (
   nodeShapeId: string,
-  callback: (shape: NodeShape) => void,
+  callback: (shape: NodeShapeData) => void,
 ) => {
   if (!nodeShapeCallbacks.has(nodeShapeId)) {
     nodeShapeCallbacks.set(nodeShapeId, []);

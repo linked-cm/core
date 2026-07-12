@@ -1,5 +1,9 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
-import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
+import {
+  getPropertyShapes,
+  type NodeShapeData,
+  type PropertyShapeData,
+} from '../shapes/nodeShapeData.js';
 import type {ICoreIterable} from '../interfaces/ICoreIterable.js';
 import type {NodeReferenceValue} from './NodeReference.js';
 
@@ -16,7 +20,7 @@ let nodeShapeToShapeClass: Map<string, typeof Shape> = new Map();
 let shouldResetCache = false;
 
 export function addNodeShapeToShapeClass(
-  nodeShape: NodeShape,
+  nodeShape: NodeShapeData,
   shapeClass: typeof Shape,
 ) {
   if (!nodeShape?.id) {
@@ -99,7 +103,7 @@ export function getSuperShapesClasses(
 export function getPropertyShapeByLabel(
   shapeClass: typeof Shape,
   label: string,
-): PropertyShape {
+): PropertyShapeData {
   //get all the shapes that this shape extends
   let shapeChain: (typeof Shape)[] = getSuperShapesClasses(
     shapeClass as typeof Shape,
@@ -107,11 +111,11 @@ export function getPropertyShapeByLabel(
   //include the shape itself as the first shape in the array
   shapeChain.unshift(shapeClass as typeof Shape);
 
-  let propertyShape: PropertyShape;
+  let propertyShape: PropertyShapeData;
   for (let sClass of shapeChain) {
-    propertyShape = sClass.shape
-      .getPropertyShapes()
-      .find((propertyShape) => propertyShape.label === label);
+    propertyShape = getPropertyShapes(sClass.shape).find(
+      (propertyShape) => propertyShape.label === label,
+    );
     if (propertyShape) {
       break;
     }

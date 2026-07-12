@@ -9,7 +9,7 @@ import type {
 import {NodeReferenceValue, type ShapeReferenceValue} from './QueryFactory.js';
 import type {FieldSetEntry} from './FieldSet.js';
 import {ExpressionNode, ExistsCondition} from '../expressions/ExpressionNode.js';
-import type {PropertyShape} from '../shapes/SHACL.js';
+import type {PropertyShapeData} from '../shapes/SHACL.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import {isComplexPathExpr} from '../paths/PropertyPathExpr.js';
 
@@ -155,9 +155,9 @@ const isNodeRef = (value: unknown): value is NodeReferenceValue =>
   typeof value === 'object' && value !== null && 'id' in value;
 
 /**
- * Convert PropertyShape segments to DesugaredPropertyStep[].
+ * Convert PropertyShapeData segments to DesugaredPropertyStep[].
  */
-const segmentsToSteps = (segments: PropertyShape[]): DesugaredPropertyStep[] =>
+const segmentsToSteps = (segments: PropertyShapeData[]): DesugaredPropertyStep[] =>
   segments.map((seg) => {
     const step: DesugaredPropertyStep = {
       kind: 'property_step' as const,

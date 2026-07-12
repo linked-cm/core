@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-import type {NodeShape, PropertyShape} from './SHACL.js';
+import type {NodeShapeData, PropertyShapeData} from './nodeShapeData.js';
 import type {
   QueryBuildFn,
   QueryResponseToResultType,
@@ -22,7 +22,7 @@ import {ShapeSet} from '../collections/ShapeSet.js';
 
 //shape that returns property shapes for its keys
 type AccessPropertiesShape<T extends Shape> = {
-  [P in keyof T]: PropertyShape;
+  [P in keyof T]: PropertyShapeData;
 };
 type PropertyShapeMapFunction<T extends Shape, ResponseType> = (
   p: AccessPropertiesShape<T>,
@@ -38,7 +38,7 @@ type PropertyShapeMapFunction<T extends Shape, ResponseType> = (
 export type ShapeConstructor<S extends Shape = Shape> = (new (
   ...args: any[]
 ) => S) & {
-  shape: NodeShape;
+  shape: NodeShapeData;
   targetClass?: NodeReferenceValue;
 };
 
@@ -64,7 +64,7 @@ export function createShapeTarget<S extends Shape>(
 
 export abstract class Shape {
   static targetClass: NodeReferenceValue = null;
-  static shape: NodeShape;
+  static shape: NodeShapeData;
   static typesToShapes: Map<string, Set<typeof Shape>> = new Map();
 
   __queryContextId?: string;
@@ -78,7 +78,7 @@ export abstract class Shape {
     }
   }
 
-  get nodeShape(): NodeShape {
+  get nodeShape(): NodeShapeData {
     return (this.constructor as typeof Shape).shape;
   }
 

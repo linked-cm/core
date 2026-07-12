@@ -6,7 +6,7 @@ import {MutationThenable} from './MutationThenable.js';
 import {resolveMutationDispatch} from './queryDispatch.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import {type DeleteMutationJSON} from './MutationSerialization.js';
 import {serializeWherePath, deserializeWherePath} from './QueryBuilderSerialization.js';
@@ -132,7 +132,7 @@ export class DeleteBuilder<S extends Shape = Shape, R = DeleteResponse>
   readonly __queryKind = 'delete' as const;
 
   /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
-  get shape(): NodeShape {
+  get shape(): NodeShapeData {
     return this._shape.shape;
   }
 

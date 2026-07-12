@@ -32,27 +32,29 @@ Goal: make the DSL operate with zero Shape instances, and make `new Person()`
 - **3 `instanceof Shape`** sites: `getSetOf` (Shape.ts:251), `setQueryContext`
   (QueryContext.ts:119), `cached` (cached.ts:28).
 
-## Route decision (revised during planning)
+## Route decision (SELECTED: R1, per explicit user direction)
 
 Two routes were on the table:
 
-- **R1 — Plain-object meta-model + unconditional throw.** Convert
-  `NodeShape`/`PropertyShape` to plain objects + free functions, then throw
-  unconditionally in the constructor.
-- **R2 — Guarded constructor (SELECTED).** Remove the DSL's own instance usage
-  (`ShapeRef`), then guard the constructor with an internal token so only the
-  framework meta-shapes may instantiate; domain `new Person()` throws.
+- **R1 — Plain-object meta-model + unconditional throw (SELECTED).** Convert
+  `NodeShape`/`PropertyShape` metadata containers to QResult-like plain objects
+  (`NodeShapeData` / `PropertyShapeData`) + free functions, migrate all call sites
+  and type annotations, then make the `Shape` constructor throw **unconditionally**.
+- **R2 — Guarded constructor (rejected).** A `new.target` allowlist exempting the
+  meta-shapes. Lower churn but leaves instances internally and keeps instance
+  methods.
 
-**Why R2:** Planning measurement showed R1 touches **~291 `NodeShape`/`PropertyShape`
-type annotations across 29 files** and fights a structural-typing constraint
-(`NodeShape extends Shape` is required so `NodeShape.create()` works, which forces
-the instance type to carry Shape's `uri`/`nodeShape` getters, so plain-object
-literals are not cleanly assignable). Per the priority framework (maintainability →
-scalability → performance), R1's churn/risk **inverts** the simplicity it was meant
-to buy — the unconditional throw's only benefit over a token was "no token." R2
-achieves the identical consumer-facing guarantee with a small, well-bounded diff.
-R1 is recorded as a deferred follow-up (see Deferred section) for the user to
-iterate on if desired.
+**Why R1:** The user explicitly chose the full conversion ("complete replacement of
+all call types") after being shown R1's cost (~178 type-position + ~93 value-position
+usages across 29 files). The metadata *is* conceptually the QResult of the
+meta-shape — modelling it as a plain object is the coherent end state, and it lets
+the constructor throw unconditionally with no allowlist/token special-case. A brief
+R2 spike (allowlist guard) was started and is being reworked into R1; Phase 1
+(`createShapeTarget` ghosts) is retained as-is (it is how the DSL builds proxy
+targets for domain shapes without invoking the now-unconditional constructor).
+
+Size measured during planning: 178 type-position + 93 value-position usages, 29
+files; ~22 instance-method call sites; 3 construction factories.
 
 ## Accepted decisions
 
@@ -66,14 +68,20 @@ iterate on if desired.
   `ShapeSet`, `getLeastSpecificShape` work unchanged) that **never runs the
   constructor** — so it coexists with the D2 guard. Diff shrinks to ~6 sites; no
   changes to `QueryShape`/`QueryShapeSet` internals. Same end guarantee.
-- **D2 — Token-guarded constructor.** A module-private `SHAPE_INIT_TOKEN` symbol.
-  `Shape`'s constructor throws unless it receives the token. Framework meta-shape
-  constructors (`NodeShape`, `PropertyShape`) pass it via `super(SHAPE_INIT_TOKEN, …)`.
-- **D3 — Collapse the 3 `instanceof Shape` sites.** After D1 no domain value is ever
-  a Shape instance, so: `getSetOf` builds a `ShapeRef`-based `ShapeSet`;
-  `setQueryContext` and `cached` drop the dead instance branch.
-- **D4 — Keep `NodeShape`/`PropertyShape` classes unchanged** (still instantiable
-  internally via the token). No plain-object conversion in this cycle.
+- **D2 — Unconditional throw.** After the meta-model no longer instantiates,
+  `Shape`'s constructor throws unconditionally (no allowlist/token). The only way to
+  produce a Shape-shaped object is `createShapeTarget()` (Object.create, internal).
+- **D3 — Plain-object metadata (`NodeShapeData` / `PropertyShapeData`).** New
+  standalone interfaces (NOT extending `Shape`), so plain object literals are
+  assignable. `SomeShape.shape` and every property shape become these plain objects.
+  All `NodeShape`/`PropertyShape` *type* annotations migrate to the `*Data` types.
+- **D4 — Instance methods → free functions in `src/shapes/nodeShapeData.ts`**
+  (`getPropertyShapes`, `getUniquePropertyShapes`, `getPropertyShape`,
+  `propertyShapeToResult`, `nodeShapeEquals`, `addPropertyShape`,
+  `clonePropertyShape`, plus `createNodeShapeData`/`createPropertyShapeData`
+  factories). `NodeShape`/`PropertyShape` remain as static-only DSL handles
+  (values): `static shape: NodeShapeData`, inherited static `create/select/...`,
+  registry registration, `.prototype` for `createShapeTarget`. Never instantiated.
 
 ## Architecture
 
@@ -109,58 +117,67 @@ Note: `QueryShape`/`QueryShapeSet` internals, `get id()`, `.nodeShape`,
 `getLeastSpecificShape`, and `cached.ts` are **unchanged** — the ghost is a real
 `Shape`, so all instance-shaped reads keep working.
 
-### Constructor guard (src/shapes/Shape.ts + SHACL.ts)
-- `Shape` constructor: `constructor(token?: unknown, node?: string | NodeReferenceValue)`
-  → throw unless `token === SHAPE_INIT_TOKEN`.
-- `NodeShape`/`PropertyShape` constructors call `super(SHAPE_INIT_TOKEN, node)`.
-- Error message: ``Cannot instantiate shape `${new.target.name}` directly. Shapes
-  are metadata only — use the DSL (`${name}.select(...)`, `.create(...)`,
-  `.update(...)`, `.delete(...)`).``
+### Plain-object metadata + free functions (Phase 2)
+- New `src/shapes/nodeShapeData.ts`: `NodeShapeData`/`PropertyShapeData` interfaces
+  (standalone, not `extends Shape`) + the free functions + factories.
+- `NodeShape`/`PropertyShape` (SHACL.ts): keep as classes for their **static** DSL
+  role only. Remove instance methods and instance-field declarations used purely as
+  data (the fields now live on the plain objects). `static shape: NodeShapeData`.
+- Construction factories build plain objects:
+  - `Package.ts:310` `applyLinkedShape` `new NodeShape(uri)` → `createNodeShapeData(uri)`.
+  - `Package.ts:562` base `Shape.shape` → `createNodeShapeData(...)`.
+  - `SHACL.ts:764` `createPropertyShape` `new PropertyShape()` → `createPropertyShapeData()`.
+  - `PropertyShape.clone()` → `clonePropertyShape()` (spread).
+- `Shape.shape` and `ShapeConstructor.shape` types → `NodeShapeData`.
+- Migrate ~178 `NodeShape`/`PropertyShape` type annotations → `*Data`, and ~22
+  instance-method calls → free-function calls.
+
+### Constructor guard (src/shapes/Shape.ts) — unconditional
+- `Shape` constructor throws unconditionally (no allowlist/token). Message:
+  ``Cannot instantiate shape `${new.target?.name}` directly — shapes are metadata,
+  not data. Use the DSL: ${name}.select(...) / .create(...) / .update(...) /
+  .delete(...).``
+- Remove the temporary `_instantiable` allowlist and the `Shape.allowInstantiation`
+  calls in SHACL.ts once the meta-model no longer instantiates.
 
 ## Expected file changes
 
-- `src/shapes/Shape.ts` — ShapeRef type/factory, guarded constructor, SHAPE_INIT_TOKEN,
-  `mapPropertyShapes`/`getSetOf` retarget.
-- `src/shapes/SHACL.ts` — `NodeShape`/`PropertyShape` constructors pass the token.
-- `src/queries/SelectQuery.ts` — `QueryShape`/`QueryShapeSet` originalValue → ShapeRef;
-  `generatePathValue`, `.as()`, `proxifyQueryShape`, `get id`.
-- `src/queries/ProxiedPathBuilder.ts` — ref instead of `new shape()`.
-- `src/queries/QueryContext.ts` — ref materialization; drop instance branch.
-- `src/utils/cached.ts` — drop dead `instanceof Shape` branch.
-- Tests that do `new SomeShape()` on domain shapes (`core-utils.test.ts:129,270`)
-  and `new PropertyShape()` (`sparql-fuseki-shape-sync.test.ts:134`) — updated.
+- `src/shapes/Shape.ts` — `createShapeTarget` (done, Phase 1), unconditional throw,
+  `.shape` type → `NodeShapeData`.
+- `src/shapes/nodeShapeData.ts` — NEW: interfaces + free functions + factories.
+- `src/shapes/SHACL.ts` — `NodeShape`/`PropertyShape` become static-only handles;
+  `createPropertyShape` builds plain objects; internal method calls → free functions.
+- `src/utils/Package.ts` — factory calls build plain objects; internal calls migrated.
+- ~26 other files under `src/queries`, `src/sparql`, `src/utils`, `src/expressions`,
+  `src/shapes` — type-annotation + method-call migration (typecheck-driven).
+- Tests: `core-utils.test.ts` (domain-shape `new`), `sparql-fuseki-shape-sync.test.ts`
+  (`new PropertyShape()`), plus any relying on instance methods — migrated. Add a
+  throw test.
 
 ## Contracts / invariants
 
-- **C1:** `new Person()` (any domain shape) throws; `Person.select/create/update/delete`
-  and all query callbacks behave identically to today.
-- **C2:** `syncShapes()` still serializes shapes (framework meta-shapes still
-  instantiate via the token). Full query + serialization suite stays green.
-- **C3:** Query-context refs (`{@ctx}`), `.for()`, `.as()`, where/sort/minus all
-  behave identically (ShapeRef carries `id` + context stamps).
-- **C4:** `ShapeRef` is internal; not exported from the package index.
+- **C1:** `new Person()` (and any Shape subclass, incl. `new NodeShape()`) throws;
+  `Person.select/create/update/delete` and all query callbacks behave identically.
+- **C2:** `syncShapes()` still serializes shapes (uses static `NodeShape.create` +
+  plain-object metadata). Full query + serialization suite stays green.
+- **C3:** Metadata objects are plain (`Object.getPrototypeOf === Object.prototype`),
+  carry the same fields as today, and are read via free functions.
+- **C4:** `NodeShapeData`/`PropertyShapeData` and the free functions are internal;
+  the public index surface (README root imports) is unchanged except that `Shape`
+  is now non-instantiable.
 
 ## Pitfalls
 
-- `QueryShape.as()` and `QueryShapeSet.as()` copy `.id` onto a fresh instance today —
-  must copy onto the fresh `ShapeRef`.
-- The generic `new Shape()` node-reference projection (`SelectQuery.ts:606`) must
-  become a `ShapeRef` whose `shapeClass` is the base `Shape` (still valid: reads
-  only `.shape`/`.id`).
-- Passthrough keys (`INTEROP_PASSTHROUGH_KEYS`) in `proxifyQueryShape` currently
-  return `originalShape[key]` — on a ref, symbol/interop keys should return
-  `undefined`/ref field, not throw.
-- Implicit subclass constructors forward args to `super`; `new Person('id')` passes
-  `'id'` as the token slot → throws (correct).
-
-## Deferred (candidate for review-time iterate)
-
-- **R1 — plain-object meta-model:** convert `NodeShape`/`PropertyShape` to
-  `NodeShapeData`/`PropertyShapeData` plain objects + a `nodeShapeData.ts`
-  free-function module (`getPropertyShapes`, `getUniquePropertyShapes`,
-  `getPropertyShape`, `propertyShapeToResult`, `nodeShapeEquals`, `addPropertyShape`,
-  `clonePropertyShape`), then drop the token for an unconditional throw. ~291 type
-  sites; do as its own focused effort with the test suite as the safety net.
+- Keep the tree green at phase boundaries; 2B is the large step (retype + migrate) —
+  lean on `tsc` to enumerate every site.
+- `PathExpr` values inside `path`/`sortBy` are unchanged (already plain-ish).
+- `cached.ts` `instanceof Shape` and `setQueryContext` `instanceof Shape`: metadata
+  objects are no longer `instanceof Shape`; ensure their `{id}` branch still covers
+  them (it does).
+- `parentNodeShape` back-reference on property shapes → keep as a `NodeShapeData`
+  reference on the plain object.
+- Do not break `shape: NodeShape` / `shape: PropertyShape` *value* usages in decorator
+  configs (they reference the class, not the data type) during annotation migration.
 
 ## Validation
 
@@ -191,34 +208,64 @@ Validation:
   remains in the DSL read/mutation path (`SelectQuery.ts`, `ProxiedPathBuilder.ts`,
   `QueryContext.ts`, `Shape.mapPropertyShapes`/`getSetOf`).
 
-### Phase 2 — Token-guarded constructor
-Depends on Phase 1.
+### Phase 2 — Full plain-object meta-model + unconditional throw
+Depends on Phase 1. Split into sub-phases, each green at its boundary.
 
-Tasks:
-1. `src/shapes/Shape.ts`: module-private `SHAPE_INIT_TOKEN`; constructor
-   `(token?, node?)` throws with the DSL-steering message unless `token` matches.
-2. `src/shapes/SHACL.ts`: `NodeShape` + `PropertyShape` constructors call
-   `super(SHAPE_INIT_TOKEN, node)` (import the token).
-3. Update tests that instantiate shapes directly: `core-utils.test.ts` (domain
-   shapes) and `sparql-fuseki-shape-sync.test.ts` (`new PropertyShape()`).
-4. Add a test asserting `new Person()` (a domain shape) throws with the guidance
-   message, and that the DSL path still works.
+**Phase 2A — Data types + free-function module (additive).**
+1. Add `src/shapes/nodeShapeData.ts`: `NodeShapeData` + `PropertyShapeData`
+   interfaces; free functions (`getPropertyShapes`, `getUniquePropertyShapes`,
+   `getPropertyShape`, `propertyShapeToResult`, `nodeShapeEquals`,
+   `addPropertyShape`, `clonePropertyShape`); factories
+   (`createNodeShapeData`, `createPropertyShapeData`).
+2. Point the existing `NodeShape`/`PropertyShape` instance methods at the free
+   functions (delegate) so behavior is proven while the tree stays green.
+Validation: typecheck clean; full suite green.
 
-Validation:
-- `npm run typecheck` clean.
-- `npm test` — full suite green including the new guard test.
-- Grep confirms the only Shape-subclass `new` sites are the framework meta-shape
-  factories passing `SHAPE_INIT_TOKEN`.
+**Phase 2B — Convert construction + retype + migrate call sites.**
+1. Factories build plain objects (`Package.ts:310/562`, `SHACL.ts:764`, clone).
+2. `Shape.shape` + `ShapeConstructor.shape` → `NodeShapeData`.
+3. Migrate all `NodeShape`/`PropertyShape` *type* annotations → `*Data`
+   (typecheck-driven, file by file), protecting decorator-config *value* usages.
+4. Replace instance-method calls with free-function calls (~22 sites).
+5. Strip now-dead instance members/methods from the `NodeShape`/`PropertyShape`
+   classes; they remain static-only handles.
+Validation: typecheck clean; full suite green (1478 passed).
+
+**Phase 2C — Unconditional throw + cleanup + tests.**
+1. `Shape` constructor throws unconditionally; remove `_instantiable` allowlist +
+   `Shape.allowInstantiation` calls.
+2. Update tests that construct shapes directly; add a test asserting `new Person()`
+   throws with the guidance message and the DSL path still works.
+Validation: typecheck clean; full suite green incl. the new throw test; grep
+confirms no `new NodeShape`/`new PropertyShape`/`new <domainShape>` remains.
 
 ### Exit
-Both phases green → proceed to review.
+All sub-phases green → proceed to review.
 
 ## Progress log
 
-### Phase 1 — DONE ✅
+### Phase 1 — DONE ✅ (commit 9e509e6)
 Retargeted all DSL proxy-target `new` sites to `createShapeTarget()` (constructor-
-less ghosts): `Shape.mapPropertyShapes`/`getSetOf`, `ProxiedPathBuilder`,
-`SelectQuery.generatePathValue` (×2) + `QueryShape.as`/`QueryShapeSet.as`,
-`QueryContext` `{id}` materialization. Validation: `npm run typecheck` clean;
-`npm test` = 1478 passed / 117 skipped / 5 snapshots (baseline parity, no
-regressions). Grep confirms no proxy-target `new` sites remain in the DSL path.
+less ghosts). Validation: typecheck clean; `npm test` = 1478 passed / 117 skipped /
+5 snapshots (baseline parity).
+
+### Phase 2A + 2B — DONE ✅
+Converted `NodeShape`/`PropertyShape` metadata containers to plain
+`NodeShapeData`/`PropertyShapeData` objects + free functions:
+- New `src/shapes/nodeShapeData.ts` (interfaces, factories, free functions).
+- `NodeShape`/`PropertyShape` reduced to static-only DSL handles (never instantiated).
+- Construction factories (`applyLinkedShape`, base `Shape.shape`, `createPropertyShape`,
+  `clone`) build plain objects.
+- `Shape.shape` / `ShapeConstructor.shape` retyped to `NodeShapeData`.
+- ~178 type annotations migrated to `*Data`; ~30 instance-method call sites (prod +
+  tests) rewritten to free functions (`getPropertyShapes`, `getUniquePropertyShapes`,
+  `getPropertyShape`, `propertyShapeToResult`, `nodeShapeEquals`, `addPropertyShape`,
+  `createPropertyShapeData`).
+- The abandoned R2 allowlist was removed; the constructor is permissive again
+  (unconditional throw lands in 2C).
+Validation: typecheck clean; `npm test` = 1478 passed / 117 skipped / 5 snapshots
+(full baseline parity — behavior-preserving).
+
+### Next: Phase 2C
+Add the unconditional constructor throw; update the 2 tests that construct domain
+shapes (`core-utils.test.ts`); add a `new Person()`-throws test.

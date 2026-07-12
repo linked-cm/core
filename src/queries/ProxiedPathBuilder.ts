@@ -22,7 +22,7 @@ export function createProxiedPathBuilder<S extends Shape>(
   }
   // Create a constructor-less dummy shape target and wrap it in a QueryShape
   // proxy. The proxy intercepts property access and resolves each property name
-  // to its PropertyShape, building a chain of QueryBuilderObjects that
+  // to its PropertyShapeData, building a chain of QueryBuilderObjects that
   // records which path was traversed.
   const dummyShape = createShapeTarget(shape);
   return QueryShape.create(dummyShape);

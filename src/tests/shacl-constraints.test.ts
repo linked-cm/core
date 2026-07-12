@@ -1,4 +1,5 @@
 import {createPropertyShape} from '../shapes/SHACL';
+import {propertyShapeToResult} from '../shapes/SHACL';
 import type {LiteralPropertyShapeConfig, ObjectPropertyShapeConfig} from '../shapes/SHACL';
 
 const EX_NS = 'http://example.org/';
@@ -69,7 +70,7 @@ describe('hasValue constraint', () => {
       {path: {id: `${EX_NS}status`}, hasValue: 'active'} as LiteralPropertyShapeConfig,
       'status',
     );
-    const result = ps.getResult();
+    const result = propertyShapeToResult(ps);
     expect(result.hasValue).toBe('active');
   });
 
@@ -78,7 +79,7 @@ describe('hasValue constraint', () => {
       {path: {id: `${EX_NS}flag`}, hasValue: false} as LiteralPropertyShapeConfig,
       'flag',
     );
-    const result = ps.getResult();
+    const result = propertyShapeToResult(ps);
     expect(result.hasValue).toBe(false);
   });
 });
@@ -139,7 +140,7 @@ describe('in constraint', () => {
       {path: {id: `${EX_NS}status`}, in: ['ACTIVE', 'PENDING']} as LiteralPropertyShapeConfig,
       'status',
     );
-    const result = ps.getResult();
+    const result = propertyShapeToResult(ps);
     expect(result.in).toEqual(['ACTIVE', 'PENDING']);
   });
 });
@@ -168,7 +169,7 @@ describe('lessThan constraint', () => {
       } as LiteralPropertyShapeConfig,
       'startDate',
     );
-    const result = ps.getResult();
+    const result = propertyShapeToResult(ps);
     expect(result.lessThan).toEqual({id: `${EX_NS}endDate`});
   });
 });
@@ -193,7 +194,7 @@ describe('lessThanOrEquals constraint', () => {
       } as LiteralPropertyShapeConfig,
       'minPrice',
     );
-    const result = ps.getResult();
+    const result = propertyShapeToResult(ps);
     expect(result.lessThanOrEquals).toEqual({id: `${EX_NS}maxPrice`});
   });
 });

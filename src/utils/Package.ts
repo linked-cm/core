@@ -12,6 +12,7 @@ import {
   NodeShape,
   PropertyShape,
 } from '../shapes/SHACL.js';
+import {createNodeShapeData, type NodeShapeData} from '../shapes/nodeShapeData.js';
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {Prefix} from './Prefix.js';
 import {coreOntology} from '../ontologies/linked-core.js';
@@ -306,8 +307,8 @@ export function linkedPackage(
     // if no shape object has been attached to the constructor
     if (!Object.getOwnPropertyNames(constructor).includes('shape'))
     {
-      // create a new node shape for this shapeClass
-      let nodeShape: NodeShape = new NodeShape(
+      // create a new node shape (plain metadata object) for this shapeClass
+      const nodeShape: NodeShapeData = createNodeShapeData(
         getNodeShapeUri(packageName, constructor.name),
       );
       // connect the typescript class to its NodeShape
@@ -372,7 +373,7 @@ export function linkedPackage(
 
     if (constructor.targetClass)
     {
-      (constructor.shape as NodeShape).targetClass = constructor.targetClass;
+      (constructor.shape as NodeShapeData).targetClass = constructor.targetClass;
     }
 
     // return the original class without modifications
@@ -559,7 +560,7 @@ corePackage.linkedShape({
 //if we dont need Shape to have get/set methods (like label and type) then this can be removed
 // Base Shape IRI follows the same scheme as every other core shape:
 // https://linked.cm/shape/core/Shape (corePackage above declared slug 'core').
-Shape.shape = new NodeShape(
+Shape.shape = createNodeShapeData(
   getNodeShapeUri('@_linked/core', 'Shape'),
 );
 addNodeShapeToShapeClass(Shape.shape,Shape);

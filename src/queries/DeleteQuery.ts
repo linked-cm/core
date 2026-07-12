@@ -4,7 +4,7 @@ import type {
   IRDeleteAllMutation,
   IRDeleteWhereMutation,
 } from './IntermediateRepresentation.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import type {DeleteMutationJSON} from './MutationSerialization.js';
 import type {DeleteLowerSpec} from './mutationLowerSpec.js';
 
@@ -15,7 +15,7 @@ import type {DeleteLowerSpec} from './mutationLowerSpec.js';
  */
 export interface DeleteQuery {
   readonly __queryKind: 'delete';
-  readonly shape: NodeShape;
+  readonly shape: NodeShapeData;
   toJSON(): DeleteMutationJSON;
   /** @internal IR-free lowering spec consumed by `lower()`. */
   _lowerSpec(): DeleteLowerSpec;
