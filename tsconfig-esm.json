@@ -4,6 +4,6 @@
     "module": "esnext",
     "target": "es6",
     "outDir": "lib/esm",
-    "moduleResolution": "node"
+    "moduleResolution": "bundler"
   }
 }
