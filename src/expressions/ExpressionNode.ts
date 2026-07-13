@@ -7,7 +7,7 @@ import {PendingQueryContext} from '../queries/QueryContext.js';
 export type ExpressionInput = ExpressionNode | string | number | boolean | Date | PendingQueryContext;
 
 /**
- * Map from placeholder sourceAlias → PropertyShape ID segments.
+ * Map from placeholder sourceAlias → PropertyShapeData ID segments.
  * Used to track unresolved property references from proxy tracing
  * that need to be resolved during IR lowering.
  */
@@ -491,7 +491,7 @@ export function resolveExpressionRefs(
  */
 export class ExistsCondition {
   constructor(
-    /** PropertyShape IDs forming the path from root to the collection. */
+    /** PropertyShapeData IDs forming the path from root to the collection. */
     public readonly pathSegmentIds: readonly string[],
     /** The inner predicate ExpressionNode. */
     public readonly predicate: ExpressionNode,

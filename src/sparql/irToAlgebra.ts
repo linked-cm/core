@@ -13,6 +13,7 @@ import type {
   IRSetModificationValue,
   IRTraversePattern,
 } from '../queries/IntermediateRepresentation.js';
+import {getPropertyShapes} from '../shapes/nodeShapeData.js';
 import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
@@ -119,9 +120,9 @@ function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
   if (cached) return cached;
 
   for (const shapeClass of shapeClasses.values()) {
-    const propertyShape = shapeClass.shape
-      ?.getPropertyShapes?.(true)
-      ?.find((prop: {id?: string}) => prop.id === propertyId);
+    const propertyShape = (
+      shapeClass.shape ? getPropertyShapes(shapeClass.shape, true) : []
+    ).find((prop: {id?: string}) => prop.id === propertyId);
     if (!propertyShape) continue;
 
     const simplePathId = getSimplePathId(propertyShape.path);
@@ -1704,14 +1705,14 @@ function generateNodeDataTriples(
   const triples: SparqlTriple[] = [];
   const subjectTerm = iriTerm(uri);
 
-  // Type triple — resolve the SHACL NodeShape id in the IR to the ontology
+  // Type triple — resolve the SHACL NodeShapeData id in the IR to the ontology
   // targetClass URI (sibling of PR #77's SELECT-side resolveShapeScanIri).
   // Mutations were not covered by #77; see mutation-uri-fidelity.test.ts.
   triples.push(tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(resolveShapeScanIri(data.shape))));
 
   // Field triples
   for (const field of data.fields) {
-    // Resolve the SHACL PropertyShape id to its declared `path` URI.
+    // Resolve the SHACL PropertyShapeData id to its declared `path` URI.
     const propertyTerm = resolvePropertyPredicateTerm(field.property);
 
     if (field.value === null || field.value === undefined) {
@@ -2105,9 +2106,8 @@ export function updateToAlgebra(
 /** True when the shape (or an ancestor) declares at least one `contains` property. */
 function shapeHasContainsProperty(shapeId: string): boolean {
   const nodeShape = getShapeClass(shapeId)?.shape;
-  if (!nodeShape || typeof nodeShape.getPropertyShapes !== 'function') return false;
-  return nodeShape
-    .getPropertyShapes(true)
+  if (!nodeShape) return false;
+  return getPropertyShapes(nodeShape, true)
     .some((ps) => (ps as {contains?: boolean}).contains);
 }
 
@@ -2131,10 +2131,7 @@ function collectContainment(): {containsPreds: string[]; dependentTypes: string[
     if ((nodeShape as {dependent?: boolean}).dependent && nodeShape.targetClass?.id) {
       dependentTypes.add(nodeShape.targetClass.id);
     }
-    const propertyShapes =
-      typeof nodeShape.getPropertyShapes === 'function'
-        ? nodeShape.getPropertyShapes(false)
-        : [];
+    const propertyShapes = getPropertyShapes(nodeShape, false);
     for (const ps of propertyShapes) {
       if ((ps as {contains?: boolean}).contains) {
         const predId = getSimplePathId(ps.path);
@@ -2286,7 +2283,7 @@ export function deleteToAlgebra(
 // ---------------------------------------------------------------------------
 
 /**
- * Checks whether a PropertyShape points to blank nodes (sh:BlankNode or
+ * Checks whether a PropertyShapeData points to blank nodes (sh:BlankNode or
  * sh:BlankNodeOrIRI). Returns true when the property's range *may* include
  * blank node values that should be cleaned up on delete.
  */
@@ -2317,7 +2314,7 @@ function walkBlankNodeTree(
 
   let optionals: SparqlAlgebraNode | null = null;
 
-  const props = shapeClass.shape.getPropertyShapes(true);
+  const props = shapeClass.shape ? getPropertyShapes(shapeClass.shape, true) : [];
   for (const prop of props) {
     if (!isBlankNodeProperty(prop)) continue;
 

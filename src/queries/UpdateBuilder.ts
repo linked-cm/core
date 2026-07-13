@@ -8,7 +8,7 @@ import type {IDataset} from '../interfaces/IDataset.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {PendingQueryContext, getQueryContext, UnresolvedContextError} from './QueryContext.js';
 import {encodeContextRef, isContextRefJSON} from './ContextRef.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import {type WhereClause, type WherePath, processWhereClause} from './SelectQuery.js';
 import type {ExpressionUpdateProxy, ExpressionUpdateResult} from '../expressions/ExpressionMethods.js';
 import {encodeNodeData, decodeNodeDataToRaw, type UpdateMutationJSON} from './MutationSerialization.js';
@@ -146,7 +146,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   readonly __queryKind = 'update' as const;
 
   /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
-  get shape(): NodeShape {
+  get shape(): NodeShapeData {
     return this._shape.shape;
   }
 

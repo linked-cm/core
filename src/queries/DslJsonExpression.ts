@@ -12,7 +12,7 @@
  *            `{and|or|not}`, or an S-expr array fallback.
  *
  * The codec is pure and shape-aware: it resolves property labels against the
- * supplied `NodeShape`, and never touches builder internals. Function and
+ * supplied `NodeShapeData`, and never touches builder internals. Function and
  * aggregate names are kept verbatim from the IR (e.g. `STRLEN`, `count`) — no
  * name map, lossless round-trip. Round-trip-through-`lower` is the contract.
  */
@@ -27,7 +27,7 @@ import {
   tracedPropertyExpression,
   tracedAliasExpression,
 } from '../expressions/ExpressionNode.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import type {WherePath} from './SelectQuery.js';
 import {walkPropertyPath} from './PropertyPath.js';
 
@@ -88,7 +88,7 @@ const COMBINATORS = new Set(['and', 'or', 'not']);
 // Path helpers
 // ---------------------------------------------------------------------------
 
-/** PropertyShape id = `{shapeId}/{label}` (SHACL.ts), so the label is the last segment. */
+/** PropertyShapeData id = `{shapeId}/{label}` (SHACL.ts), so the label is the last segment. */
 function labelOf(segmentIri: string): string {
   const i = segmentIri.lastIndexOf('/');
   return i >= 0 ? segmentIri.slice(i + 1) : segmentIri;
@@ -100,7 +100,7 @@ export function segmentsToPath(segmentIds: readonly string[]): string {
 }
 
 /** A dotted label path → its property-shape IRIs, resolved against `shape`. */
-export function pathToSegmentIds(shape: NodeShape, path: string): string[] {
+export function pathToSegmentIds(shape: NodeShapeData, path: string): string[] {
   return walkPropertyPath(shape, path).segments.map((s) => s.id);
 }
 
@@ -175,7 +175,7 @@ let _exprDepth = 0;
 /** Decode a DSL-JSON value back into an IR expression + its placeholder refs. */
 export function decodeValueExpr(
   json: DslJsonValue,
-  shape: NodeShape,
+  shape: NodeShapeData,
 ): {ir: IRExpression; refs: PropertyRefMap} {
   if (++_exprDepth > MAX_EXPR_DEPTH) {
     _exprDepth = 0;
@@ -190,7 +190,7 @@ export function decodeValueExpr(
 
 function decodeValueExprInner(
   json: DslJsonValue,
-  shape: NodeShape,
+  shape: NodeShapeData,
 ): {ir: IRExpression; refs: PropertyRefMap} {
   // S-expr array
   if (Array.isArray(json)) {
@@ -240,7 +240,7 @@ function decodeValueExprInner(
  *    `p.bestFriend.equals(x)` compares the property value, no traversal).
  */
 function propertyOrAlias(
-  shape: NodeShape,
+  shape: NodeShapeData,
   path: string,
 ): {ir: IRExpression; refs: PropertyRefMap} {
   const node =
@@ -280,7 +280,7 @@ const AGGREGATES = new Set(['count', 'sum', 'avg', 'min', 'max']);
 /** Encode a where-clause node (boolean) into a DSL-JSON condition. */
 export function encodeCondition(
   node: ExpressionNode | ExistsCondition,
-  shape: NodeShape,
+  shape: NodeShapeData,
 ): DslJsonCondition {
   if (node instanceof ExistsCondition) {
     return encodeExists(node, shape);
@@ -288,7 +288,7 @@ export function encodeCondition(
   return encodeBoolExpr(node.ir, node._refs, shape);
 }
 
-function encodeExists(ec: ExistsCondition, shape: NodeShape): DslJsonCondition {
+function encodeExists(ec: ExistsCondition, shape: NodeShapeData): DslJsonCondition {
   const rel = segmentsToPath(ec.pathSegmentIds);
   let quantifier: 'some' | 'none' | 'every';
   let predIr = ec.predicate.ir;
@@ -320,7 +320,7 @@ function encodeExists(ec: ExistsCondition, shape: NodeShape): DslJsonCondition {
 function encodeBoolExpr(
   ir: IRExpression,
   refs: PropertyRefMap,
-  shape: NodeShape,
+  shape: NodeShapeData,
 ): DslJsonCondition {
   if (ir.kind === 'logical_expr') {
     const parts = ir.expressions.map((e) => encodeBoolExpr(e, refs, shape));
@@ -383,7 +383,7 @@ function tryMergeAnd(parts: DslJsonCondition[]): DslJsonCondition | null {
 }
 
 /** Decode a DSL-JSON condition into a runtime WherePath (`{expressionNode}` | `{existsCondition}`). */
-export function decodeCondition(json: DslJsonCondition, shape: NodeShape): WherePath {
+export function decodeCondition(json: DslJsonCondition, shape: NodeShapeData): WherePath {
   const node = decodeConditionNode(json, shape);
   return node instanceof ExistsCondition
     ? ({existsCondition: node} as WherePath)
@@ -392,7 +392,7 @@ export function decodeCondition(json: DslJsonCondition, shape: NodeShape): Where
 
 function decodeConditionNode(
   json: DslJsonCondition,
-  shape: NodeShape,
+  shape: NodeShapeData,
 ): ExpressionNode | ExistsCondition {
   // S-expr fallback
   if (Array.isArray(json)) {
@@ -464,7 +464,7 @@ function decodeConditionNode(
 function comparisonsFor(
   left: IRExpression,
   value: unknown,
-  shape: NodeShape,
+  shape: NodeShapeData,
   refs: Map<string, readonly string[]>,
 ): IRExpression[] {
   // Membership: { "oneOf": [...] } / { "notOneOf": [...] } → IN / NOT IN.
@@ -523,7 +523,7 @@ function matchQuantifier(
 }
 
 /** A quantifier predicate decodes to an ExpressionNode (its inner boolean). */
-function expressionNodeFromCondition(json: DslJsonCondition, shape: NodeShape): ExpressionNode {
+function expressionNodeFromCondition(json: DslJsonCondition, shape: NodeShapeData): ExpressionNode {
   const node = decodeConditionNode(json, shape);
   if (node instanceof ExistsCondition) {
     // Nested exists as a predicate is uncommon; wrap is not representable here.

@@ -1,4 +1,5 @@
 import {describe, expect, test} from '@jest/globals';
+import {getPropertyShape} from '../shapes/SHACL';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
 import {literalProperty, objectProperty} from '../shapes/SHACL';
@@ -51,7 +52,7 @@ describe('Package & Shape Metadata Registration', () => {
 
   test('registers property shape metadata with expected id', () => {
     const nodeShapeId = MetaPerson.shape.id;
-    const propertyShape = MetaPerson.shape.getPropertyShape('name');
+    const propertyShape = getPropertyShape(MetaPerson.shape, 'name');
 
     expect(propertyShape).toBeDefined();
     expect(propertyShape.label).toBe('name');
@@ -89,9 +90,9 @@ describe('Package & Shape Metadata Registration', () => {
         }
       }
 
-      expect(InheritChild.shape.getPropertyShape('link', false).minCount).toBe(1);
-      expect(InheritChild.shape.getPropertyShape('link', false).maxCount).toBe(1);
-      expect(InheritChild.shape.getPropertyShape('link', false).nodeKind).toEqual(
+      expect(getPropertyShape(InheritChild.shape, 'link', false).minCount).toBe(1);
+      expect(getPropertyShape(InheritChild.shape, 'link', false).maxCount).toBe(1);
+      expect(getPropertyShape(InheritChild.shape, 'link', false).nodeKind).toEqual(
         shacl.BlankNodeOrIRI,
       );
     }).not.toThrow();
@@ -160,7 +161,7 @@ describe('Package & Shape Metadata Registration', () => {
       }
     }
 
-    const zeroLimited = ZeroCountShape.shape.getPropertyShape('zeroLimited');
+    const zeroLimited = getPropertyShape(ZeroCountShape.shape, 'zeroLimited');
     expect(zeroLimited.minCount).toBe(0);
     expect(zeroLimited.maxCount).toBe(0);
   });
@@ -256,7 +257,7 @@ describe('Package & Shape Metadata Registration', () => {
       }
 
       expect(
-        NodeKindTightenChild.shape.getPropertyShape('target', false).nodeKind,
+        getPropertyShape(NodeKindTightenChild.shape, 'target', false).nodeKind,
       ).toEqual(shacl.IRI);
     }).not.toThrow();
   });
@@ -293,7 +294,7 @@ describe('Package & Shape Metadata Registration', () => {
         }
       }
 
-      const member = MixedInheritChild.shape.getPropertyShape('member', false);
+      const member = getPropertyShape(MixedInheritChild.shape, 'member', false);
       expect(member.minCount).toBe(2);
       expect(member.maxCount).toBe(3);
       expect(member.nodeKind).toEqual(shacl.BlankNodeOrIRI);

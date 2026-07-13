@@ -24,13 +24,11 @@ import {
   mapSparqlUpdateResult,
 } from './resultMapping.js';
 import {generateEntityUri, type SparqlOptions} from './sparqlUtils.js';
-import {Shape} from '../shapes/Shape.js';
 import {lower} from '../queries/lower.js';
 
 /**
  * Abstract base class for SPARQL-backed datasets.
  *
- * Extends Shape so dataset configurations can themselves be persisted as linked data.
  * Handles the full pipeline: IR query → SPARQL string → execute → map results.
  * Subclasses only need to implement the two transport methods:
  * - `executeSparqlSelect` — send a SPARQL SELECT and return JSON results
@@ -54,11 +52,10 @@ import {lower} from '../queries/lower.js';
  * }
  * ```
  */
-export abstract class SparqlDataset extends Shape implements IDataset {
+export abstract class SparqlDataset implements IDataset {
   protected options?: SparqlOptions;
 
   constructor(options?: SparqlOptions) {
-    super();
     this.options = options;
   }
 

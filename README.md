@@ -782,7 +782,7 @@ export class Employee extends Person {
 
 Override behavior:
 
-- `NodeShape.getUniquePropertyShapes()` returns one property shape per label, with subclass overrides taking precedence.
+- `getUniquePropertyShapes(SomeShape.shape)` returns one property shape per label, with subclass overrides taking precedence.
 - Overrides must be tighten-only for `minCount`, `maxCount`, and `nodeKind` (widening is rejected at registration time).
 - If an override omits `minCount`, `maxCount`, or `nodeKind`, inherited values are kept.
 - Current scope: compatibility checks for `datatype`, `class`, and `pattern` are not enforced yet.

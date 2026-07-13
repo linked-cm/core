@@ -64,22 +64,20 @@ describe('hasValue constraint', () => {
     expect(ps.hasValueConstraint).toEqual({id: `${EX_NS}Person`});
   });
 
-  it('exposes hasValue through getResult()', () => {
+  it('exposes hasValue', () => {
     const ps = createPropertyShape(
       {path: {id: `${EX_NS}status`}, hasValue: 'active'} as LiteralPropertyShapeConfig,
       'status',
     );
-    const result = ps.getResult();
-    expect(result.hasValue).toBe('active');
+    expect(ps.hasValueConstraint).toBe('active');
   });
 
-  it('exposes falsy hasValue through getResult()', () => {
+  it('exposes falsy hasValue', () => {
     const ps = createPropertyShape(
       {path: {id: `${EX_NS}flag`}, hasValue: false} as LiteralPropertyShapeConfig,
       'flag',
     );
-    const result = ps.getResult();
-    expect(result.hasValue).toBe(false);
+    expect(ps.hasValueConstraint).toBe(false);
   });
 });
 
@@ -134,13 +132,12 @@ describe('in constraint', () => {
     expect(ps.in).toEqual([true, false]);
   });
 
-  it('exposes in through getResult()', () => {
+  it('exposes in', () => {
     const ps = createPropertyShape(
       {path: {id: `${EX_NS}status`}, in: ['ACTIVE', 'PENDING']} as LiteralPropertyShapeConfig,
       'status',
     );
-    const result = ps.getResult();
-    expect(result.in).toEqual(['ACTIVE', 'PENDING']);
+    expect(ps.in).toEqual(['ACTIVE', 'PENDING']);
   });
 });
 
@@ -160,7 +157,7 @@ describe('lessThan constraint', () => {
     expect(ps.lessThan).toEqual({id: `${EX_NS}endDate`});
   });
 
-  it('exposes lessThan through getResult()', () => {
+  it('exposes lessThan', () => {
     const ps = createPropertyShape(
       {
         path: {id: `${EX_NS}startDate`},
@@ -168,8 +165,7 @@ describe('lessThan constraint', () => {
       } as LiteralPropertyShapeConfig,
       'startDate',
     );
-    const result = ps.getResult();
-    expect(result.lessThan).toEqual({id: `${EX_NS}endDate`});
+    expect(ps.lessThan).toEqual({id: `${EX_NS}endDate`});
   });
 });
 
@@ -185,7 +181,7 @@ describe('lessThanOrEquals constraint', () => {
     expect(ps.lessThanOrEquals).toEqual({id: `${EX_NS}maxPrice`});
   });
 
-  it('exposes lessThanOrEquals through getResult()', () => {
+  it('exposes lessThanOrEquals', () => {
     const ps = createPropertyShape(
       {
         path: {id: `${EX_NS}minPrice`},
@@ -193,8 +189,7 @@ describe('lessThanOrEquals constraint', () => {
       } as LiteralPropertyShapeConfig,
       'minPrice',
     );
-    const result = ps.getResult();
-    expect(result.lessThanOrEquals).toEqual({id: `${EX_NS}maxPrice`});
+    expect(ps.lessThanOrEquals).toEqual({id: `${EX_NS}maxPrice`});
   });
 });
 

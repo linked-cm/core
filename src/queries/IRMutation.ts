@@ -1,4 +1,4 @@
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import {
   type NodeDescriptionValue,
   NodeReferenceValue,
@@ -26,18 +26,18 @@ import type {
 import {createTraversalResolver} from './IRLower.js';
 
 type CreateMutationInput = {
-  shape: NodeShape;
+  shape: NodeShapeData;
   description: NodeDescriptionValue;
 };
 
 type UpdateMutationInput = {
   id: string;
-  shape: NodeShape;
+  shape: NodeShapeData;
   updates: NodeDescriptionValue;
 };
 
 type DeleteMutationInput = {
-  shape: NodeShape;
+  shape: NodeShapeData;
   ids: NodeReferenceValue[];
 };
 
@@ -193,7 +193,7 @@ export const buildCanonicalDeleteMutationIR = (
 };
 
 type DeleteAllMutationInput = {
-  shape: NodeShape;
+  shape: NodeShapeData;
 };
 
 /** Builds an IRDeleteAllMutation — delete all instances of a shape type. */
@@ -207,7 +207,7 @@ export const buildCanonicalDeleteAllMutationIR = (
 };
 
 type DeleteWhereMutationInput = {
-  shape: NodeShape;
+  shape: NodeShapeData;
   where: IRExpression;
   wherePatterns: IRGraphPattern[];
 };
@@ -225,7 +225,7 @@ export const buildCanonicalDeleteWhereMutationIR = (
 };
 
 type UpdateWhereMutationInput = {
-  shape: NodeShape;
+  shape: NodeShapeData;
   updates: NodeDescriptionValue;
   where?: IRExpression;
   wherePatterns?: IRGraphPattern[];

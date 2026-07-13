@@ -13,7 +13,8 @@
  * here and from `lower()`, so a client that serializes mutations to JSON and
  * forwards them (without ever lowering) tree-shakes the whole IR pipeline away.
  */
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
+import {getPropertyShape} from '../shapes/nodeShapeData.js';
 import {
   type NodeDescriptionValue,
   type PropUpdateValue,
@@ -50,9 +51,9 @@ import {
   type MutationValueJSON,
 } from './MutationSerialization.js';
 import {decodeValueExpr, type DslJsonValue} from './DslJsonExpression.js';
-import type {PropertyShape} from '../shapes/SHACL.js';
+import type {PropertyShapeData} from '../shapes/SHACL.js';
 
-function requireShape(shapeId: string): NodeShape {
+function requireShape(shapeId: string): NodeShapeData {
   const shape = getShapeClass(shapeId)?.shape;
   if (!shape) {
     throw new Error(
@@ -75,8 +76,8 @@ let _decodeDepth = 0;
  */
 function decodeValue(
   json: MutationValueJSON,
-  currentShape: NodeShape,
-  prop?: PropertyShape,
+  currentShape: NodeShapeData,
+  prop?: PropertyShapeData,
 ): PropUpdateValue {
   if (++_decodeDepth > MAX_DECODE_DEPTH) {
     _decodeDepth = 0;
@@ -91,8 +92,8 @@ function decodeValue(
 
 function decodeValueInner(
   json: MutationValueJSON,
-  currentShape: NodeShape,
-  prop?: PropertyShape,
+  currentShape: NodeShapeData,
+  prop?: PropertyShapeData,
 ): PropUpdateValue {
   // S-expr computed value (no IR on the wire)
   if (Array.isArray(json)) {
@@ -143,14 +144,14 @@ function decodeValueInner(
  */
 export function decodeNodeData(
   json: MutationNodeDataJSON,
-  shape?: NodeShape,
+  shape?: NodeShapeData,
 ): NodeDescriptionValue {
   const nodeShape =
     typeof json.__shape === 'string' ? requireShape(json.__shape) : shape!;
   const fields: UpdateNodePropertyValue[] = [];
   for (const [key, val] of Object.entries(json)) {
     if (key === '__id' || key === '__shape' || val === undefined) continue;
-    const prop = nodeShape.getPropertyShape(key);
+    const prop = getPropertyShape(nodeShape, key);
     if (!prop) {
       throw new Error(
         `Property '${key}' not found on shape '${nodeShape.label || nodeShape.id}'`,
@@ -164,7 +165,7 @@ export function decodeNodeData(
 }
 
 function lowerWhere(
-  shape: NodeShape,
+  shape: NodeShapeData,
   json: WherePathJSON,
 ): {where: IRExpression; wherePatterns: IRGraphPattern[]} {
   const wherePath = deserializeWherePath(shape, json);
