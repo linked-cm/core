@@ -7,7 +7,7 @@
  * codec into the select/mutation envelopes and handles sort + minus.
  */
 
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import {walkPropertyPath} from './PropertyPath.js';
 import type {WherePath, SortByPath} from './SelectQuery.js';
 import type {RawMinusEntry, PropertyPathSegment} from './IRDesugar.js';
@@ -41,7 +41,7 @@ export type RawMinusEntryJSON = {
 /** Serialize a runtime where-clause to its DSL-JSON condition form. */
 export function serializeWherePath(
   where: WherePath,
-  shape: NodeShape,
+  shape: NodeShapeData,
 ): WherePathJSON {
   const node: ExpressionNode | ExistsCondition =
     'existsCondition' in (where as object)
@@ -56,7 +56,7 @@ export function serializeSortByPath(sort: SortByPath): SortByPathJSON {
 
 export function serializeRawMinusEntry(
   entry: RawMinusEntry,
-  shape: NodeShape,
+  shape: NodeShapeData,
 ): RawMinusEntryJSON {
   const json: RawMinusEntryJSON = {};
   if (entry.shapeId) json.shapeId = entry.shapeId;
@@ -75,14 +75,14 @@ export function serializeRawMinusEntry(
 
 /** Rebuild a runtime where-clause from its DSL-JSON condition form. */
 export function deserializeWherePath(
-  shape: NodeShape,
+  shape: NodeShapeData,
   json: WherePathJSON,
 ): WherePath {
   return decodeCondition(json, shape);
 }
 
 export function deserializeSortByPath(
-  shape: NodeShape,
+  shape: NodeShapeData,
   json: SortByPathJSON,
 ): SortByPath {
   // Per-path directions: each `{path: dir}` entry keeps its own direction.
@@ -93,7 +93,7 @@ export function deserializeSortByPath(
 }
 
 export function deserializeRawMinusEntry(
-  shape: NodeShape,
+  shape: NodeShapeData,
   json: RawMinusEntryJSON,
 ): RawMinusEntry {
   const entry: RawMinusEntry = {};

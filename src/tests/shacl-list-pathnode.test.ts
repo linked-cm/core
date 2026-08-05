@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 import {describe, expect, test} from '@jest/globals';
+import {getPropertyShape} from '../shapes/SHACL';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
 import {objectProperty} from '../shapes/SHACL';
@@ -61,14 +62,14 @@ describe('List / PathNode / rdfList', () => {
 
   test('List: rest is contains + dependent; first is not contains', () => {
     expect(List.shape.dependent).toBe(true);
-    expect(List.shape.getPropertyShape('rest', false).contains).toBe(true);
-    expect(List.shape.getPropertyShape('first', false).contains).toBeFalsy();
+    expect(getPropertyShape(List.shape, 'rest', false).contains).toBe(true);
+    expect(getPropertyShape(List.shape, 'first', false).contains).toBeFalsy();
   });
 
   test('PathNode: dependent + all operator edges contains', () => {
     expect(PathNode.shape.dependent).toBe(true);
     for (const op of ['inversePath', 'alternativePath', 'zeroOrMorePath', 'oneOrMorePath', 'zeroOrOnePath']) {
-      expect(PathNode.shape.getPropertyShape(op, false).contains).toBe(true);
+      expect(getPropertyShape(PathNode.shape, op, false).contains).toBe(true);
     }
   });
 });

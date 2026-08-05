@@ -21,7 +21,15 @@ import {FusekiStore} from '../test-helpers/FusekiStore';
 import {setQueryDispatch} from '../queries/queryDispatch';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
-import {literalProperty, objectProperty, PropertyShape} from '../shapes/SHACL';
+import {
+  literalProperty,
+  objectProperty,
+  getPropertyShape,
+  addPropertyShape,
+  createPropertyShapeData,
+  PropertyShape,
+  type PropertyShapeData,
+} from '../shapes/SHACL';
 import {getAllShapeClasses} from '../utils/ShapeClass';
 import {syncShapes} from '../shapes/syncShapes';
 import {rdfList} from '../shapes/List';
@@ -129,21 +137,21 @@ describe('shape sync e2e (Fuseki)', () => {
 
     // ---- simulate code edits on the registered shapes ----
     // change constraint: name maxCount 1 -> 3
-    E2EPerson.shape.getPropertyShape('name', false).maxCount = 3;
+    getPropertyShape(E2EPerson.shape, 'name', false).maxCount = 3;
     // add a property
-    const nick = new PropertyShape();
+    const nick = createPropertyShapeData();
     nick.label = 'nickname';
     nick.path = ex('nickname');
     nick.maxCount = 1;
-    E2EPerson.shape.addPropertyShape(nick);
+    addPropertyShape(E2EPerson.shape, nick);
     // remove a property (age)
     (E2EPerson.shape as any).propertyShapes = (
       E2EPerson.shape as any
-    ).propertyShapes.filter((ps: PropertyShape) => ps.label !== 'age');
+    ).propertyShapes.filter((ps: PropertyShapeData) => ps.label !== 'age');
     // change a path simple -> complex (manager: ex:manager -> ^ex:reports)
-    E2EPerson.shape.getPropertyShape('manager', false).path = {inv: ex('reports')};
+    getPropertyShape(E2EPerson.shape, 'manager', false).path = {inv: ex('reports')};
     // shrink the sh:in list 2 -> 1
-    E2EPerson.shape.getPropertyShape('status', false).in = [ex('Active')];
+    getPropertyShape(E2EPerson.shape, 'status', false).in = [ex('Active')];
     // remove a whole shape from the registry (no longer "in code")
     getAllShapeClasses().delete(G());
 

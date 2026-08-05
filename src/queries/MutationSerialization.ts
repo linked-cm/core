@@ -29,12 +29,13 @@ import {
   type SinglePropertyUpdateValue,
   isSetModificationValue,
 } from './QueryFactory.js';
+import {getPropertyShape} from '../shapes/nodeShapeData.js';
 import {ExpressionNode, isExpressionNode} from '../expressions/ExpressionNode.js';
 import type {WherePathJSON} from './QueryBuilderSerialization.js';
 import type {ContextRefJSON} from './ContextRef.js';
 import {PendingQueryContext} from './QueryContext.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
-import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
+import type {NodeShapeData, PropertyShapeData} from '../shapes/SHACL.js';
 import {
   encodeValueExpr,
   decodeValueExpr,
@@ -112,7 +113,7 @@ export type MutationJSON =
 // =============================================================================
 
 /** The shape a nested node is expected to have (a property's value shape), if resolvable. */
-export function valueShapeOf(prop?: PropertyShape): NodeShape | undefined {
+export function valueShapeOf(prop?: PropertyShapeData): NodeShapeData | undefined {
   const id = (prop as unknown as {valueShape?: {id: string}})?.valueShape?.id;
   return id ? getShapeClass(id)?.shape : undefined;
 }
@@ -120,7 +121,7 @@ export function valueShapeOf(prop?: PropertyShape): NodeShape | undefined {
 /** Encode a single (non-array, non-setMod) property value. `prop` gives the nested-node shape. */
 function encodeSingleValue(
   value: SinglePropertyUpdateValue,
-  prop?: PropertyShape,
+  prop?: PropertyShapeData,
 ): MutationValueJSON {
   if (value === undefined) return {'@unset': true};
   if (isExpressionNode(value)) {
@@ -153,7 +154,7 @@ function encodeSingleValue(
 /** Encode any property value, including arrays and set modifications. */
 export function encodeValue(
   value: PropUpdateValue,
-  prop?: PropertyShape,
+  prop?: PropertyShapeData,
 ): MutationValueJSON {
   if (value === undefined) return {'@unset': true};
   if (Array.isArray(value)) {
@@ -176,7 +177,7 @@ export function encodeValue(
  */
 export function encodeNodeData(
   desc: NodeDescriptionValue,
-  expectedShape?: NodeShape,
+  expectedShape?: NodeShapeData,
 ): MutationNodeDataJSON {
   const json: MutationNodeDataJSON = {};
   if (desc.__id) json[NODE_ID_KEY] = desc.__id;
@@ -205,8 +206,8 @@ let _decodeDepth = 0;
  */
 function decodeValueToRaw(
   json: MutationValueJSON,
-  currentShape: NodeShape | undefined,
-  prop?: PropertyShape,
+  currentShape: NodeShapeData | undefined,
+  prop?: PropertyShapeData,
 ): unknown {
   if (++_decodeDepth > MAX_DECODE_DEPTH) {
     _decodeDepth = 0;
@@ -221,8 +222,8 @@ function decodeValueToRaw(
 
 function decodeValueToRawInner(
   json: MutationValueJSON,
-  currentShape: NodeShape | undefined,
-  prop?: PropertyShape,
+  currentShape: NodeShapeData | undefined,
+  prop?: PropertyShapeData,
 ): unknown {
   // S-expr computed value
   if (Array.isArray(json)) {
@@ -257,7 +258,7 @@ function decodeValueToRawInner(
   return decodeNodeDataToRaw(o as MutationNodeDataJSON, valueShapeOf(prop) ?? currentShape);
 }
 
-function requireShapeForExpr(shape: NodeShape | undefined): NodeShape {
+function requireShapeForExpr(shape: NodeShapeData | undefined): NodeShapeData {
   if (!shape) {
     throw new Error('A shape is required to decode a computed mutation value');
   }
@@ -271,7 +272,7 @@ function requireShapeForExpr(shape: NodeShape | undefined): NodeShape {
  */
 export function decodeNodeDataToRaw(
   json: MutationNodeDataJSON,
-  shape?: NodeShape,
+  shape?: NodeShapeData,
 ): Record<string, unknown> {
   const nodeShape =
     typeof json[NODE_SHAPE_KEY] === 'string'
@@ -283,7 +284,7 @@ export function decodeNodeDataToRaw(
     if (key === NODE_ID_KEY || key === NODE_SHAPE_KEY || val === undefined) continue;
     // Skip prototype-polluting keys from untrusted DSL-JSON input.
     if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
-    const prop = nodeShape?.getPropertyShape(key);
+    const prop = nodeShape ? getPropertyShape(nodeShape, key) : undefined;
     obj[key] = decodeValueToRaw(val as MutationValueJSON, nodeShape, prop);
   }
   return obj;

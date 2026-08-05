@@ -1,5 +1,6 @@
-import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
-import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
+import {Shape, createShapeTarget, type ShapeConstructor} from '../shapes/Shape.js';
+import {getPropertyShapes, getUniquePropertyShapes, nodeShapeEquals} from '../shapes/nodeShapeData.js';
+import type {NodeShapeData, PropertyShapeData} from '../shapes/SHACL.js';
 import type {RawSelectInput} from './IRDesugar.js';
 import {ShapeSet} from '../collections/ShapeSet.js';
 import {shacl} from '../ontologies/shacl.js';
@@ -41,7 +42,7 @@ const INTEROP_PASSTHROUGH_KEYS = new Set<string>([
  */
 export interface SelectQuery {
   readonly __queryKind: 'select';
-  readonly shape: NodeShape;
+  readonly shape: NodeShapeData;
   toJSON(): QueryBuilderJSON;
   toRawInput(): RawSelectInput;
 }
@@ -107,7 +108,7 @@ export type SizeStep = {
   label?: string;
 };
 export type PropertyQueryStep = {
-  property: PropertyShape;
+  property: PropertyShapeData;
   where?: WherePath;
 };
 
@@ -513,16 +514,16 @@ export class QueryBuilderObject<
   protected prop: Property;
 
   constructor(
-    public property?: PropertyShape,
+    public property?: PropertyShapeData,
     public subject?: QueryShape<any> | QueryShapeSet<any> | QueryPrimitiveSet,
   ) {}
 
   /**
-   * Create a Query Builder Object based on the requested PropertyShape
+   * Create a Query Builder Object based on the requested PropertyShapeData
    */
   static generatePathValue(
     // originalValue: AccessorReturnValue,
-    property: PropertyShape,
+    property: PropertyShapeData,
     subject: QueryShape<any> | QueryShapeSet<any> | QueryShape<any>,
   ): QueryBuilderObject {
     let datatype = property.datatype;
@@ -558,7 +559,7 @@ export class QueryBuilderObject<
         // but the problem remains that the ImageObject shape needs to be available, but thats easier, as its data
         throw new Error(`Shape class not found for ${valueShape.id}`);
       }
-      const shapeValue = new shapeClass();
+      const shapeValue = createShapeTarget(shapeClass);
       if (singleValue) {
         return QueryShape.create(shapeValue, property, subject);
       } else {
@@ -599,11 +600,11 @@ export class QueryBuilderObject<
     // structural projection ("if List → members, if PathNode → operands") is the
     // `byShape` polymorphic-projection follow-up — see
     // packages/core/docs/backlog/031-byshape-polymorphic-projection.md.
-    // `Shape` is `abstract` at the type level but instantiable at runtime — the
-    // `valueShape` branch above effectively does the same via `getShapeClass`
-    // (e.g. for `sh:targetClass`, registered `shape: Shape`). Cast past the
-    // abstract check to build the generic node-reference projection.
-    const genericShape = new (Shape as unknown as {new (): Shape})();
+    // Build a constructor-less generic node-reference target on the base `Shape`
+    // (like the `valueShape` branch above, but for the shapeless base). `Shape`'s
+    // constructor throws, so we use `createShapeTarget` (Object.create) — the
+    // target is only a proxy metadata carrier, never a live instance.
+    const genericShape = createShapeTarget(Shape);
     return singleValue
       ? QueryShape.create(genericShape, property, subject)
       : QueryShapeSet.create(new ShapeSet([genericShape]), property, subject);
@@ -855,7 +856,7 @@ export class QueryShapeSet<
 
   constructor(
     _originalValue?: ShapeSet<S>,
-    property?: PropertyShape,
+    property?: PropertyShapeData,
     subject?: QueryShape<any> | QueryShapeSet<any>,
   ) {
     super(property, subject);
@@ -872,7 +873,7 @@ export class QueryShapeSet<
 
   static create<S extends Shape = Shape>(
     originalValue: ShapeSet<S>,
-    property: PropertyShape,
+    property: PropertyShapeData,
     subject: QueryShape<any> | QueryShapeSet<any>,
   ) {
     let instance = new QueryShapeSet<S>(originalValue, property, subject);
@@ -913,9 +914,11 @@ export class QueryShapeSet<
             const shapeClass = getShapeClass(queryShapeSet.property.valueShape);
             valueShape = shapeClass?.shape;
           }
-          let propertyShape: PropertyShape = valueShape
-            ?.getPropertyShapes(true)
-            .find((propertyShape) => propertyShape.label === key);
+          let propertyShape: PropertyShapeData = valueShape
+            ? getPropertyShapes(valueShape, true).find(
+                (propertyShape) => propertyShape.label === key,
+              )
+            : undefined;
 
           //if the property shape is found
           if (propertyShape) {
@@ -949,15 +952,13 @@ export class QueryShapeSet<
     shape: ShapeClass,
   ): QShapeSet<InstanceType<ShapeClass>, Source, Property> {
     //if the shape is not the same as the original value, then we need to create a new query shape
-    if (!shape.shape.equals(this.originalValue.getLeastSpecificShape().shape)) {
+    // `getLeastSpecificShape()` is `undefined` for an empty set; `?.` avoids a
+    // TypeError and `nodeShapeEquals(_, undefined)` is false, so we rebuild as needed.
+    if (!nodeShapeEquals(shape.shape, this.originalValue.getLeastSpecificShape()?.shape)) {
       let newOriginal = new ShapeSet(
-        this.originalValue.map((existing) => {
-          const instance = new (shape as any)();
-          if (existing?.id) {
-            instance.id = existing.id;
-          }
-          return instance;
-        }),
+        this.originalValue.map((existing) =>
+          createShapeTarget(shape as any, existing?.id),
+        ),
       );
       return QueryShapeSet.create(
         newOriginal,
@@ -995,7 +996,7 @@ export class QueryShapeSet<
   }
 
   callPropertyShapeAccessor(
-    propertyShape: PropertyShape,
+    propertyShape: PropertyShapeData,
   ): QueryShapeSet | QueryPrimitiveSet {
     //call the get method for that property shape on each item in the shape set
     //and return the result as a new shape set
@@ -1074,8 +1075,7 @@ export class QueryShapeSet<
     QueryShapeSet<S, Source, Property>
   > {
     let leastSpecificShape = this.getOriginalValue().getLeastSpecificShape();
-    const propertyLabels = leastSpecificShape.shape
-      .getUniquePropertyShapes()
+    const propertyLabels = getUniquePropertyShapes(leastSpecificShape.shape)
       .map((propertyShape) => propertyShape.label);
     return this.select((shape) =>
       propertyLabels.map((label) => (shape as any)[label]),
@@ -1128,7 +1128,7 @@ export class QueryShape<
 
   constructor(
     public originalValue: S,
-    property?: PropertyShape,
+    property?: PropertyShapeData,
     subject?: QueryShape<any> | QueryShapeSet<any>,
   ) {
     super(property, subject);
@@ -1143,7 +1143,7 @@ export class QueryShape<
 
   static create(
     original: Shape,
-    property?: PropertyShape,
+    property?: PropertyShapeData,
     subject?: QueryShape<any> | QueryShapeSet<any>,
   ) {
     let instance = new QueryShape(original, property, subject);
@@ -1169,7 +1169,7 @@ export class QueryShape<
           }
 
           //if not, then a method/accessor of the original shape was called
-          //then check if we have indexed any property shapes with that name for this shapes NodeShape
+          //then check if we have indexed any property shapes with that name for this shapes NodeShapeData
           //NOTE: this will only work with a @linkedProperty decorator
           let propertyShape = getPropertyShapeByLabel(
             originalShape.constructor as typeof Shape,
@@ -1199,11 +1199,8 @@ export class QueryShape<
     shape: ShapeClass,
   ): QShape<InstanceType<ShapeClass>, Source, Property> {
     //if the shape is not the same as the original value, then we need to create a new query shape
-    if (!shape.shape.equals(this.originalValue.nodeShape)) {
-      let newOriginal = new (shape as any)();
-      if (this.originalValue.id) {
-        newOriginal.id = this.originalValue.id;
-      }
+    if (!nodeShapeEquals(shape.shape, this.originalValue.nodeShape)) {
+      const newOriginal = createShapeTarget(shape as any, this.originalValue.id);
       return QueryShape.create(newOriginal, this.property, this.subject as any);
     }
     return this as any as QShape<InstanceType<ShapeClass>, Source, Property>;
@@ -1260,8 +1257,7 @@ export class QueryShape<
     let leastSpecificShape = getShapeClass(
       (this.getOriginalValue() as Shape).nodeShape.id,
     );
-    const propertyLabels = leastSpecificShape.shape
-      .getUniquePropertyShapes()
+    const propertyLabels = getUniquePropertyShapes(leastSpecificShape.shape)
       .map((propertyShape) => propertyShape.label);
     return this.select((shape) =>
       propertyLabels.map((label) => (shape as any)[label]),
@@ -1289,7 +1285,7 @@ export class QueryPrimitive<
 > extends QueryBuilderObject<T, Source, Property> {
   constructor(
     public originalValue?: T,
-    public property?: PropertyShape,
+    public property?: PropertyShapeData,
     public subject?: QueryShape<any> | QueryShapeSet<any> | QueryPrimitiveSet,
   ) {
     super(property, subject);
@@ -1333,7 +1329,7 @@ export class QueryPrimitiveSet<
 
   constructor(
     public originalValue?: JSNonNullPrimitive[],
-    public property?: PropertyShape,
+    public property?: PropertyShapeData,
     public subject?: QueryShapeSet<any> | QueryShape<any>,
     items?,
   ) {

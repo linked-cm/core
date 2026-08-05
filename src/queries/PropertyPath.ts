@@ -1,10 +1,11 @@
-import type {PropertyShape, NodeShape} from '../shapes/SHACL.js';
+import type {PropertyShapeData, NodeShapeData} from '../shapes/SHACL.js';
+import {getPropertyShape} from '../shapes/nodeShapeData.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 
 /**
  * A value object representing a sequence of property traversals from a root shape.
  *
- * Each segment is a PropertyShape representing one hop in the traversal.
+ * Each segment is a PropertyShapeData representing one hop in the traversal.
  * For example, `friends.name` on PersonShape produces a PropertyPath with
  * two segments: [friendsPropertyShape, namePropertyShape].
  *
@@ -13,17 +14,17 @@ import {getShapeClass} from '../utils/ShapeClass.js';
  */
 export class PropertyPath {
   constructor(
-    readonly rootShape: NodeShape,
-    readonly segments: readonly PropertyShape[],
+    readonly rootShape: NodeShapeData,
+    readonly segments: readonly PropertyShapeData[],
   ) {}
 
   /** Append a property traversal hop, returning a new PropertyPath. */
-  prop(property: PropertyShape): PropertyPath {
+  prop(property: PropertyShapeData): PropertyPath {
     return new PropertyPath(this.rootShape, [...this.segments, property]);
   }
 
   /** The terminal (leaf) property of this path. */
-  get terminal(): PropertyShape | undefined {
+  get terminal(): PropertyShapeData | undefined {
     return this.segments[this.segments.length - 1];
   }
 
@@ -56,13 +57,13 @@ export class PropertyPath {
  *
  * @throws If any segment cannot be resolved.
  */
-export function walkPropertyPath(shape: NodeShape, path: string): PropertyPath {
+export function walkPropertyPath(shape: NodeShapeData, path: string): PropertyPath {
   const labels = path.split('.');
-  const segments: PropertyShape[] = [];
+  const segments: PropertyShapeData[] = [];
   let currentShape = shape;
 
   for (const label of labels) {
-    const propertyShape = currentShape.getPropertyShape(label);
+    const propertyShape = getPropertyShape(currentShape, label);
     if (!propertyShape) {
       throw new Error(
         `Property '${label}' not found on shape '${currentShape.label || currentShape.id}' while resolving path '${path}'`,

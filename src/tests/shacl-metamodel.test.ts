@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 import {describe, expect, test} from '@jest/globals';
+import {getPropertyShape} from '../shapes/SHACL';
 import '../utils/Package'; // runs the core meta-model setup (sets NodeShape.shape etc.)
 import {NodeShape, PropertyShape} from '../shapes/SHACL';
 import {createToSparql} from '../sparql/irToAlgebra';
@@ -44,9 +45,9 @@ describe('meta-model serialization', () => {
   });
 
   test('meta-model marks contains on properties/path/in; PropertyShape dependent', () => {
-    expect(NodeShape.shape.getPropertyShape('properties', false).contains).toBe(true);
-    expect(PropertyShape.shape.getPropertyShape('path', false).contains).toBe(true);
-    expect(PropertyShape.shape.getPropertyShape('in', false).contains).toBe(true);
+    expect(getPropertyShape(NodeShape.shape, 'properties', false).contains).toBe(true);
+    expect(getPropertyShape(PropertyShape.shape, 'path', false).contains).toBe(true);
+    expect(getPropertyShape(PropertyShape.shape, 'in', false).contains).toBe(true);
     expect(PropertyShape.shape.dependent).toBe(true);
   });
 });

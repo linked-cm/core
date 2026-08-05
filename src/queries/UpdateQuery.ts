@@ -1,6 +1,6 @@
 import type {AddId} from './QueryFactory.js';
 import type {IRUpdateMutation, IRUpdateWhereMutation} from './IntermediateRepresentation.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import type {UpdateMutationJSON} from './MutationSerialization.js';
 import type {UpdateLowerSpec} from './mutationLowerSpec.js';
 
@@ -11,7 +11,7 @@ import type {UpdateLowerSpec} from './mutationLowerSpec.js';
  */
 export interface UpdateQuery {
   readonly __queryKind: 'update';
-  readonly shape: NodeShape;
+  readonly shape: NodeShapeData;
   toJSON(): UpdateMutationJSON;
   /** @internal IR-free lowering spec consumed by `lower()`. */
   _lowerSpec(): UpdateLowerSpec;

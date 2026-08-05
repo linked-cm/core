@@ -4,7 +4,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 import {getAllShapeClasses, getShapeClass} from '../utils/ShapeClass.js';
-import {NodeShape, PropertyShape} from './SHACL.js';
+import {NodeShape} from './SHACL.js';
+import {
+  getUniquePropertyShapes,
+  type NodeShapeData,
+  type PropertyShapeData,
+} from './nodeShapeData.js';
 import {Shape} from './Shape.js';
 import {DeleteBuilder} from '../queries/DeleteBuilder.js';
 import type {IDataset} from '../interfaces/IDataset.js';
@@ -18,7 +23,7 @@ import {serializePathToNodeData} from './serializePathToNodeData.js';
 const FRAMEWORK_PACKAGE = '@_linked/core';
 
 /** Build the create-pipeline data object for a single PropertyShape (flattened under shapeIri). */
-function buildPropertyShapeData(ps: PropertyShape, shapeIri: string): Record<string, unknown> {
+function buildPropertyShapeData(ps: PropertyShapeData, shapeIri: string): Record<string, unknown> {
   const psIri = `${shapeIri}/${ps.label}`;
   const d: Record<string, unknown> = {
     __id: psIri,
@@ -53,7 +58,7 @@ function buildPropertyShapeData(ps: PropertyShape, shapeIri: string): Record<str
 }
 
 /** Build the create-pipeline data object for a NodeShape and its (flattened) property shapes. */
-function buildNodeShapeData(nodeShape: NodeShape, shapeIri: string): Record<string, unknown> {
+function buildNodeShapeData(nodeShape: NodeShapeData, shapeIri: string): Record<string, unknown> {
   const d: Record<string, unknown> = {};
   if (nodeShape.targetClass) d.targetClass = nodeShape.targetClass;
   if (nodeShape.description) d.description = nodeShape.description;
@@ -64,9 +69,9 @@ function buildNodeShapeData(nodeShape: NodeShape, shapeIri: string): Record<stri
     d.ignoredProperties = nodeShape.ignoredProperties;
   }
   // Flatten: emit own + inherited property shapes (deduped by label) under this shape.
-  d.properties = nodeShape
-    .getUniquePropertyShapes()
-    .map((ps) => buildPropertyShapeData(ps, shapeIri));
+  d.properties = getUniquePropertyShapes(nodeShape).map((ps) =>
+    buildPropertyShapeData(ps, shapeIri),
+  );
   return d;
 }
 
@@ -77,7 +82,7 @@ function buildNodeShapeData(nodeShape: NodeShape, shapeIri: string): Record<stri
  * `ds` (optional) targets an explicit dataset — both the delete and the create run against it
  * instead of the global router. Omitted → today's global behavior.
  */
-function buildSyncThunk(nodeShape: NodeShape, iri: string, ds?: IDataset): () => Promise<void> {
+function buildSyncThunk(nodeShape: NodeShapeData, iri: string, ds?: IDataset): () => Promise<void> {
   return () => {
     // Build the data fresh on each invocation: the create pipeline mutates the node-data
     // (it strips nested `shape` keys), so a shared object can't be re-used across runs.
@@ -112,7 +117,7 @@ function buildSyncThunk(nodeShape: NodeShape, iri: string, ds?: IDataset): () =>
  */
 export async function syncShapes(ds?: IDataset): Promise<Array<() => Promise<void>>> {
   // 1. Enumerate code-registered user shapes (exclude framework/meta shapes).
-  const userShapes: Array<{iri: string; nodeShape: NodeShape}> = [];
+  const userShapes: Array<{iri: string; nodeShape: NodeShapeData}> = [];
   for (const [iri, shapeClass] of getAllShapeClasses()) {
     if (!shapeClass?.shape) continue;
     const pkg = (shapeClass as {packageName?: string}).packageName;

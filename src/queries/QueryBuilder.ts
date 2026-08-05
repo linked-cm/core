@@ -1,4 +1,5 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
+import {getUniquePropertyShapes} from '../shapes/nodeShapeData.js';
 import {resolveShape} from './resolveShape.js';
 import {
   type QueryBuildFn,
@@ -15,7 +16,7 @@ import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesug
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import type {IDataset} from '../interfaces/IDataset.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
 import {resolveUriOrThrow} from '../utils/NodeReference.js';
 import {FieldSet, type FieldSetFieldJSON, type FieldSetEntry} from './FieldSet.js';
@@ -182,7 +183,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   /**
    * Create a SelectBuilder for the given shape.
    *
-   * Accepts a shape class (e.g. `Person`), a NodeShape instance,
+   * Accepts a shape class (e.g. `Person`), a NodeShapeData instance,
    * or a shape IRI string (resolved via the shape registry).
    */
   static from<S extends Shape>(
@@ -218,8 +219,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
 
   /** Select all decorated properties of the shape. */
   selectAll(): SelectBuilder<S, any, QueryResponseToResultType<SelectAllQueryResponse<S>, S>[]> {
-    const propertyLabels = this._shape.shape
-      .getUniquePropertyShapes()
+    const propertyLabels = getUniquePropertyShapes(this._shape.shape)
       .map((ps) => ps.label);
     const selectFn = ((p: any) =>
       propertyLabels.map((label) => p[label])) as unknown as QueryBuildFn<S, any>;
@@ -638,7 +638,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   readonly __queryKind = 'select' as const;
 
   /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
-  get shape(): NodeShape {
+  get shape(): NodeShapeData {
     return this._shape.shape;
   }
 

@@ -131,7 +131,7 @@ type FieldDescriptor = {
   key: string;
   sparqlVar: string;
   expression: IRExpression;
-  /** Maximum cardinality from PropertyShape. Absent → multi-value (collected into array). */
+  /** Maximum cardinality from PropertyShapeData. Absent → multi-value (collected into array). */
   maxCount?: number;
 };
 
@@ -279,7 +279,7 @@ function buildNestingDescriptor(query: IRSelectQuery): NestingDescriptor {
 
     const field: FieldDescriptor = {key: resultKey, sparqlVar, expression};
     if (expression.kind === 'property_expr') {
-      // property_expr carries maxCount from PropertyShape — absent means multi-value
+      // property_expr carries maxCount from PropertyShapeData — absent means multi-value
       if (typeof expression.maxCount === 'number') {
         field.maxCount = expression.maxCount;
       }

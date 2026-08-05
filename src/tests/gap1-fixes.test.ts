@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 import {describe, expect, test} from '@jest/globals';
+import {getPropertyShapes} from '../shapes/SHACL';
 import '../utils/Package'; // runs the core meta-model setup (sets NodeShape.shape etc.)
 import {NodeShape} from '../shapes/SHACL';
 import {Prefix} from '../utils/Prefix';
@@ -51,8 +52,7 @@ describe('cached() — key isolation and error handling (Gap 1.c)', () => {
 
 describe('NodeShape meta-model — `type` predicate (Gap 1.a)', () => {
   test('the `type` property shape resolves to rdf:type, not sh:description', () => {
-    const typeShape = NodeShape.shape
-      .getPropertyShapes(true)
+    const typeShape = getPropertyShapes(NodeShape.shape, true)
       .find((ps: {label?: string}) => ps.label === 'type');
     expect(typeShape).toBeDefined();
     const pathId = (typeShape as {path?: {id?: string}}).path?.id;

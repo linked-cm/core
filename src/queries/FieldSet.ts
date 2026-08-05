@@ -1,4 +1,5 @@
-import type {NodeShape, PropertyShape} from '../shapes/SHACL.js';
+import type {NodeShapeData, PropertyShapeData} from '../shapes/SHACL.js';
+import {getUniquePropertyShapes, getPropertyShape} from '../shapes/nodeShapeData.js';
 import type {Shape, ShapeConstructor} from '../shapes/Shape.js';
 import {PropertyPath, walkPropertyPath} from './PropertyPath.js';
 import {getShapeClass, getAllShapeClasses} from '../utils/ShapeClass.js';
@@ -14,10 +15,10 @@ import {
 
 // Duck-type helpers for runtime detection.
 // These check structural shape since the classes live in SelectQuery.ts (runtime circular dep).
-// QueryBuilderObject has .property (PropertyShape) and .subject (QueryBuilderObject).
+// QueryBuilderObject has .property (PropertyShapeData) and .subject (QueryBuilderObject).
 // SetSize has .subject and extends QueryPrimitive<number>.
 type QueryBuilderObjectLike = {
-  property?: PropertyShape;
+  property?: PropertyShapeData;
   subject?: QueryBuilderObjectLike;
   wherePath?: unknown;
 };
@@ -165,7 +166,7 @@ const RELATION_OPTION_KEYS = new Set([
  * Every mutation method returns a new FieldSet — the original is never modified.
  */
 export class FieldSet<R = any, Source = any> {
-  readonly shape: NodeShape;
+  readonly shape: NodeShapeData;
   readonly entries: readonly FieldSetEntry[];
   /** Phantom field — carries the callback response type for conditional type inference. */
   declare readonly __response: R;
@@ -181,7 +182,7 @@ export class FieldSet<R = any, Source = any> {
   /**
    * For sub-select FieldSets: the parent property segments leading to this sub-select.
    */
-  readonly parentSegments?: PropertyShape[];
+  readonly parentSegments?: PropertyShapeData[];
 
   /**
    * For sub-select FieldSets: the shape class (ShapeType) of the sub-select's target.
@@ -205,7 +206,7 @@ export class FieldSet<R = any, Source = any> {
   readonly innerOffset?: number;
   readonly innerOrderBy?: FieldSetInnerOrderBy[];
 
-  private constructor(shape: NodeShape, entries: FieldSetEntry[]) {
+  private constructor(shape: NodeShapeData, entries: FieldSetEntry[]) {
     this.shape = shape;
     this.entries = entries;
   }
@@ -217,16 +218,16 @@ export class FieldSet<R = any, Source = any> {
   /**
    * Create a FieldSet for the given shape with the specified fields.
    *
-   * Accepts a ShapeClass (e.g. Person), NodeShape, or shape IRI string.
+   * Accepts a ShapeClass (e.g. Person), NodeShapeData, or shape IRI string.
    * Fields can be string paths, PropertyPath instances, nested objects,
    * or a callback receiving a proxy for dot-access.
    */
   static for<S extends Shape>(shape: ShapeConstructor<S>, fields: FieldSetInput[]): FieldSet<any>;
   static for<S extends Shape, R>(shape: ShapeConstructor<S>, fn: (p: any) => R): FieldSet<R>;
-  static for(shape: NodeShape | string, fields: FieldSetInput[]): FieldSet<any>;
-  static for(shape: NodeShape | string, fn: (p: any) => any): FieldSet<any>;
+  static for(shape: NodeShapeData | string, fields: FieldSetInput[]): FieldSet<any>;
+  static for(shape: NodeShapeData | string, fn: (p: any) => any): FieldSet<any>;
   static for(
-    shape: ShapeConstructor<any> | NodeShape | string,
+    shape: ShapeConstructor<any> | NodeShapeData | string,
     fieldsOrFn: FieldSetInput[] | ((p: any) => any),
   ): FieldSet<any> {
     const resolved = FieldSet.resolveShapeInput(shape);
@@ -255,7 +256,7 @@ export class FieldSet<R = any, Source = any> {
   static forSubSelect<R, Source>(
     shapeClass: any,
     fn: (p: any) => R,
-    parentSegments: PropertyShape[],
+    parentSegments: PropertyShapeData[],
     source?: QueryBuilderObjectLike,
   ): FieldSet<R, Source> {
     const nodeShape = shapeClass.shape || shapeClass;
@@ -295,8 +296,8 @@ export class FieldSet<R = any, Source = any> {
    *   - `depth>1`: recursively includes nested shape properties up to the given depth.
    */
   static all<S extends Shape>(shape: ShapeConstructor<S>, opts?: {depth?: number}): FieldSet;
-  static all(shape: NodeShape | string, opts?: {depth?: number}): FieldSet;
-  static all(shape: ShapeConstructor<any> | NodeShape | string, opts?: {depth?: number}): FieldSet {
+  static all(shape: NodeShapeData | string, opts?: {depth?: number}): FieldSet;
+  static all(shape: ShapeConstructor<any> | NodeShapeData | string, opts?: {depth?: number}): FieldSet {
     const depth = opts?.depth ?? 1;
     if (depth < 1) {
       throw new Error(
@@ -314,11 +315,11 @@ export class FieldSet<R = any, Source = any> {
    * from circular shape references.
    */
   private static allForShape(
-    nodeShape: NodeShape,
+    nodeShape: NodeShapeData,
     depth: number,
     visited: Set<string>,
   ): FieldSet {
-    const propertyShapes = nodeShape.getUniquePropertyShapes();
+    const propertyShapes = getUniquePropertyShapes(nodeShape);
     const entries: FieldSetEntry[] = [];
 
     for (const ps of propertyShapes) {
@@ -581,8 +582,8 @@ export class FieldSet<R = any, Source = any> {
   }
 
   /** The shape a scoped filter at segment `idx` is evaluated against (the segment's value shape). */
-  private scopedShapeAt(entry: FieldSetEntry, idx: number): NodeShape {
-    const seg = entry.path.segments[idx] as PropertyShape | undefined;
+  private scopedShapeAt(entry: FieldSetEntry, idx: number): NodeShapeData {
+    const seg = entry.path.segments[idx] as PropertyShapeData | undefined;
     const valueShapeId = (seg as unknown as {valueShape?: {id: string}})
       ?.valueShape?.id;
     return (valueShapeId && getShapeClass(valueShapeId)?.shape) || this.shape;
@@ -597,7 +598,7 @@ export class FieldSet<R = any, Source = any> {
   }
 
   /** Build a FieldSet from a shape + relation-keyed field list (recursion entry). */
-  private static fromFields(shape: NodeShape, fields: FieldSetFieldJSON[]): FieldSet {
+  private static fromFields(shape: NodeShapeData, fields: FieldSetFieldJSON[]): FieldSet {
     return new FieldSet(
       shape,
       fields.map((raw) => FieldSet.parseField(shape, raw)),
@@ -605,7 +606,7 @@ export class FieldSet<R = any, Source = any> {
   }
 
   /** Parse one field entry (string leaf / computed / relation-keyed) against `shape`. */
-  private static parseField(shape: NodeShape, raw: FieldSetFieldJSON): FieldSetEntry {
+  private static parseField(shape: NodeShapeData, raw: FieldSetFieldJSON): FieldSetEntry {
     // Leaf path (may carry inline `as(Shape)` casts).
     if (typeof raw === 'string') {
       return {path: FieldSet.walkPathWithCasts(shape, raw)};
@@ -638,7 +639,7 @@ export class FieldSet<R = any, Source = any> {
     if (opts.aggregation) entry.aggregation = opts.aggregation as 'count';
     if (opts.where) {
       const idx = opts.whereIndex ?? path.segments.length - 1;
-      const seg = path.segments[idx] as PropertyShape | undefined;
+      const seg = path.segments[idx] as PropertyShapeData | undefined;
       const valueShapeId = (seg as unknown as {valueShape?: {id: string}})?.valueShape?.id;
       const scopedShape = (valueShapeId && getShapeClass(valueShapeId)?.shape) || shape;
       entry.scopedFilter = deserializeWherePath(scopedShape, opts.where);
@@ -651,7 +652,7 @@ export class FieldSet<R = any, Source = any> {
       const nested = FieldSet.nestedShapeOf(path) ?? shape;
       entry.innerOrderBy = opts.orderBy.map((e) => {
         const label = Object.keys(e)[0];
-        const ps = nested.getPropertyShape(label);
+        const ps = getPropertyShape(nested, label);
         return {propertyShapeId: ps?.id ?? label, direction: Object.values(e)[0]};
       });
     }
@@ -663,8 +664,8 @@ export class FieldSet<R = any, Source = any> {
   }
 
   /** The shape reached at the end of a relation path (its terminal segment's value shape). */
-  private static nestedShapeOf(path: PropertyPath): NodeShape | undefined {
-    const seg = path.segments[path.segments.length - 1] as PropertyShape | undefined;
+  private static nestedShapeOf(path: PropertyPath): NodeShapeData | undefined {
+    const seg = path.segments[path.segments.length - 1] as PropertyShapeData | undefined;
     const valueShapeId = (seg as unknown as {valueShape?: {id: string}})?.valueShape?.id;
     return (valueShapeId && getShapeClass(valueShapeId)?.shape) || undefined;
   }
@@ -674,10 +675,10 @@ export class FieldSet<R = any, Source = any> {
   // ---------------------------------------------------------------------------
 
   /**
-   * Resolves any of the accepted shape input types to a NodeShape and optional ShapeClass.
-   * Accepts: ShapeConstructor (class with .shape), NodeShape, or IRI string.
+   * Resolves any of the accepted shape input types to a NodeShapeData and optional ShapeClass.
+   * Accepts: ShapeConstructor (class with .shape), NodeShapeData, or IRI string.
    */
-  private static resolveShapeInput(shape: ShapeConstructor<any> | NodeShape | string): {nodeShape: NodeShape; shapeClass?: ShapeConstructor<any>} {
+  private static resolveShapeInput(shape: ShapeConstructor<any> | NodeShapeData | string): {nodeShape: NodeShapeData; shapeClass?: ShapeConstructor<any>} {
     if (typeof shape === 'string') {
       const shapeClass = getShapeClass(shape);
       if (!shapeClass || !shapeClass.shape) {
@@ -685,25 +686,25 @@ export class FieldSet<R = any, Source = any> {
       }
       return {nodeShape: shapeClass.shape, shapeClass};
     }
-    // ShapeConstructor: has a static .shape property that is a NodeShape
+    // ShapeConstructor: has a static .shape property that is a NodeShapeData
     if ('shape' in shape && typeof shape.shape === 'object' && shape.shape !== null && 'id' in shape.shape) {
       return {nodeShape: (shape as ShapeConstructor<any>).shape, shapeClass: shape as ShapeConstructor<any>};
     }
-    // NodeShape: has .id directly — try to look up its ShapeConstructor for full proxy support
-    const nodeShape = shape as NodeShape;
+    // NodeShapeData: has .id directly — try to look up its ShapeConstructor for full proxy support
+    const nodeShape = shape as NodeShapeData;
     const shapeClass = nodeShape.id ? getShapeClass(nodeShape.id) : undefined;
     return shapeClass
       ? {nodeShape, shapeClass}
       : {nodeShape};
   }
 
-  /** @deprecated Use resolveShapeInput instead. Kept for fromJSON which only passes NodeShape|string. */
-  private static resolveShape(shape: NodeShape | string): NodeShape {
+  /** @deprecated Use resolveShapeInput instead. Kept for fromJSON which only passes NodeShapeData|string. */
+  private static resolveShape(shape: NodeShapeData | string): NodeShapeData {
     return FieldSet.resolveShapeInput(shape).nodeShape;
   }
 
   private static resolveInputs(
-    shape: NodeShape,
+    shape: NodeShapeData,
     inputs: FieldSetInput[],
   ): FieldSetEntry[] {
     const entries: FieldSetEntry[] = [];
@@ -761,7 +762,7 @@ export class FieldSet<R = any, Source = any> {
    * Handles nested paths, where conditions, aggregations, and sub-selects.
    */
   private static traceFieldsWithProxy(
-    nodeShape: NodeShape,
+    nodeShape: NodeShapeData,
     shapeClass: ShapeConstructor<any>,
     fn: (p: any) => any,
   ): FieldSetEntry[] {
@@ -808,7 +809,7 @@ export class FieldSet<R = any, Source = any> {
    * Convert a single proxy trace result (QueryBuilderObject, SetSize, or FieldSet sub-select)
    * into a FieldSetEntry.
    */
-  private static convertTraceResult(rootShape: NodeShape, obj: any): FieldSetEntry {
+  private static convertTraceResult(rootShape: NodeShapeData, obj: any): FieldSetEntry {
     // SetSize → aggregation: 'count'
     if (isSetSize(obj)) {
       const segments = FieldSet.collectPropertySegments(obj.subject);
@@ -888,11 +889,11 @@ export class FieldSet<R = any, Source = any> {
   }
 
   /**
-   * Walk a QueryBuilderObject-like chain (via .subject) collecting PropertyShape segments
+   * Walk a QueryBuilderObject-like chain (via .subject) collecting PropertyShapeData segments
    * from leaf to root, then reverse to get root-to-leaf order.
    */
-  static collectPropertySegments(obj: QueryBuilderObjectLike): PropertyShape[] {
-    const segments: PropertyShape[] = [];
+  static collectPropertySegments(obj: QueryBuilderObjectLike): PropertyShapeData[] {
+    const segments: PropertyShapeData[] = [];
     let current: QueryBuilderObjectLike | undefined = obj;
     while (current) {
       if (current.property) {
@@ -908,13 +909,13 @@ export class FieldSet<R = any, Source = any> {
   // an `as(<ShapeLabel>)` path segment (documentation/dsl-json.md, backlog 002 G5).
   // ---------------------------------------------------------------------------
 
-  private static shapeById(id: string): NodeShape | undefined {
+  private static shapeById(id: string): NodeShapeData | undefined {
     return getShapeClass(id)?.shape;
   }
 
-  private static shapeByLabel(label: string): NodeShape | undefined {
+  private static shapeByLabel(label: string): NodeShapeData | undefined {
     for (const cls of getAllShapeClasses().values()) {
-      const shape = (cls as unknown as {shape?: NodeShape}).shape;
+      const shape = (cls as unknown as {shape?: NodeShapeData}).shape;
       if (shape && (shape.label === label || FieldSet.labelOfId(shape.id) === label)) {
         return shape;
       }
@@ -932,12 +933,12 @@ export class FieldSet<R = any, Source = any> {
    * wherever a segment is not resolvable by label from the natural (walked) shape
    * — i.e. a `.as(Shape)` narrowing happened before it.
    */
-  static pathToStringWithCasts(rootShape: NodeShape, segments: readonly PropertyShape[]): string {
+  static pathToStringWithCasts(rootShape: NodeShapeData, segments: readonly PropertyShapeData[]): string {
     const parts: string[] = [];
-    let current: NodeShape | undefined = rootShape;
+    let current: NodeShapeData | undefined = rootShape;
     for (const seg of segments) {
       const label = FieldSet.labelOfId(seg.id);
-      const natural = current?.getPropertyShape(label);
+      const natural = current ? getPropertyShape(current, label) : undefined;
       if (!natural || natural.id !== seg.id) {
         // A cast narrowed the context to the segment's owner shape.
         const ownerId = seg.id.slice(0, seg.id.lastIndexOf('/'));
@@ -953,17 +954,17 @@ export class FieldSet<R = any, Source = any> {
   }
 
   /** Inverse of {@link pathToStringWithCasts}: resolve a dotted path with `as(X)` casts. */
-  static walkPathWithCasts(rootShape: NodeShape, path: string): PropertyPath {
+  static walkPathWithCasts(rootShape: NodeShapeData, path: string): PropertyPath {
     if (!path.includes('as(')) return walkPropertyPath(rootShape, path);
-    const segments: PropertyShape[] = [];
-    let current: NodeShape | undefined = rootShape;
+    const segments: PropertyShapeData[] = [];
+    let current: NodeShapeData | undefined = rootShape;
     for (const token of path.split('.')) {
       const cast = /^as\((.+)\)$/.exec(token);
       if (cast) {
         current = FieldSet.shapeByLabel(cast[1]) ?? current;
         continue;
       }
-      const ps = current?.getPropertyShape(token);
+      const ps = current ? getPropertyShape(current, token) : undefined;
       if (!ps) {
         throw new Error(
           `Property '${token}' not found on shape '${current?.label || current?.id}' while resolving path '${path}'`,
@@ -1012,14 +1013,14 @@ export class FieldSet<R = any, Source = any> {
   /**
    * Internal factory that bypasses the private constructor for use by static methods.
    */
-  private static createInternal(shape: NodeShape, entries: FieldSetEntry[]): FieldSet {
+  private static createInternal(shape: NodeShapeData, entries: FieldSetEntry[]): FieldSet {
     return new FieldSet(shape, entries);
   }
 
   /**
    * Create a FieldSet from raw entries. Used by QueryBuilder to merge preload entries.
    */
-  static createFromEntries(shape: NodeShape, entries: FieldSetEntry[]): FieldSet {
+  static createFromEntries(shape: NodeShapeData, entries: FieldSetEntry[]): FieldSet {
     return new FieldSet(shape, entries);
   }
 
@@ -1027,7 +1028,7 @@ export class FieldSet<R = any, Source = any> {
    * Extract FieldSetEntry[] from a sub-query's traceResponse.
    * Public alias for use by lightweight sub-select wrappers.
    */
-  static extractSubSelectEntriesPublic(rootShape: NodeShape, traceResponse: any): FieldSetEntry[] {
+  static extractSubSelectEntriesPublic(rootShape: NodeShapeData, traceResponse: any): FieldSetEntry[] {
     return FieldSet.extractSubSelectEntries(rootShape, traceResponse);
   }
 
@@ -1036,7 +1037,7 @@ export class FieldSet<R = any, Source = any> {
    * The traceResponse is the result of calling the sub-query callback with a proxy,
    * containing QueryBuilderObjects, arrays, custom objects, etc.
    */
-  private static extractSubSelectEntries(rootShape: NodeShape, traceResponse: any): FieldSetEntry[] {
+  private static extractSubSelectEntries(rootShape: NodeShapeData, traceResponse: any): FieldSetEntry[] {
     if (Array.isArray(traceResponse)) {
       return traceResponse
         .filter((item) => item !== null && item !== undefined)

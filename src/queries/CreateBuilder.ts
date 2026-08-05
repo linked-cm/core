@@ -1,4 +1,5 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
+import {getUniquePropertyShapes} from '../shapes/nodeShapeData.js';
 import {resolveShape} from './resolveShape.js';
 import type {UpdatePartial} from './QueryFactory.js';
 import type {CreateResponse} from './CreateQuery.js';
@@ -7,7 +8,7 @@ import {MutationThenable} from './MutationThenable.js';
 import {resolveMutationDispatch} from './queryDispatch.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
-import type {NodeShape} from '../shapes/SHACL.js';
+import type {NodeShapeData} from '../shapes/SHACL.js';
 import {encodeNodeData, decodeNodeDataToRaw, type CreateMutationJSON} from './MutationSerialization.js';
 import type {CreateLowerSpec} from './mutationLowerSpec.js';
 
@@ -98,7 +99,7 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
   readonly __queryKind = 'create' as const;
 
   /** The shape this query targets — the routing key datasets/`LinkedStorage` use. */
-  get shape(): NodeShape {
+  get shape(): NodeShapeData {
     return this._shape.shape;
   }
 
@@ -114,8 +115,7 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     // Validate that required properties (minCount >= 1) are present in data
     const shapeObj = this._shape.shape;
     if (shapeObj) {
-      const requiredProps = shapeObj
-        .getUniquePropertyShapes()
+      const requiredProps = getUniquePropertyShapes(shapeObj)
         .filter((ps) => ps.minCount && ps.minCount >= 1);
       const dataKeys = new Set(Object.keys(data));
       const missing = requiredProps
