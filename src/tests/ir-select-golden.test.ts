@@ -15,6 +15,10 @@ import { buildSelectQuery } from "../queries/IRPipeline";
 import type { IRSelectQuery } from "../queries/IntermediateRepresentation";
 import { setQueryContext } from "../queries/QueryContext";
 import {lower} from '../queries/lower';
+import {
+  mapSparqlSelectResult,
+  type SparqlJsonResults,
+} from '../sparql/resultMapping';
 
 setQueryContext("user", { id: "user-1" }, Person);
 
@@ -795,7 +799,7 @@ describe("IR pipeline behavior", () => {
   test("nested array children do not inherit the enclosing custom result key", () => {
     const ir = lower(
       Person.select((p) => ({
-        friends: p.friends.select((friend) => [friend.name]),
+        bestFriend: p.bestFriend.select((friend) => [friend.name]),
       })),
     );
 
@@ -806,7 +810,54 @@ describe("IR pipeline behavior", () => {
         ? ir.projection[0].expression.property
         : undefined,
     );
-    expect(ir.resultMap?.[0].key).not.toBe('friends');
+    expect(ir.resultMap?.[0].key).not.toBe('bestFriend');
+  });
+
+  test("nested array children map to their property key in the final result", () => {
+    const ir = lower(
+      Person.select((p) => ({
+        bestFriend: p.bestFriend.select((friend) => [friend.name]),
+      })),
+    );
+    const traversal = ir.patterns.find(
+      (pattern) => pattern.kind === 'traverse',
+    );
+    expect(traversal?.kind).toBe('traverse');
+    if (!traversal || traversal.kind !== 'traverse') {
+      throw new Error('Expected the nested selection to produce a traversal');
+    }
+
+    const projection = ir.projection[0];
+    expect(projection.expression.kind).toBe('property_expr');
+    if (projection.expression.kind !== 'property_expr') {
+      throw new Error('Expected the nested field to produce a property projection');
+    }
+    const propertyLabel = projection.expression.property.split('/').pop();
+    const sparqlVariable = `${projection.expression.sourceAlias}_${propertyLabel}`;
+    const sparqlResult: SparqlJsonResults = {
+      head: {vars: [ir.root.alias, traversal.to, sparqlVariable]},
+      results: {
+        bindings: [{
+          [ir.root.alias]: {type: 'uri', value: `${tmpEntityBase}p1`},
+          [traversal.to]: {type: 'uri', value: `${tmpEntityBase}p2`},
+          [sparqlVariable]: {type: 'literal', value: 'Moa'},
+        }],
+      },
+    };
+
+    const mapped = mapSparqlSelectResult(sparqlResult, ir);
+    expect(Array.isArray(mapped)).toBe(true);
+    if (!Array.isArray(mapped)) {
+      throw new Error('Expected a multi-result query to map to an array');
+    }
+    const firstResult = mapped[0] as unknown as {
+      bestFriend: Record<string, unknown>;
+    };
+    expect(firstResult.bestFriend).toMatchObject({
+      id: `${tmpEntityBase}p2`,
+      name: 'Moa',
+    });
+    expect(firstResult.bestFriend).not.toHaveProperty('bestFriend');
   });
 
   // --- Computed expression tests ---
