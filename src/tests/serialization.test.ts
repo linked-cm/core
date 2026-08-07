@@ -518,8 +518,25 @@ describe('QueryBuilder — preload serialization', () => {
     ]);
 
     const json = original.toJSON();
-    const petsField = json.fields?.[0] as Record<string, any>;
-    expect(petsField.pets.shape).toBe(Dog.shape.id);
+    const petsField = json.fields?.[0];
+    if (
+      !petsField ||
+      typeof petsField !== 'object' ||
+      Array.isArray(petsField) ||
+      !('pets' in petsField)
+    ) {
+      throw new Error('Expected a relation-keyed pets field');
+    }
+    const petsOptions = petsField.pets;
+    if (
+      !petsOptions ||
+      typeof petsOptions !== 'object' ||
+      Array.isArray(petsOptions) ||
+      !('shape' in petsOptions)
+    ) {
+      throw new Error('Expected pets to serialize with relation options');
+    }
+    expect(petsOptions.shape).toBe(Dog.shape.id);
 
     const restored = QueryBuilder.fromJSON(json);
     expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
