@@ -792,6 +792,23 @@ describe("IR pipeline behavior", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
+  test("nested array children do not inherit the enclosing custom result key", () => {
+    const ir = lower(
+      Person.select((p) => ({
+        friends: p.friends.select((friend) => [friend.name]),
+      })),
+    );
+
+    expect(ir.resultMap).toHaveLength(1);
+    expect(ir.projection[0].expression.kind).toBe('property_expr');
+    expect(ir.resultMap?.[0].key).toBe(
+      ir.projection[0].expression.kind === 'property_expr'
+        ? ir.projection[0].expression.property
+        : undefined,
+    );
+    expect(ir.resultMap?.[0].key).not.toBe('friends');
+  });
+
   // --- Computed expression tests ---
 
   test("exprStrlen: expression select produces function_expr projection", async () => {
