@@ -381,7 +381,11 @@ export const lowerSelectQuery = (
       }
       return collectProjectionSeeds(
         selection.selections,
-        key,
+        // The enclosing key identifies the sub-select container. Result-map
+        // entries produced inside that container must retain their own property
+        // keys. This also covers one-element array selections, which desugaring
+        // intentionally collapses to a single selection.
+        undefined,
         combinedParentPath,
       );
     }
@@ -394,7 +398,11 @@ export const lowerSelectQuery = (
 
     if (selection.kind === 'multi_selection') {
       return selection.selections.flatMap((nestedSelection) =>
-        collectProjectionSeeds(nestedSelection, key, parentPath),
+        // A key on the enclosing selection names that selection; it must not
+        // replace the individual keys of an array/multi-selection. Each child
+        // derives its own key from its terminal property (or carries its own
+        // explicit custom key).
+        collectProjectionSeeds(nestedSelection, undefined, parentPath),
       );
     }
 
