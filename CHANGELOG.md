@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.15.1
+
+### Patch Changes
+
+- [#182](https://github.com/linked-cm/core/pull/182) [`f3f2c4a`](https://github.com/linked-cm/core/commit/f3f2c4adccad155ebd0736ec9f3f09341cf226c2) Thanks [@abdipramana](https://github.com/abdipramana)! - Preserve child property keys when lowering nested array selections. Queries such as `Action.select(action => ({image: action.image.select(image => [image.contentUrl])}))` now map the nested value to `image.contentUrl` instead of incorrectly returning it as `image.image`.
+
+- [#183](https://github.com/linked-cm/core/pull/183) [`81c7b56`](https://github.com/linked-cm/core/commit/81c7b56d0e2ac4678eda33883c82d7ef5b2d47ee) Thanks [@abdipramana](https://github.com/abdipramana)! - Preserve concrete nested shapes when serializing polymorphic `preloadFor()` queries. A preload such as `person.pets.as(Dog).preloadFor(DogCard)` now records the `Dog` shape IRI on the wire, allowing fields defined only on `Dog` to resolve correctly after client-server deserialization.
+
 ## 2.15.0
 
 ### Minor Changes
