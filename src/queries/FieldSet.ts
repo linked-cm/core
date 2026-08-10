@@ -104,6 +104,8 @@ export type FieldSetComputedJSON = {
 /** Options for a relation projection (the object value under a relation key). */
 export type FieldSetRelationOptionsJSON = {
   as?: string;
+  /** Shape IRI for nested fields when it differs from the relation's declared value shape. */
+  shape?: string;
   /** A scoped filter on the relation (`p.friends.where(...)`). */
   where?: WherePathJSON;
   /** Which path segment the scoped `where` applies to (defaults to the last). */
@@ -146,6 +148,7 @@ export type FieldSetJSON = {
 /** Option keys reserved inside a relation options object (never a relation path). */
 const RELATION_OPTION_KEYS = new Set([
   'as',
+  'shape',
   'where',
   'whereIndex',
   'aggregation',
@@ -556,6 +559,8 @@ export class FieldSet<R = any, Source = any> {
     const sub = entry.subSelect ?? entry.preloadSubSelect;
     const subFields = sub ? sub.toFieldsJSON() : undefined;
     const opts: FieldSetRelationOptionsJSON = {};
+    const naturalSubShape = FieldSet.nestedShapeOf(entry.path);
+    if (sub && sub.shape.id !== naturalSubShape?.id) opts.shape = sub.shape.id;
     if (entry.alias) opts.as = entry.alias;
     if (entry.aggregation) opts.aggregation = entry.aggregation;
     if (entry.customKey) opts.customKey = entry.customKey;
@@ -657,7 +662,9 @@ export class FieldSet<R = any, Source = any> {
       });
     }
     if (subFields) {
-      const nested = FieldSet.nestedShapeOf(path) ?? shape;
+      const nested = opts.shape
+        ? FieldSet.resolveShape(opts.shape)
+        : FieldSet.nestedShapeOf(path) ?? shape;
       entry.subSelect = FieldSet.fromFields(nested, subFields);
     }
     return entry;

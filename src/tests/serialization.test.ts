@@ -1,5 +1,5 @@
 import {describe, expect, test} from '@jest/globals';
-import {Person, Employee, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {Person, Employee, Dog, tmpEntityBase} from '../test-helpers/query-fixtures';
 import {sanitize} from '../test-helpers/test-utils';
 import {FieldSet} from '../queries/FieldSet';
 import {QueryBuilder} from '../queries/QueryBuilder';
@@ -507,6 +507,38 @@ describe('QueryBuilder — preload serialization', () => {
     const json = original.toJSON();
     const restored = QueryBuilder.fromJSON(json);
 
+    expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
+  });
+
+  test('round-trip — polymorphic preload preserves the component FieldSet shape', () => {
+    const dogFields = FieldSet.for(Dog, ['guardDogLevel']);
+    const dogCard = {query: dogFields, fields: dogFields};
+    const original = Person.select((p) => [
+      p.pets.as(Dog).preloadFor(dogCard),
+    ]);
+
+    const json = original.toJSON();
+    const petsField = json.fields?.[0];
+    if (
+      !petsField ||
+      typeof petsField !== 'object' ||
+      Array.isArray(petsField) ||
+      !('pets' in petsField)
+    ) {
+      throw new Error('Expected a relation-keyed pets field');
+    }
+    const petsOptions = petsField.pets;
+    if (
+      !petsOptions ||
+      typeof petsOptions !== 'object' ||
+      Array.isArray(petsOptions) ||
+      !('shape' in petsOptions)
+    ) {
+      throw new Error('Expected pets to serialize with relation options');
+    }
+    expect(petsOptions.shape).toBe(Dog.shape.id);
+
+    const restored = QueryBuilder.fromJSON(json);
     expect(sanitize(lower(restored))).toEqual(sanitize(lower(original)));
   });
 });
