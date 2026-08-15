@@ -8,6 +8,8 @@ packages: [core]
 
 Status: **done**. Suite **1561 passed / 117 skipped**, typecheck green (baseline before this work: 1472 passed).
 
+PR: [#188](https://github.com/linked-cm/core/pull/188) → `dev`.
+
 ## The problem
 
 Write-validation lived in three places with two different trigger points: cardinality and node-kind
