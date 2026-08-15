@@ -154,7 +154,32 @@ it (`dateToTerm`):
 
 The datatype is resolved from the shape registry by property id — `resolvePropertyDatatype`, the same
 scan and self-invalidating cache the predicate resolution already used — so neither the IR nor the
-wire format changed. Non-temporal literals are still typed from the JavaScript value.
+wire format changed.
+
+**Numbers use the same hook.** A property declared `xsd:long` previously stored `xsd:integer`, and
+one declared `xsd:decimal` stored `xsd:double`, because the term was inferred from the JavaScript
+value — so the store round-tripped a different term than the shape said it held. `numericDatatype`
+now prefers the declared datatype when it is one the DSL accepts a number for (`xsd:integer`,
+`xsd:long`, `xsd:decimal`, `xsd:float`, `xsd:double`), falling back to inference when a property
+declares none. Strings stay plain literals: `"a"` *is* an `xsd:string` in RDF 1.1, so emitting the
+datatype explicitly would be noise.
+
+### Set modifications are checked value-by-value
+
+`{tags: {add: ['42']}}` used to skip every check — the whole `{add, remove}` object counted as
+undecidable, which left the exact hole the datatype work had just closed everywhere else. Only the
+*count* is undecidable: it depends on what the store already holds. Each added value is as checkable
+as any other.
+
+The registry is now split into `CARDINALITY_CONSTRAINTS` (`sh:minCount`, `sh:maxCount` — need the
+whole value set) and `VALUE_CONSTRAINTS` (everything else — needs only the value in hand). A set
+modification runs the value constraints over `add`, including recursion into nested creates, and
+skips cardinality. `remove` is left to normalization, which already requires `{id}` references there.
+
+Ordering matters more than it looks: `isSetModification` reads `.add` off the value, and a resolved
+query-context reference is a proxy that throws on any undecorated key. Deferred values —
+expressions, context refs, callbacks, `undefined` — are now ruled out by `isDeferredValue` *before*
+anything reads a property off the value. The existing `mutation-serialization` suite caught this.
 
 Two design rules keep the output readable: **one violation per mistake** — a node reference given to
 a typed literal property is a node-kind violation only, and a non-number given to a bounded property
@@ -179,11 +204,13 @@ split down explicitly.
   collision with the interfaces of the same name.
 - **`sh:languageIn` / `sh:uniqueLang`** — skipped at serialization time too (report 024, G5), so
   there is no metadata to enforce against yet.
-- **Numeric literals are still typed from the JavaScript value.** `resolvePropertyDatatype` is wired
-  in but only consulted for temporal values, so a property declared `xsd:decimal` still emits
-  `xsd:double` for `1.5`, and `xsd:long` emits `xsd:integer`. The same one-line hook fixes it; it was
-  left alone here because it changes the SPARQL output of existing shapes.
-- **Set-modification contents are unchecked.** `{tags: {add: ['42']}}` skips every value check,
-  because `isOpaqueValue` treats the whole `{add, remove}` object as undecidable. The *count* is
-  undecidable; the datatype, node kind, pattern and range of each added value are not. Closing this
-  would mean checking elements of `add` under the same components while leaving cardinality alone.
+- **A set modification can still exceed `sh:maxCount` undetected.** `{tags: {add: [1, 2, 3]}}` on a
+  `maxCount: 1` property conforms, because the final count depends on the store. A lower bound is
+  derivable (the number of *distinct* added values), but added values may duplicate ones already
+  held, so the bound is only sound for distinct additions. Left alone rather than risk a false
+  positive on a re-added value.
+- **`sh:closed` as opt-in** — filed as `docs/backlog/035-sh-closed-opt-in.md`, with the options and
+  the trade-off against the typo guard written up.
+- **Strings are still written as plain literals**, not `"…"^^xsd:string`. That is the canonical RDF
+  1.1 form for a string, so it is correct rather than a gap — noted because it is the one declared
+  datatype the serializer deliberately does not emit.

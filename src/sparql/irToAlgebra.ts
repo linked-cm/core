@@ -1663,6 +1663,27 @@ function resolveExpressionVariable(
 // Mutation conversions
 // ---------------------------------------------------------------------------
 
+/** The numeric datatypes a shape may declare, and the DSL accepts a number for. */
+const NUMERIC_DATATYPES = new Set([
+  XSD_INTEGER,
+  XSD_DOUBLE,
+  xsd.long.id,
+  xsd.decimal.id,
+  xsd.float.id,
+]);
+
+/**
+ * The datatype to write a number as: the one its property declares, falling back
+ * to the shape of the value itself. Without the declared datatype a property
+ * typed `xsd:long` stored `xsd:integer` and one typed `xsd:decimal` stored
+ * `xsd:double` — a value the store round-trips as a different term than the
+ * shape says it holds.
+ */
+function numericDatatype(value: number, datatype?: string): string {
+  if (datatype && NUMERIC_DATATYPES.has(datatype)) return datatype;
+  return Number.isInteger(value) ? XSD_INTEGER : XSD_DOUBLE;
+}
+
 /**
  * A `Date` in the lexical form its property asks for. The DSL takes a `Date` and
  * only a `Date` for temporal properties, so the declared `sh:datatype` is what
@@ -1696,10 +1717,7 @@ function fieldValueToTerms(
   }
 
   if (typeof value === 'number') {
-    if (Number.isInteger(value)) {
-      return [literalTerm(String(value), XSD_INTEGER)];
-    }
-    return [literalTerm(String(value), XSD_DOUBLE)];
+    return [literalTerm(String(value), numericDatatype(value, datatype))];
   }
 
   if (typeof value === 'boolean') {

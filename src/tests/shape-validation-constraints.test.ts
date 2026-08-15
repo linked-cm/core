@@ -337,6 +337,66 @@ describe('a Date reaches SPARQL as the datatype its property declares', () => {
   });
 });
 
+describe('numbers reach SPARQL as the datatype their property declares', () => {
+  const sparqlFor = (data: object) =>
+    createToSparql(lower(Bounded.create(data as any).withId('x:b1') as any) as any);
+
+  test('a whole number on an xsd:integer property stays xsd:integer', () => {
+    expect(sparqlFor({rating: 3})).toContain('"3"^^xsd:integer');
+  });
+
+  test('an xsd:decimal property gets xsd:decimal, not the inferred xsd:double', () => {
+    expect(sparqlFor({ratio: 0.5})).toContain('"0.5"^^xsd:decimal');
+  });
+
+  test('an undeclared property still infers from the value', () => {
+    const sparql = createToSparql(
+      lower(Target.create({span: 3} as any).withId('x:t2') as any) as any,
+    );
+    expect(sparql).toContain('"3"^^xsd:integer');
+  });
+});
+
+describe('set modifications — counts are unknowable, values are not', () => {
+  test('an added value is checked like any other', () => {
+    expect(componentsFor(Target, {age: {add: ['42']}}, 'partial')).toEqual([
+      'DatatypeConstraintComponent',
+    ]);
+    expect(componentsFor(Bounded, {slug: {add: ['BAD']}}, 'partial')).toEqual([
+      'PatternConstraintComponent',
+    ]);
+    expect(componentsFor(Bounded, {status: {add: ['archived']}}, 'partial')).toEqual([
+      'InConstraintComponent',
+    ]);
+  });
+
+  test('cardinality is NOT applied — the resulting count lives in the store', () => {
+    // `age` is maxCount 1, but `{add}` says nothing about the final count.
+    expect(componentsFor(Target, {age: {add: [1, 2, 3]}}, 'partial')).toEqual([]);
+  });
+
+  test('a valid added value passes', () => {
+    expect(validate(Target, {age: {add: [42]}}, {mode: 'partial'}).conforms).toBe(true);
+  });
+
+  test('a remove-only modification has no values to check', () => {
+    expect(
+      validate(Target, {parent: {remove: [{id: 'x:p1'}]}}, {mode: 'partial'}).conforms,
+    ).toBe(true);
+  });
+
+  test('nested creates inside add are validated', () => {
+    const report = validate(Target, {parent: {add: [{age: '42'}]}}, {mode: 'partial'});
+    expect(report.results.map((r) => r.propertyPath)).toEqual(['parent.age']);
+  });
+
+  test('the mutation pipeline enforces it', () => {
+    expect(() =>
+      Target.update({age: {add: ['42']}} as any).for({id: 'x:t1'}).toJSON(),
+    ).toThrow(/expects xsd:integer/);
+  });
+});
+
 describe('the mutation pipeline rejects mistyped literals', () => {
   test("create() throws on a string where the shape declares xsd:integer", () => {
     expect(() => Target.create({age: '42'} as any).toJSON()).toThrow(/expects xsd:integer/);

@@ -541,18 +541,29 @@ const inCheck: ConstraintCheck = (values, ctx) => {
  * The registry. Every property-level constraint the library enforces lives here;
  * adding another SHACL component is one more entry plus its test.
  *
- * Cardinality runs first (a count problem explains itself better than the
- * per-value violations that follow it), then kind, then the value constraints.
+ * Split by what each kind of check needs to see. **Cardinality** needs the
+ * property's whole value set, so it cannot run against a set modification —
+ * `{add: […]}` changes a count that lives in the store. **Value** checks need
+ * only the value in hand, so they run everywhere a concrete value appears,
+ * including inside `add`.
+ *
+ * Cardinality runs first when it runs at all: a count problem explains itself
+ * better than the per-value violations that would follow it.
  */
-const PROPERTY_CONSTRAINTS: ConstraintCheck[] = [
-  maxCountCheck,
-  minCountCheck,
+const CARDINALITY_CONSTRAINTS: ConstraintCheck[] = [maxCountCheck, minCountCheck];
+
+const VALUE_CONSTRAINTS: ConstraintCheck[] = [
   nodeKindCheck,
   datatypeCheck,
   rangeCheck,
   lengthCheck,
   patternCheck,
   inCheck,
+];
+
+const PROPERTY_CONSTRAINTS: ConstraintCheck[] = [
+  ...CARDINALITY_CONSTRAINTS,
+  ...VALUE_CONSTRAINTS,
 ];
 
 // ---------------------------------------------------------------------------
@@ -580,15 +591,26 @@ function isNodeReference(value: unknown): boolean {
   );
 }
 
-/** Values whose final shape isn't knowable without the store or a lowering pass. */
-function isOpaqueValue(value: unknown): boolean {
+/**
+ * A value that stands for something resolved later — an expression, a query
+ * context reference, a callback, or nothing at all.
+ *
+ * Must be ruled out *before* anything reads properties off the value: a resolved
+ * context ref is a query proxy that throws on any undecorated key, so probing it
+ * for `.add` is not a safe way to ask what it is.
+ */
+function isDeferredValue(value: unknown): boolean {
   return (
     value === undefined ||
     typeof value === 'function' ||
     isExpressionNode(value) ||
-    !!asContextRef(value) ||
-    isSetModification(value)
+    !!asContextRef(value)
   );
+}
+
+/** Values whose final shape isn't knowable without the store or a lowering pass. */
+function isOpaqueValue(value: unknown): boolean {
+  return isDeferredValue(value) || isSetModification(value);
 }
 
 /** A nested node description — an object to descend into, rather than a leaf value. */
@@ -771,21 +793,49 @@ function validateProperty(
     return [];
   }
 
-  if (isOpaqueValue(value)) return [];
+  // Ruled out first: reading `.add` off a resolved context proxy would throw.
+  if (isDeferredValue(value)) return [];
 
-  const values = Array.isArray(value) ? value : [value];
+  // A set modification adds to and removes from what the store already holds,
+  // so the resulting *count* is unknowable here — but each added value is as
+  // checkable as any other, and skipping them let mistyped literals through the
+  // one door the rest of this module closes. `remove` takes `{id}` references
+  // only, which normalization enforces on its own.
+  if (isSetModification(value)) {
+    const {add} = value as {add?: unknown};
+    if (add === undefined) return [];
+    return runChecks(VALUE_CONSTRAINTS, toValues(add), propCtx, walk);
+  }
+
+  return runChecks(PROPERTY_CONSTRAINTS, toValues(value), propCtx, walk);
+}
+
+/** A property's value(s) as an array — a single value becomes a one-element one. */
+function toValues(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [value];
+}
+
+/**
+ * Run a set of constraint checks over a property's values, then descend into any
+ * nested node descriptions among them (`sh:node`-style recursion). A bare `{id}`
+ * is a reference to an existing node and has nothing to validate; an object with
+ * an id *and* data is a nested create with a predefined id.
+ */
+function runChecks(
+  checks: ConstraintCheck[],
+  values: unknown[],
+  propCtx: PropertyContext,
+  walk: WalkContext,
+): ValidationResult[] {
   const results: ValidationResult[] = [];
-  for (const check of PROPERTY_CONSTRAINTS) {
+  for (const check of checks) {
     results.push(...check(values, propCtx));
   }
 
-  // Descend into nested node descriptions (`sh:node`-style recursion). A bare
-  // `{id}` is a reference to an existing node and has nothing to validate; an
-  // object with an id *and* data is a nested create with a predefined id.
   if (walk.depth < walk.maxDepth) {
     for (const el of values) {
       if (!isNodeDescription(el)) continue;
-      const nestedShape = resolveValueShape(ps, el);
+      const nestedShape = resolveValueShape(propCtx.propertyShape, el);
       if (!nestedShape) continue;
       results.push(
         ...validateNode(nestedShape, el, {
