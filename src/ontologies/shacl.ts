@@ -86,6 +86,12 @@ export const NodeConstraintComponent = ns('NodeConstraintComponent');
 export const DatatypeConstraintComponent = ns('DatatypeConstraintComponent');
 export const MinLengthConstraintComponent = ns('MinLengthConstraintComponent');
 export const MaxLengthConstraintComponent = ns('MaxLengthConstraintComponent');
+export const MinCountConstraintComponent = ns('MinCountConstraintComponent');
+export const MaxCountConstraintComponent = ns('MaxCountConstraintComponent');
+export const NodeKindConstraintComponent = ns('NodeKindConstraintComponent');
+export const ClosedConstraintComponent = ns('ClosedConstraintComponent');
+export const Warning = ns('Warning');
+export const Info = ns('Info');
 export const result = ns('result');
 
 //make sure every node is also exported here
@@ -152,6 +158,12 @@ export const shacl = {
   DatatypeConstraintComponent,
   MinLengthConstraintComponent,
   MaxLengthConstraintComponent,
+  MinCountConstraintComponent,
+  MaxCountConstraintComponent,
+  NodeKindConstraintComponent,
+  ClosedConstraintComponent,
+  Warning,
+  Info,
   AbstractResult,
   result,
   alternativePath,

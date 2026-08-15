@@ -1,5 +1,4 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
-import {getUniquePropertyShapes} from '../shapes/nodeShapeData.js';
 import {resolveShape} from './resolveShape.js';
 import type {UpdatePartial} from './QueryFactory.js';
 import type {CreateResponse} from './CreateQuery.js';
@@ -112,22 +111,8 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     }
     const data = this._data;
 
-    // Validate that required properties (minCount >= 1) are present in data
-    const shapeObj = this._shape.shape;
-    if (shapeObj) {
-      const requiredProps = getUniquePropertyShapes(shapeObj)
-        .filter((ps) => ps.minCount && ps.minCount >= 1);
-      const dataKeys = new Set(Object.keys(data));
-      const missing = requiredProps
-        .filter((ps) => !dataKeys.has(ps.label))
-        .map((ps) => ps.label);
-      if (missing.length > 0) {
-        throw new Error(
-          `Missing required fields for '${shapeObj.label || shapeObj.id}': ${missing.join(', ')}`,
-        );
-      }
-    }
-    // TODO: Full data validation against the shape (type checking, maxCount, nested shapes, etc.)
+    // Data is validated by `describe()` during lowering (and by `toJSON()`),
+    // so both paths reject the same input. See `shapes/validation`.
 
     // Inject __id if fixedId is set
     const dataWithId = this._fixedId
@@ -151,7 +136,7 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     const description = new MutationQueryFactory().describe(
       this._shape.shape,
       dataWithId,
-      true,
+      {allowTopLevelId: true, validate: 'complete'},
     );
     return {
       v: WIRE_VERSION,

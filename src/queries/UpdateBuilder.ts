@@ -211,6 +211,7 @@ export class UpdateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     const fields = new MutationQueryFactory().describe(
       this._shape.shape,
       this._data,
+      {validate: 'partial'},
     );
     const json: UpdateMutationJSON = {
       v: WIRE_VERSION,
