@@ -91,6 +91,12 @@ export const NodeConstraintComponent = ns('NodeConstraintComponent');
 export const DatatypeConstraintComponent = ns('DatatypeConstraintComponent');
 export const MinLengthConstraintComponent = ns('MinLengthConstraintComponent');
 export const MaxLengthConstraintComponent = ns('MaxLengthConstraintComponent');
+export const MinInclusiveConstraintComponent = ns('MinInclusiveConstraintComponent');
+export const MaxInclusiveConstraintComponent = ns('MaxInclusiveConstraintComponent');
+export const MinExclusiveConstraintComponent = ns('MinExclusiveConstraintComponent');
+export const MaxExclusiveConstraintComponent = ns('MaxExclusiveConstraintComponent');
+export const PatternConstraintComponent = ns('PatternConstraintComponent');
+export const InConstraintComponent = ns('InConstraintComponent');
 export const MinCountConstraintComponent = ns('MinCountConstraintComponent');
 export const MaxCountConstraintComponent = ns('MaxCountConstraintComponent');
 export const NodeKindConstraintComponent = ns('NodeKindConstraintComponent');
@@ -167,6 +173,12 @@ export const shacl = {
   MaxLengthConstraintComponent,
   MinCountConstraintComponent,
   MaxCountConstraintComponent,
+  MinInclusiveConstraintComponent,
+  MaxInclusiveConstraintComponent,
+  MinExclusiveConstraintComponent,
+  MaxExclusiveConstraintComponent,
+  PatternConstraintComponent,
+  InConstraintComponent,
   NodeKindConstraintComponent,
   ClosedConstraintComponent,
   Warning,

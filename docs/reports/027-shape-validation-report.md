@@ -108,21 +108,60 @@ One existing test changed: `mutation-shape-validation` → "an ambiguous node-ki
 kind check" built a `Team` without its required `members`, which now fails for an unrelated reason.
 It supplies `members` and still asserts exactly what its name says.
 
+## Value constraints (follow-up)
+
+The deferred G5 components were then implemented, closing report 024's G5 gap on the write path:
+`sh:datatype`, `sh:minInclusive` / `sh:maxInclusive` / `sh:minExclusive` / `sh:maxExclusive`,
+`sh:minLength` / `sh:maxLength`, `sh:pattern`, and `sh:in`. Each is one entry in
+`PROPERTY_CONSTRAINTS`, as the registry was designed for.
+
+**Datatype mismatches are `sh:Violation`, not `sh:Warning`** — the plan recommended `Warning` for
+coercible mismatches, and that recommendation was wrong. Mutation literals are typed from the
+*JavaScript* value when they reach SPARQL (`irToAlgebra.ts:1646-1656`): a number becomes
+`xsd:integer` or `xsd:double`, a boolean `xsd:boolean`, a `Date` `xsd:dateTime`, and a string an
+untyped literal. A string handed to an `xsd:integer` property therefore does not merely skip a check
+— it writes the wrong RDF term, silently. There is nothing to warn about; it is wrong.
+
+Datatype rules, by JS value:
+
+| Declared | Accepts |
+| --- | --- |
+| `xsd:string` | string |
+| `xsd:boolean` | boolean |
+| `xsd:integer`, `xsd:long` | number, integral |
+| `xsd:decimal`, `xsd:float`, `xsd:double` | finite number |
+| `xsd:date`, `xsd:dateTime`, `xsd:time` | `Date` **or** string |
+| `xsd:duration`, `xsd:gYear`, `xsd:Bytes` | unchecked |
+
+Dates accept a string as well as a `Date` deliberately: a `Date` serializes to a full
+`xsd:dateTime`, so a lexical string is the only way to write an `xsd:date`. Rejecting it would leave
+no way to express one. Lexical validity stays the store's business.
+
+Two design rules keep the output readable: **one violation per mistake** — a node reference given to
+a typed literal property is a node-kind violation only, and a non-number given to a bounded property
+is a datatype violation only, with the bounds staying quiet — and **`sh:pattern` regexes are rebuilt
+without `g`/`y` flags**, since those carry `lastIndex` between calls and a shape-level regex would
+otherwise match every other value.
+
+These are value-level checks, so they run in **both** modes. Only required-property *presence* needs
+a complete node, and that remains create-only. `shape-validation-constraints.test.ts` locks that
+split down explicitly.
+
 ## Still deferred
-
-Unchanged from the plan, and both still open decisions:
-
-- **Datatype, pattern, length, value-range components.** Metadata is parsed and serialized (report
-  024, G5) but not enforced; the store validates. Open: whether a coercible mismatch (`"42"` into an
-  `xsd:integer` — the common case for data extracted from documents) should be `sh:Warning` rather
-  than `sh:Violation`. Recommend `Warning`.
 - **`sh:closed` as opt-in.** The undeclared-property check is unconditional, as before; SHACL makes it
   per-shape via `sh:closed` + `sh:ignoredProperties`, both already on `NodeShapeData`. Honouring the
   flag would stop rejecting unknown keys on non-closed shapes — a behaviour change, so it stays
   behind this decision.
 - **Validating nodes read back from the store**, not just write payloads. The engine is shape-driven
   and would need only a different input adapter.
-- **Shipping `ValidationReport` / `ValidationResult` shape classes in core**, so reports can be
-  persisted without the consumer declaring them. The mapping is settled and tested (see above); what
-  is open is whether core should own the classes, and whether `sh:result` should be a `contains` edge
-  (results are owned by the report and should cascade-delete with it — the test models it that way).
+- **Shipping `ValidationReport` / `ValidationResult` shape classes in core** — filed as
+  `docs/backlog/034-validation-report-shape-classes.md`. The mapping is settled and tested; what is
+  open is whether core should own the classes, the `contains` semantics of `sh:result`, and the name
+  collision with the interfaces of the same name.
+- **`sh:languageIn` / `sh:uniqueLang`** — skipped at serialization time too (report 024, G5), so
+  there is no metadata to enforce against yet.
+- **Untyped literals for date properties.** A string given to an `xsd:date`/`xsd:dateTime` property
+  is accepted by the datatype check (it is the only way to write an `xsd:date`) but reaches SPARQL as
+  an untyped literal, because `irToAlgebra` types literals from the JS value. The validator now
+  guarantees the value is a string or a `Date`, not that the emitted term carries the declared
+  datatype. Making the serializer datatype-aware is a separate fix.

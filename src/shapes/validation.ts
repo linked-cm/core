@@ -35,7 +35,8 @@
  * validates those. Adding one is a single entry in {@link PROPERTY_CONSTRAINTS}.
  */
 import {shacl} from '../ontologies/shacl.js';
-import type {NodeReferenceValue} from '../utils/NodeReference.js';
+import {xsd} from '../ontologies/xsd.js';
+import {isNodeReferenceValue, type NodeReferenceValue} from '../utils/NodeReference.js';
 import {getUniquePropertyShapes} from './nodeShapeData.js';
 import type {NodeShapeData, PropertyShapeData} from './nodeShapeData.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
@@ -304,7 +305,7 @@ const nodeKindCheck: ConstraintCheck = (values, ctx) => {
 
   const results: ValidationResult[] = [];
   for (const el of values) {
-    if (el === null || el === undefined || isExpressionNode(el) || asContextRef(el)) continue;
+    if (!isCheckableElement(el)) continue;
     const scalar = isScalarValue(el);
     if (literalExpected && !scalar) {
       results.push(
@@ -330,11 +331,225 @@ const nodeKindCheck: ConstraintCheck = (values, ctx) => {
 };
 
 /**
- * The registry. Every property-level constraint the library enforces lives here;
- * adding `sh:pattern` or `sh:datatype` enforcement is one more entry (see the
- * deferred items in `docs/plans/001-shape-validation-report.md`).
+ * An element worth checking: a concrete value rather than something whose final
+ * form is decided elsewhere (an expression, a context ref, an absent value).
  */
-const PROPERTY_CONSTRAINTS: ConstraintCheck[] = [maxCountCheck, minCountCheck, nodeKindCheck];
+function isCheckableElement(el: unknown): boolean {
+  return el !== null && el !== undefined && !isExpressionNode(el) && !asContextRef(el);
+}
+
+const XSD_BASE = xsd.string.id.slice(0, -'string'.length);
+
+/** `xsd:integer` rather than the full IRI, when the datatype is an XSD one. */
+function datatypeLabel(datatype: NodeReferenceValue): string {
+  return datatype.id.startsWith(XSD_BASE)
+    ? `xsd:${datatype.id.slice(XSD_BASE.length)}`
+    : datatype.id;
+}
+
+/** How a value reads in a message — its JS kind, which is what went wrong. */
+function describeValue(value: unknown): string {
+  if (value instanceof Date) return 'a Date';
+  if (Array.isArray(value)) return 'an array';
+  if (typeof value === 'number') return Number.isInteger(value) ? 'a whole number' : 'a decimal number';
+  if (typeof value === 'object') return 'a node/object';
+  return `a ${typeof value}`;
+}
+
+const isFiniteNumber = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * What each XSD datatype accepts as a JavaScript value.
+ *
+ * This matters more than a normal type check: mutation literals are typed from
+ * the *JavaScript* type when they reach SPARQL (`irToAlgebra`), not from the
+ * declared datatype — a number becomes `xsd:integer`/`xsd:double`, a boolean
+ * `xsd:boolean`, a `Date` `xsd:dateTime`, and a string an untyped literal. So a
+ * string handed to an `xsd:integer` property does not merely skip a check, it
+ * writes the wrong RDF term. Rejecting it is a correctness fix.
+ *
+ * Dates accept a `Date` *or* a string: a lexical form like `'2020-06-15'` is the
+ * only way to express an `xsd:date` (a `Date` serializes to a full
+ * `xsd:dateTime`), so rejecting strings there would leave no way to write one.
+ * Lexical validity is the store's business. Datatypes with no obvious JS
+ * counterpart (`xsd:duration`, `xsd:gYear`, `xsd:Bytes`) are not checked.
+ */
+const DATATYPE_RULES: Record<string, {accepts: (v: unknown) => boolean; expected: string}> = {
+  [xsd.string.id]: {accepts: (v) => typeof v === 'string', expected: 'a string'},
+  [xsd.boolean.id]: {accepts: (v) => typeof v === 'boolean', expected: 'a boolean'},
+  [xsd.integer.id]: {accepts: (v) => isFiniteNumber(v) && Number.isInteger(v), expected: 'a whole number'},
+  [xsd.long.id]: {accepts: (v) => isFiniteNumber(v) && Number.isInteger(v), expected: 'a whole number'},
+  [xsd.decimal.id]: {accepts: isFiniteNumber, expected: 'a number'},
+  [xsd.float.id]: {accepts: isFiniteNumber, expected: 'a number'},
+  [xsd.double.id]: {accepts: isFiniteNumber, expected: 'a number'},
+  [xsd.date.id]: {accepts: (v) => v instanceof Date || typeof v === 'string', expected: 'a Date or a lexical date string'},
+  [xsd.dateTime.id]: {accepts: (v) => v instanceof Date || typeof v === 'string', expected: 'a Date or a lexical dateTime string'},
+  [xsd.time.id]: {accepts: (v) => v instanceof Date || typeof v === 'string', expected: 'a Date or a lexical time string'},
+};
+
+/** `sh:datatype` — the value's JavaScript type must match the declared datatype. */
+const datatypeCheck: ConstraintCheck = (values, ctx) => {
+  const ps = ctx.propertyShape;
+  if (!ps.datatype) return [];
+  const rule = DATATYPE_RULES[ps.datatype.id];
+  if (!rule) return [];
+
+  const results: ValidationResult[] = [];
+  for (const el of values) {
+    // A node reference is a node-kind problem, not a datatype one — one
+    // violation per mistake, reported by the check that owns it.
+    if (!isCheckableElement(el) || isNodeReference(el) || rule.accepts(el)) continue;
+    results.push(
+      violation(
+        ctx,
+        shacl.DatatypeConstraintComponent,
+        `Property '${labelOf(ps)}' expects ${datatypeLabel(ps.datatype)} (${rule.expected}), but was given ${describeValue(el)}.`,
+        el,
+      ),
+    );
+  }
+  return results;
+};
+
+/** The four `sh:min/maxInclusive/Exclusive` range constraints, on numbers. */
+const rangeCheck: ConstraintCheck = (values, ctx) => {
+  const ps = ctx.propertyShape;
+  const bounds: {
+    limit: unknown;
+    component: NodeReferenceValue;
+    ok: (v: number, limit: number) => boolean;
+    phrase: string;
+  }[] = [
+    {limit: ps.minInclusive, component: shacl.MinInclusiveConstraintComponent, ok: (v, l) => v >= l, phrase: 'at least'},
+    {limit: ps.maxInclusive, component: shacl.MaxInclusiveConstraintComponent, ok: (v, l) => v <= l, phrase: 'at most'},
+    {limit: ps.minExclusive, component: shacl.MinExclusiveConstraintComponent, ok: (v, l) => v > l, phrase: 'greater than'},
+    {limit: ps.maxExclusive, component: shacl.MaxExclusiveConstraintComponent, ok: (v, l) => v < l, phrase: 'less than'},
+  ];
+  const active = bounds.filter((b) => typeof b.limit === 'number');
+  if (!active.length) return [];
+
+  const results: ValidationResult[] = [];
+  for (const el of values) {
+    // Non-numbers are the datatype check's business.
+    if (!isCheckableElement(el) || typeof el !== 'number') continue;
+    for (const bound of active) {
+      if (bound.ok(el, bound.limit as number)) continue;
+      results.push(
+        violation(
+          ctx,
+          bound.component,
+          `Property '${labelOf(ps)}' must be ${bound.phrase} ${bound.limit}, but was given ${el}.`,
+          el,
+        ),
+      );
+    }
+  }
+  return results;
+};
+
+/** `sh:minLength` / `sh:maxLength`, on strings. */
+const lengthCheck: ConstraintCheck = (values, ctx) => {
+  const ps = ctx.propertyShape;
+  if (typeof ps.minLength !== 'number' && typeof ps.maxLength !== 'number') return [];
+
+  const results: ValidationResult[] = [];
+  for (const el of values) {
+    if (!isCheckableElement(el) || typeof el !== 'string') continue;
+    if (typeof ps.minLength === 'number' && el.length < ps.minLength) {
+      results.push(
+        violation(
+          ctx,
+          shacl.MinLengthConstraintComponent,
+          `Property '${labelOf(ps)}' must be at least ${ps.minLength} character(s), but was given ${el.length}.`,
+          el,
+        ),
+      );
+    }
+    if (typeof ps.maxLength === 'number' && el.length > ps.maxLength) {
+      results.push(
+        violation(
+          ctx,
+          shacl.MaxLengthConstraintComponent,
+          `Property '${labelOf(ps)}' must be at most ${ps.maxLength} character(s), but was given ${el.length}.`,
+          el,
+        ),
+      );
+    }
+  }
+  return results;
+};
+
+/** `sh:pattern` — the string form of the value must match the shape's regex. */
+const patternCheck: ConstraintCheck = (values, ctx) => {
+  const ps = ctx.propertyShape;
+  if (!ps.pattern) return [];
+  // Rebuild without `g`/`y`: those carry `lastIndex` between calls, so a shared
+  // shape regex would match every other value.
+  const regex = new RegExp(ps.pattern.source, ps.pattern.flags.replace(/[gy]/g, ''));
+
+  const results: ValidationResult[] = [];
+  for (const el of values) {
+    if (!isCheckableElement(el) || typeof el !== 'string') continue;
+    if (regex.test(el)) continue;
+    results.push(
+      violation(
+        ctx,
+        shacl.PatternConstraintComponent,
+        `Property '${labelOf(ps)}' must match ${String(ps.pattern)}, but was given "${el}".`,
+        el,
+      ),
+    );
+  }
+  return results;
+};
+
+/** `sh:in` — the value must be one of the shape's allowed values. */
+const inCheck: ConstraintCheck = (values, ctx) => {
+  const ps = ctx.propertyShape;
+  if (!ps.in?.length) return [];
+  const allowed = ps.in;
+  const matches = (el: unknown) =>
+    allowed.some((a) =>
+      isNodeReferenceValue(a)
+        ? isNodeReference(el) && (el as NodeReferenceValue).id === a.id
+        : a === el,
+    );
+
+  const results: ValidationResult[] = [];
+  for (const el of values) {
+    if (!isCheckableElement(el) || matches(el)) continue;
+    const rendered = allowed
+      .map((a) => (isNodeReferenceValue(a) ? a.id : JSON.stringify(a)))
+      .join(', ');
+    results.push(
+      violation(
+        ctx,
+        shacl.InConstraintComponent,
+        `Property '${labelOf(ps)}' must be one of [${rendered}].`,
+        el,
+      ),
+    );
+  }
+  return results;
+};
+
+/**
+ * The registry. Every property-level constraint the library enforces lives here;
+ * adding another SHACL component is one more entry plus its test.
+ *
+ * Cardinality runs first (a count problem explains itself better than the
+ * per-value violations that follow it), then kind, then the value constraints.
+ */
+const PROPERTY_CONSTRAINTS: ConstraintCheck[] = [
+  maxCountCheck,
+  minCountCheck,
+  nodeKindCheck,
+  datatypeCheck,
+  rangeCheck,
+  lengthCheck,
+  patternCheck,
+  inCheck,
+];
 
 // ---------------------------------------------------------------------------
 // Value classification
