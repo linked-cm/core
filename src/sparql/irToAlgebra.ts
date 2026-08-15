@@ -13,7 +13,7 @@ import type {
   IRSetModificationValue,
   IRTraversePattern,
 } from '../queries/IntermediateRepresentation.js';
-import {getPropertyShapes} from '../shapes/nodeShapeData.js';
+import {getPropertyShapes, type PropertyShapeData} from '../shapes/nodeShapeData.js';
 import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
@@ -112,54 +112,54 @@ function resolveShapeScanIri(shapeId: string): string {
 const predicateTermCache = new Map<string, SparqlTerm>();
 let predicateTermCacheSize = -1;
 
-// Same registry scan and self-invalidation as the predicate cache above, for the
-// declared `sh:datatype`. A resolved property with no datatype caches as
-// `undefined` (distinguished by `has()`); a property whose shape has not
-// registered yet is not cached, so it can resolve once the shape arrives.
-const propertyDatatypeCache = new Map<string, string | undefined>();
-let propertyDatatypeCacheSize = -1;
+// The registry scan behind both predicate and datatype resolution, cached on the
+// same terms as the predicate cache above: successful lookups only, invalidated
+// by registry size.
+const propertyShapeCache = new Map<string, PropertyShapeData>();
+let propertyShapeCacheSize = -1;
 
-/**
- * The `sh:datatype` declared for a property, if any. Lets the serializer emit
- * the term the shape asks for rather than one inferred from the JavaScript
- * value — currently used to give `xsd:date` / `xsd:time` properties their own
- * lexical form instead of a full `xsd:dateTime` timestamp.
- */
-function resolvePropertyDatatype(propertyId: string): string | undefined {
+function findPropertyShapeById(propertyId: string): PropertyShapeData | undefined {
   const shapeClasses = getAllShapeClasses();
-  if (shapeClasses.size !== propertyDatatypeCacheSize) {
-    propertyDatatypeCache.clear();
-    propertyDatatypeCacheSize = shapeClasses.size;
+  if (shapeClasses.size !== propertyShapeCacheSize) {
+    propertyShapeCache.clear();
+    propertyShapeCacheSize = shapeClasses.size;
   }
-  if (propertyDatatypeCache.has(propertyId)) return propertyDatatypeCache.get(propertyId);
-
-  for (const shapeClass of shapeClasses.values()) {
-    const propertyShape = (
-      shapeClass.shape ? getPropertyShapes(shapeClass.shape, true) : []
-    ).find((prop: {id?: string}) => prop.id === propertyId);
-    if (!propertyShape) continue;
-    const datatype = propertyShape.datatype?.id;
-    propertyDatatypeCache.set(propertyId, datatype);
-    return datatype;
-  }
-  return undefined;
-}
-
-function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
-  const shapeClasses = getAllShapeClasses();
-  if (shapeClasses.size !== predicateTermCacheSize) {
-    predicateTermCache.clear();
-    predicateTermCacheSize = shapeClasses.size;
-  }
-  const cached = predicateTermCache.get(propertyId);
+  const cached = propertyShapeCache.get(propertyId);
   if (cached) return cached;
 
   for (const shapeClass of shapeClasses.values()) {
     const propertyShape = (
       shapeClass.shape ? getPropertyShapes(shapeClass.shape, true) : []
     ).find((prop: {id?: string}) => prop.id === propertyId);
-    if (!propertyShape) continue;
+    if (propertyShape) {
+      propertyShapeCache.set(propertyId, propertyShape);
+      return propertyShape;
+    }
+  }
+  return undefined;
+}
 
+/**
+ * The `sh:datatype` declared for a property, if any. Lets the serializer emit the
+ * term the shape asks for rather than one inferred from the JavaScript value: a
+ * numeric property gets the numeric type it declares, and an `xsd:date` /
+ * `xsd:time` property its own lexical form instead of a full timestamp.
+ */
+function resolvePropertyDatatype(propertyId: string): string | undefined {
+  return findPropertyShapeById(propertyId)?.datatype?.id;
+}
+
+function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
+  const registrySize = getAllShapeClasses().size;
+  if (registrySize !== predicateTermCacheSize) {
+    predicateTermCache.clear();
+    predicateTermCacheSize = registrySize;
+  }
+  const cached = predicateTermCache.get(propertyId);
+  if (cached) return cached;
+
+  const propertyShape = findPropertyShapeById(propertyId);
+  if (propertyShape) {
     const simplePathId = getSimplePathId(propertyShape.path);
     let term: SparqlTerm;
     if (simplePathId !== null) {

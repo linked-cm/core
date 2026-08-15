@@ -111,8 +111,8 @@ export class CreateBuilder<S extends Shape = Shape, U extends UpdatePartial<S> =
     }
     const data = this._data;
 
-    // Data is validated by `describe()` during lowering (and by `toJSON()`),
-    // so both paths reject the same input. See `shapes/validation`.
+    // No validation here: `describe()` is the single gate, so lowering and
+    // `toJSON()` reject exactly the same input. See `shapes/validation`.
 
     // Inject __id if fixedId is set
     const dataWithId = this._fixedId

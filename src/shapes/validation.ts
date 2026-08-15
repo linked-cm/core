@@ -28,11 +28,14 @@
  * non-SHACL locator. Both map cleanly — a shape class chooses its own labels for
  * SHACL paths, and an extension property is legal on a SHACL report.
  *
- * **Coverage.** Structural constraints only — cardinality (`sh:minCount` /
- * `sh:maxCount`), node kind (literal vs relation), and undeclared properties.
- * Datatype, pattern, length and value-range constraints are parsed and
- * serialized (see report 024, G5) but deliberately not enforced here; the store
- * validates those. Adding one is a single entry in {@link PROPERTY_CONSTRAINTS}.
+ * **Coverage.** Cardinality (`sh:minCount` / `sh:maxCount`), node kind (literal
+ * vs relation), undeclared properties (as `sh:closed`), `sh:datatype`, the four
+ * `sh:min/maxInclusive/Exclusive` bounds, `sh:min/maxLength`, `sh:pattern` and
+ * `sh:in`. Each is one entry in {@link CARDINALITY_CONSTRAINTS} or
+ * {@link VALUE_CONSTRAINTS}, so adding another is one function and one test.
+ *
+ * Not covered: `sh:languageIn` / `sh:uniqueLang` (skipped at serialization time
+ * too, so there is no metadata to check against) and `sh:hasValue`.
  */
 import {shacl} from '../ontologies/shacl.js';
 import {xsd} from '../ontologies/xsd.js';

@@ -12,6 +12,8 @@ import {NodeReferenceValue} from '../queries/QueryFactory';
 import {validate, assertValid, ShapeValidationError} from '../shapes/validation';
 import {shacl} from '../ontologies/shacl';
 import {lower} from '../queries/lower';
+import {lowerMutationJSON} from '../queries/lowerMutationJSON';
+
 
 const base = 'linked://tmp/report/';
 const prop = (s: string): NodeReferenceValue => ({id: `${base}props/${s}`});
@@ -209,6 +211,54 @@ describe('assertValid()', () => {
 
   test('is silent when the data conforms', () => {
     expect(() => assertValid(Slide, {title: 'ok'})).not.toThrow();
+  });
+});
+
+describe('inbound DSL-JSON is held to the same standard as a local build', () => {
+  // `lowerMutationJSON` never touches a builder, so it needs its own gate — and
+  // it is the *less* trusted input of the two.
+  // Built through the real encoder rather than hand-written, so these stay
+  // honest about the wire format.
+  const createJSON = (data: object) =>
+    ({...Slide.create({title: 'Q3'} as any).toJSON(), data}) as any;
+
+  test('a create missing a required property is rejected at lowering', () => {
+    expect(() => lowerMutationJSON(createJSON({}))).toThrow(ShapeValidationError);
+    expect(() => lowerMutationJSON(createJSON({}))).toThrow(/requires at least 1 value/);
+  });
+
+  test('a conforming create lowers', () => {
+    expect(() => lowerMutationJSON(createJSON({title: 'Q3'}))).not.toThrow();
+  });
+
+  test('a mistyped value is rejected at lowering', () => {
+    expect(() => lowerMutationJSON(createJSON({title: {'@id': 'x:1'}}))).toThrow(
+      /literal property/,
+    );
+  });
+
+  test('an inbound update is validated in partial mode', () => {
+    const updateJSON = (data: object) =>
+      ({
+        ...Slide.update({tags: ['a']} as any).for({id: 'x:s1'}).toJSON(),
+        data,
+      }) as any;
+    // Absent properties are fine…
+    expect(() => lowerMutationJSON(updateJSON({tags: 'a'}))).not.toThrow();
+    // …but a provided value is checked.
+    // Multi-value lists travel as `{'@list': […]}`; a bare array is an s-expr.
+    expect(() =>
+      lowerMutationJSON(updateJSON({title: {'@list': ['a', 'b']}})),
+    ).toThrow(/at most 1 value/);
+  });
+
+  test('the wire and the builder reject the same payload', () => {
+    expect(() =>
+      lowerMutationJSON(createJSON({title: {'@list': ['a', 'b']}})),
+    ).toThrow(ShapeValidationError);
+    expect(() => Slide.create({title: ['a', 'b']} as any).toJSON()).toThrow(
+      ShapeValidationError,
+    );
   });
 });
 
