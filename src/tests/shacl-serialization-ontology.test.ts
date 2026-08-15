@@ -15,6 +15,7 @@ describe('ontology terms', () => {
     expect(shacl.equals.id).toBe(`${SH}equals`);
     expect(shacl.disjoint.id).toBe(`${SH}disjoint`);
     expect(shacl.hasValue.id).toBe(`${SH}hasValue`);
+    expect(shacl.defaultValue.id).toBe(`${SH}defaultValue`);
     expect(shacl.order.id).toBe(`${SH}order`);
     expect(shacl.group.id).toBe(`${SH}group`);
     expect(shacl.closed.id).toBe(`${SH}closed`);
