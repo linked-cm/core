@@ -11,12 +11,22 @@
  * know how well an object fits a shape without building a mutation.
  *
  * **Shape of the output.** This library has no triple/Turtle layer and this
- * module does not add one: a {@link ValidationReport} is plain JavaScript. What
- * it does do is name every field after its SHACL property and carry every
- * vocabulary-valued field as a `NodeReferenceValue` (`{id: 'http://…/shacl#…'}`)
- * from `ontologies/shacl`. A consumer that *does* have triples maps one result
- * to one `sh:ValidationResult` node and one field to one triple, with no
- * semantics to re-derive.
+ * module does not add one: a {@link ValidationReport} is plain JavaScript. It is
+ * however 1-1 with the SHACL vocabulary — one key per SHACL property, named
+ * after it, holding a value the mutation pipeline accepts (a literal, or a
+ * `{id}` node reference for IRI-valued properties). So a report can be
+ * materialized by an ordinary create query as soon as shape classes for
+ * `sh:ValidationReport` / `sh:ValidationResult` exist, with no transform step:
+ *
+ * ```ts
+ * const report = validate(Slide, data);
+ * await ValidationReport.create(report);   // once those shape classes exist
+ * ```
+ *
+ * Two deliberate departures, both documented on the types: `results` is plural
+ * where SHACL's repeated property is `sh:result`, and `propertyPath` is a
+ * non-SHACL locator. Both map cleanly — a shape class chooses its own labels for
+ * SHACL paths, and an extension property is legal on a SHACL report.
  *
  * **Coverage.** Structural constraints only — cardinality (`sh:minCount` /
  * `sh:maxCount`), node kind (literal vs relation), and undeclared properties.
@@ -44,33 +54,64 @@ import {asContextRef} from '../queries/QueryContext.js';
  */
 export type ValidationMode = 'complete' | 'partial';
 
-/** A single constraint violation — mirrors `sh:ValidationResult`. */
+/**
+ * A single constraint violation — an `sh:ValidationResult`.
+ *
+ * Every key is the local name of the SHACL property it carries, and every value
+ * is in a form the create pipeline accepts (a literal, or a `{id}` node
+ * reference for IRI-valued properties). A shape class declaring these
+ * properties therefore materializes a result with no transform step:
+ * `ValidationResult.create(result)`. The one non-SHACL key is `propertyPath`;
+ * see {@link ValidationReport}.
+ */
 export interface ValidationResult {
-  /** `sh:focusNode` — the id of the node being validated, when known. */
-  focusNode?: string;
+  /** `sh:focusNode` — the node the violation is about, when its id is known. */
+  focusNode?: NodeReferenceValue;
   /** `sh:resultPath` — the IRI of the property the violation is about. */
-  path?: NodeReferenceValue;
-  /** The property's label, dot-joined through nested shapes (`author.fullName`). */
-  property?: string;
-  /** `sh:value` — the offending value. */
-  value?: unknown;
-  /** `sh:sourceShape` — id of the node or property shape that carries the constraint. */
-  sourceShape: string;
+  resultPath?: NodeReferenceValue;
+  /**
+   * `sh:value` — the offending value, present only when it is an RDF term (a
+   * literal or a node reference). Cardinality violations are about the property
+   * rather than any one value, so they carry none.
+   */
+  value?: LiteralTerm | NodeReferenceValue;
+  /** `sh:sourceShape` — the node or property shape carrying the constraint. */
+  sourceShape?: NodeReferenceValue;
   /** `sh:sourceConstraintComponent` — which SHACL constraint failed. */
   sourceConstraintComponent: NodeReferenceValue;
   /** `sh:resultSeverity` — `sh:Violation`, `sh:Warning` or `sh:Info`. */
-  severity: NodeReferenceValue;
+  resultSeverity: NodeReferenceValue;
   /** `sh:resultMessage` — human-readable explanation. */
-  message: string;
+  resultMessage: string;
+  /**
+   * **Not SHACL.** The property's label, dot-joined through nested shapes
+   * (`author.fullName`) — the locator a caller needs to point at a field in the
+   * object they passed in, which `sh:resultPath` alone cannot give (it names the
+   * property, not where the nesting reached it). Materializes like any other
+   * property once a shape class declares it; drop it for a pure-SHACL result.
+   */
+  propertyPath?: string;
 }
 
-/** The outcome of a validation run — mirrors `sh:ValidationReport`. */
+/**
+ * The outcome of a validation run — an `sh:ValidationReport`.
+ *
+ * Plain objects, 1-1 with the SHACL vocabulary, so a report can later be
+ * materialized through an ordinary create query against shape classes for
+ * `sh:ValidationReport` / `sh:ValidationResult` — whether or not this library
+ * ever ships those classes. `results` is the sole plural rename (SHACL's
+ * property is `sh:result`, repeated); a shape class maps it with
+ * `@objectProperty({path: shacl.result, …}) get results()`.
+ */
 export interface ValidationReport {
   /** `sh:conforms` — true when there are no `sh:Violation`-severity results. */
   conforms: boolean;
   /** `sh:result` — every violation found, in deterministic order. */
   results: ValidationResult[];
 }
+
+/** The literal types the mutation pipeline accepts as a value. */
+type LiteralTerm = string | number | boolean | Date;
 
 export interface ValidateOptions {
   /** Defaults to `complete`. */
@@ -83,7 +124,7 @@ export interface ValidateOptions {
 export class ShapeValidationError extends Error {
   readonly report: ValidationReport;
   constructor(report: ValidationReport) {
-    super(report.results.map((r) => r.message).join('\n'));
+    super(report.results.map((r) => r.resultMessage).join('\n'));
     this.name = 'ShapeValidationError';
     this.report = report;
   }
@@ -129,22 +170,67 @@ interface PropertyContext {
  */
 type ConstraintCheck = (values: unknown[], ctx: PropertyContext) => ValidationResult[];
 
+/**
+ * `sh:value` must be an RDF term. A literal or a node reference is one; a plain
+ * object, array or function is not, so it is left off rather than emitted as
+ * something no store could materialize — the message still names it.
+ */
+function asTerm(value: unknown): LiteralTerm | NodeReferenceValue | undefined {
+  if (isScalarValue(value)) return value as LiteralTerm;
+  if (isNodeReference(value)) return {id: (value as NodeReferenceValue).id};
+  return undefined;
+}
+
+/**
+ * A violation about the node itself rather than one of its property shapes —
+ * `sh:sourceShape` is the node shape, and there is no `sh:resultPath` (an
+ * undeclared key has no property IRI to point at).
+ */
+function nodeViolation(
+  shape: NodeShapeData,
+  ctx: {focusNode?: string},
+  component: NodeReferenceValue,
+  message: string,
+  propertyPath?: string,
+  value?: unknown,
+): ValidationResult {
+  const result: ValidationResult = {
+    sourceConstraintComponent: component,
+    resultSeverity: shacl.Violation,
+    resultMessage: message,
+  };
+  if (ctx.focusNode) result.focusNode = {id: ctx.focusNode};
+  if (propertyPath) result.propertyPath = propertyPath;
+  const term = asTerm(value);
+  if (term !== undefined) result.value = term;
+  if (shape.id) result.sourceShape = {id: shape.id};
+  return result;
+}
+
+/**
+ * Build a result, omitting absent keys entirely — an `undefined` value is not a
+ * property the create pipeline should see.
+ */
 function violation(
   ctx: PropertyContext,
   component: NodeReferenceValue,
   message: string,
   value?: unknown,
 ): ValidationResult {
-  return {
-    focusNode: ctx.focusNode,
-    path: ctx.propertyShape.path as NodeReferenceValue | undefined,
-    property: ctx.property,
-    value,
-    sourceShape: ctx.propertyShape.id || ctx.shape.id,
+  const result: ValidationResult = {
     sourceConstraintComponent: component,
-    severity: shacl.Violation,
-    message,
+    resultSeverity: shacl.Violation,
+    resultMessage: message,
   };
+  if (ctx.focusNode) result.focusNode = {id: ctx.focusNode};
+  const path = ctx.propertyShape.path as NodeReferenceValue | undefined;
+  if (path?.id) result.resultPath = {id: path.id};
+  if (ctx.property) result.propertyPath = ctx.property;
+  const term = asTerm(value);
+  if (term !== undefined) result.value = term;
+  const sourceShape = ctx.propertyShape.id || ctx.shape.id;
+  if (sourceShape) result.sourceShape = {id: sourceShape};
+  return result;
 }
 
 /** The label used in messages — the property's own label, not its nested path. */
@@ -161,7 +247,6 @@ const maxCountCheck: ConstraintCheck = (values, ctx) => {
       ctx,
       shacl.MaxCountConstraintComponent,
       `Property '${labelOf(ctx.propertyShape)}' allows at most ${maxCount} value(s), but ${values.length} were provided.`,
-      values,
     ),
   ];
 };
@@ -175,7 +260,6 @@ const minCountCheck: ConstraintCheck = (values, ctx) => {
       ctx,
       shacl.MinCountConstraintComponent,
       `Property '${labelOf(ctx.propertyShape)}' requires at least ${minCount} value(s), but ${values.length} were provided.`,
-      values,
     ),
   ];
 };
@@ -343,7 +427,7 @@ export function validate(
     prefix: '',
   });
   return {
-    conforms: !results.some((r) => r.severity.id === shacl.Violation.id),
+    conforms: !results.some((r) => r.resultSeverity.id === shacl.Violation.id),
     results,
   };
 }
@@ -378,15 +462,14 @@ function validateNode(
 ): ValidationResult[] {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     return [
-      {
-        focusNode: ctx.focusNode,
-        property: ctx.prefix || undefined,
-        value: data,
-        sourceShape: shape.id,
-        sourceConstraintComponent: shacl.NodeConstraintComponent,
-        severity: shacl.Violation,
-        message: `Expected an object describing '${shape.label || shape.id}', but got ${data === null ? 'null' : typeof data}.`,
-      },
+      nodeViolation(
+        shape,
+        ctx,
+        shacl.NodeConstraintComponent,
+        `Expected an object describing '${shape.label || shape.id}', but got ${data === null ? 'null' : typeof data}.`,
+        ctx.prefix,
+        data,
+      ),
     ];
   }
 
@@ -421,15 +504,16 @@ function validateNode(
     if (RESERVED_KEYS.has(key)) continue;
     const propertyShape = byLabel.get(key);
     if (!propertyShape) {
-      results.push({
-        focusNode,
-        property: join(ctx.prefix, key),
-        value,
-        sourceShape: shape.id,
-        sourceConstraintComponent: shacl.ClosedConstraintComponent,
-        severity: shacl.Violation,
-        message: undeclaredPropertyMessage(key, shape),
-      });
+      results.push(
+        nodeViolation(
+          shape,
+          {...ctx, focusNode},
+          shacl.ClosedConstraintComponent,
+          undeclaredPropertyMessage(key, shape),
+          join(ctx.prefix, key),
+          value,
+        ),
+      );
       continue;
     }
     results.push(
@@ -462,7 +546,6 @@ function validateProperty(
           propCtx,
           shacl.MinCountConstraintComponent,
           `Property '${labelOf(ps)}' requires at least ${ps.minCount} value(s) and cannot be cleared.`,
-          value,
         ),
       ];
     }

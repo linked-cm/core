@@ -35,19 +35,19 @@ One validator, one report type, one gate.
 export type ValidationMode = 'complete' | 'partial';
 
 export interface ValidationResult {
-  focusNode?: string;                       // sh:focusNode — when the node id is known
-  path?: NodeReferenceValue;                // sh:resultPath — the property IRI
-  property: string;                         // convenience: dotted label path ("author.fullName")
-  value?: unknown;                          // sh:value
-  sourceShape: string;                      // sh:sourceShape — node/property shape id
-  sourceConstraintComponent: NodeReferenceValue;  // sh:MinCountConstraintComponent, …
-  severity: NodeReferenceValue;             // sh:resultSeverity — sh:Violation | sh:Warning | sh:Info
-  message: string;                          // sh:resultMessage
+  focusNode?: NodeReferenceValue;                 // sh:focusNode
+  resultPath?: NodeReferenceValue;                // sh:resultPath
+  value?: LiteralTerm | NodeReferenceValue;       // sh:value — RDF terms only
+  sourceShape?: NodeReferenceValue;               // sh:sourceShape
+  sourceConstraintComponent: NodeReferenceValue;  // sh:sourceConstraintComponent
+  resultSeverity: NodeReferenceValue;             // sh:resultSeverity
+  resultMessage: string;                          // sh:resultMessage
+  propertyPath?: string;                          // extension: dotted label path
 }
 
 export interface ValidationReport {
-  conforms: boolean;                        // sh:conforms
-  results: ValidationResult[];              // sh:result
+  conforms: boolean;                              // sh:conforms
+  results: ValidationResult[];                    // sh:result
 }
 
 export function validate(
@@ -60,9 +60,26 @@ export function assertValid(shape, data, options?): void;  // throws ShapeValida
 export class ShapeValidationError extends Error { readonly report: ValidationReport }
 ```
 
-### No RDF in this library
+### No RDF in this library — but a materializable report
 
-`@_linked/core` has no triple, quad, or Turtle layer, and this plan does not add one. The report is plain JavaScript objects. What SHACL alignment buys is that every field is named after its SHACL property and every vocabulary-valued field holds a `NodeReferenceValue` (`{id: 'http://www.w3.org/ns/shacl#…'}`) taken from `src/ontologies/shacl.ts`. A consumer that does have a triple layer maps the report mechanically — one result becomes one `sh:ValidationResult` node, one field becomes one triple — with no semantics to re-derive. `severity`, `sourceConstraintComponent`, and `path` are `{id}` refs rather than strings precisely so that mapping stays dumb.
+`@_linked/core` has no triple, quad, or Turtle layer, and this plan does not add one. A report is
+plain JavaScript. The requirement is stronger than "SHACL-flavoured naming": the object must be 1-1
+with the vocabulary, so it can be **materialized by an ordinary create query** against shape classes
+for `sh:ValidationReport` / `sh:ValidationResult` — `ValidationReport.create(report)` — whether or
+not this library ever ships those classes.
+
+That imposes three rules on the walk:
+
+- one key per SHACL property, named after it;
+- every value in a form the mutation pipeline accepts — a literal, or a `{id}` node reference for
+  IRI-valued properties (so `focusNode` and `sourceShape` are refs, not bare strings);
+- absent keys omitted entirely, and `sh:value` present only when the offending value is an RDF term
+  (cardinality violations carry none — they are about the property, not a value).
+
+Two departures, both documented on the types: `results` is plural where SHACL's repeated property is
+`sh:result` (a shape class picks its own label for a path), and `propertyPath` is a non-SHACL
+extension carrying the dotted label path, which `sh:resultPath` cannot express — it names the
+property, not where the nesting reached it.
 
 ### Internal structure — constraint components
 

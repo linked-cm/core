@@ -17,12 +17,54 @@ Suite: **1508 passed / 117 skipped**, typecheck green (baseline before this chan
 `message`). `assertValid()` is the throwing form; `ShapeValidationError.report` carries the full
 report, and its `message` joins every violation rather than surfacing only the first.
 
-Vocabulary-valued fields hold `NodeReferenceValue` refs from `ontologies/shacl` rather than strings.
-The library still has no triple layer and this change does not add one — the point is that a consumer
-which *does* have one maps a result to a `sh:ValidationResult` node field-by-field, with no semantics
-to re-derive. Six terms were added to the ontology to make that possible: `MinCountConstraintComponent`,
-`MaxCountConstraintComponent`, `NodeKindConstraintComponent`, `ClosedConstraintComponent`, `Warning`,
-`Info`.
+### The report is 1-1 with the SHACL vocabulary
+
+The library has no triple layer and this change does not add one. What it guarantees instead is that
+a report is *materializable as-is*: one key per SHACL property, named after it, holding a value the
+mutation pipeline accepts. Given shape classes for `sh:ValidationReport` / `sh:ValidationResult`,
+`ValidationReport.create(report)` works with no transform step.
+
+| Report key | SHACL property | Value form |
+| --- | --- | --- |
+| `conforms` | `sh:conforms` | boolean literal |
+| `results` | `sh:result` | nested node descriptions |
+| `focusNode` | `sh:focusNode` | `{id}` |
+| `resultPath` | `sh:resultPath` | `{id}` |
+| `value` | `sh:value` | literal or `{id}` |
+| `sourceShape` | `sh:sourceShape` | `{id}` |
+| `sourceConstraintComponent` | `sh:sourceConstraintComponent` | `{id}` |
+| `resultSeverity` | `sh:resultSeverity` | `{id}` |
+| `resultMessage` | `sh:resultMessage` | string literal |
+| `propertyPath` | — (extension) | string literal |
+
+Three rules follow from that table and are enforced in the walk:
+
+- **Absent keys are omitted, never `undefined`.** The create pipeline should not see a key that
+  carries no value.
+- **`sh:value` only holds RDF terms.** A literal or a `{id}` reference is one; a plain object, array
+  or function is not, so it is left off and the message names the offender instead. Cardinality
+  violations carry no `sh:value` at all — they are about the property, not any one value.
+- **IRI-valued fields are `{id}` refs, not bare strings** — including `focusNode` and `sourceShape`,
+  which were strings in the first cut.
+
+Two deliberate departures: `results` is plural where SHACL's repeated property is `sh:result` (a
+shape class picks its own label for a path, so this still maps 1-1), and `propertyPath` — the dotted
+label path — is a non-SHACL extension, because `sh:resultPath` names the property but not where the
+nesting reached it. A pure-SHACL report drops that key; a report that keeps it needs one extension
+property in its shape class. Standards-correct nesting would instead be `sh:detail` linking parent to
+child results, which trades a flat list for a tree; the flat list is what a caller iterating
+violations wants, so it stayed flat.
+
+Ontology terms added: `MinCountConstraintComponent`, `MaxCountConstraintComponent`,
+`NodeKindConstraintComponent`, `ClosedConstraintComponent`, `Warning`, `Info`, `resultMessage`
+(distinct from the already-present `sh:message`, which declares a custom message on a *shape*), and
+`detail` for the nesting option above.
+
+`shape-validation-materialization.test.ts` proves the mapping rather than asserting it: it declares
+shape classes straight from the SHACL vocabulary and pushes a real report through a create query. If
+a result ever grows a key those shapes don't declare, the create throws `Invalid property key` and
+the suite fails. Whether core ships those classes is left open — the test keeps the contract honest
+either way.
 
 **Constraints are a registry.** Each check is a `(values, ctx) => ValidationResult[]` function in
 `PROPERTY_CONSTRAINTS`. The four the library enforces — `sh:maxCount`, `sh:minCount`, `sh:nodeKind`,
@@ -80,3 +122,7 @@ Unchanged from the plan, and both still open decisions:
   behind this decision.
 - **Validating nodes read back from the store**, not just write payloads. The engine is shape-driven
   and would need only a different input adapter.
+- **Shipping `ValidationReport` / `ValidationResult` shape classes in core**, so reports can be
+  persisted without the consumer declaring them. The mapping is settled and tested (see above); what
+  is open is whether core should own the classes, and whether `sh:result` should be a `contains` edge
+  (results are owned by the report and should cascade-delete with it — the test models it that way).

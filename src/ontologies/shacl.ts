@@ -77,7 +77,12 @@ export const sourceShape = ns('sourceShape');
 export const resultSeverity = ns('resultSeverity');
 export const resultPath = ns('resultPath');
 export const value = ns('value');
+/** `sh:message` — a custom message declared on a shape or constraint. */
 export const message = ns('message');
+/** `sh:resultMessage` — the message carried by a validation result. */
+export const resultMessage = ns('resultMessage');
+/** `sh:detail` — links a validation result to the results that explain it. */
+export const detail = ns('detail');
 export const Violation = ns('Violation');
 export const AbstractResult = ns('AbstractResult');
 export const sourceConstraintComponent = ns('sourceConstraintComponent');
@@ -151,6 +156,8 @@ export const shacl = {
   resultPath,
   value,
   message,
+  resultMessage,
+  detail,
   Violation,
   sourceConstraintComponent,
   ClassConstraintComponent,

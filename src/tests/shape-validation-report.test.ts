@@ -71,7 +71,7 @@ describe('validate() — report shape', () => {
     });
     expect(report.conforms).toBe(false);
     expect(report.results).toHaveLength(4); // + missing required `title`
-    expect(report.results.map((r) => r.property)).toEqual([
+    expect(report.results.map((r) => r.propertyPath)).toEqual([
       'title',
       'tags',
       'author',
@@ -85,11 +85,10 @@ describe('validate() — report shape', () => {
     expect(result.sourceConstraintComponent.id).toBe(
       'http://www.w3.org/ns/shacl#MaxCountConstraintComponent',
     );
-    expect(result.severity).toEqual(shacl.Violation);
-    expect(result.path).toEqual(prop('title'));
-    expect(result.value).toEqual(['a', 'b']);
+    expect(result.resultSeverity).toEqual(shacl.Violation);
+    expect(result.resultPath).toEqual(prop('title'));
     expect(result.sourceShape).toBeTruthy();
-    expect(result.message).toMatch(/at most 1 value/);
+    expect(result.resultMessage).toMatch(/at most 1 value/);
   });
 
   test('each constraint reports its own component', () => {
@@ -104,11 +103,11 @@ describe('validate() — report shape', () => {
   });
 
   test('focusNode is the node id when the data carries one', () => {
-    expect(validate(Slide, {id: 'x:slide1', title: ['a', 'b']}).results[0].focusNode).toBe(
-      'x:slide1',
+    expect(validate(Slide, {id: 'x:slide1', title: ['a', 'b']}).results[0].focusNode).toEqual(
+      {id: 'x:slide1'},
     );
-    expect(validate(Slide, {__id: 'x:slide2', title: ['a', 'b']}).results[0].focusNode).toBe(
-      'x:slide2',
+    expect(validate(Slide, {__id: 'x:slide2', title: ['a', 'b']}).results[0].focusNode).toEqual(
+      {id: 'x:slide2'},
     );
     expect(validate(Slide, {title: ['a', 'b']}).results[0].focusNode).toBeUndefined();
   });
@@ -127,8 +126,8 @@ describe('validate() — report shape', () => {
 describe('validate() — complete vs partial mode', () => {
   test('complete (the default) requires minCount properties to be present', () => {
     const report = validate(Slide, {tags: ['a']});
-    expect(report.results.map((r) => r.property)).toEqual(['title']);
-    expect(report.results[0].message).toMatch(/requires at least 1 value/);
+    expect(report.results.map((r) => r.propertyPath)).toEqual(['title']);
+    expect(report.results[0].resultMessage).toMatch(/requires at least 1 value/);
   });
 
   test('partial skips presence checks — the store holds what the payload omits', () => {
@@ -143,7 +142,7 @@ describe('validate() — complete vs partial mode', () => {
     for (const mode of ['complete', 'partial'] as const) {
       const report = validate(Slide, {title: null}, {mode});
       expect(report.conforms).toBe(false);
-      expect(report.results[0].message).toMatch(/cannot be cleared/);
+      expect(report.results[0].resultMessage).toMatch(/cannot be cleared/);
     }
   });
 });
@@ -151,7 +150,7 @@ describe('validate() — complete vs partial mode', () => {
 describe('validate() — nested node descriptions', () => {
   test('descends into a nested create and reports a dotted property path', () => {
     const report = validate(Slide, {title: 'ok', author: {fullName: {id: 'x:1'}}});
-    expect(report.results.map((r) => r.property)).toEqual(['author.fullName']);
+    expect(report.results.map((r) => r.propertyPath)).toEqual(['author.fullName']);
     expect(report.results[0].sourceConstraintComponent).toEqual(
       shacl.NodeKindConstraintComponent,
     );
@@ -159,8 +158,8 @@ describe('validate() — nested node descriptions', () => {
 
   test('a nested create missing a required property is reported', () => {
     const report = validate(Slide, {title: 'ok', author: {}});
-    expect(report.results.map((r) => r.property)).toEqual(['author.fullName']);
-    expect(report.results[0].message).toMatch(/none were provided/);
+    expect(report.results.map((r) => r.propertyPath)).toEqual(['author.fullName']);
+    expect(report.results[0].resultMessage).toMatch(/none were provided/);
   });
 
   test('a bare {id} reference is not descended into', () => {
@@ -238,7 +237,7 @@ describe('the mutation pipelines use the same validator', () => {
       throw new Error('should have thrown');
     } catch (e) {
       const report = (e as ShapeValidationError).report;
-      expect(report.results.map((r) => r.property)).toEqual(['title', 'tags']);
+      expect(report.results.map((r) => r.propertyPath)).toEqual(['title', 'tags']);
     }
   });
 });
