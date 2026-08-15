@@ -130,12 +130,31 @@ Datatype rules, by JS value:
 | `xsd:boolean` | boolean |
 | `xsd:integer`, `xsd:long` | number, integral |
 | `xsd:decimal`, `xsd:float`, `xsd:double` | finite number |
-| `xsd:date`, `xsd:dateTime`, `xsd:time` | `Date` **or** string |
+| `xsd:date`, `xsd:dateTime`, `xsd:time` | `Date` |
 | `xsd:duration`, `xsd:gYear`, `xsd:Bytes` | unchecked |
 
-Dates accept a string as well as a `Date` deliberately: a `Date` serializes to a full
-`xsd:dateTime`, so a lexical string is the only way to write an `xsd:date`. Rejecting it would leave
-no way to express one. Lexical validity stays the store's business.
+### Temporal properties take a `Date` and nothing else
+
+A `Date` is the single accepted input for `xsd:date` / `xsd:dateTime` / `xsd:time` — one
+representation for a point in time, rather than a JS object and a hand-written lexical string that
+behave differently on the way out.
+
+That required a **companion fix in the serializer**, because otherwise `xsd:date` would have become
+unwritable: `irToAlgebra` typed every `Date` as `xsd:dateTime` from `toISOString()`, so an
+`xsd:date` property would have stored a full timestamp with no way to express a plain date.
+`fieldValueToTerms` now takes the property's declared `sh:datatype` and derives the lexical form from
+it (`dateToTerm`):
+
+| Declared | One `Date` of `2020-06-15T09:30:00Z` becomes |
+| --- | --- |
+| `xsd:date` | `"2020-06-15"^^xsd:date` |
+| `xsd:dateTime` | `"2020-06-15T09:30:00.000Z"^^xsd:dateTime` |
+| `xsd:time` | `"09:30:00.000Z"^^xsd:time` |
+| none | `"…"^^xsd:dateTime` (unchanged) |
+
+The datatype is resolved from the shape registry by property id — `resolvePropertyDatatype`, the same
+scan and self-invalidating cache the predicate resolution already used — so neither the IR nor the
+wire format changed. Non-temporal literals are still typed from the JavaScript value.
 
 Two design rules keep the output readable: **one violation per mistake** — a node reference given to
 a typed literal property is a node-kind violation only, and a non-number given to a bounded property
@@ -160,8 +179,11 @@ split down explicitly.
   collision with the interfaces of the same name.
 - **`sh:languageIn` / `sh:uniqueLang`** — skipped at serialization time too (report 024, G5), so
   there is no metadata to enforce against yet.
-- **Untyped literals for date properties.** A string given to an `xsd:date`/`xsd:dateTime` property
-  is accepted by the datatype check (it is the only way to write an `xsd:date`) but reaches SPARQL as
-  an untyped literal, because `irToAlgebra` types literals from the JS value. The validator now
-  guarantees the value is a string or a `Date`, not that the emitted term carries the declared
-  datatype. Making the serializer datatype-aware is a separate fix.
+- **Numeric literals are still typed from the JavaScript value.** `resolvePropertyDatatype` is wired
+  in but only consulted for temporal values, so a property declared `xsd:decimal` still emits
+  `xsd:double` for `1.5`, and `xsd:long` emits `xsd:integer`. The same one-line hook fixes it; it was
+  left alone here because it changes the SPARQL output of existing shapes.
+- **Set-modification contents are unchecked.** `{tags: {add: ['42']}}` skips every value check,
+  because `isOpaqueValue` treats the whole `{add, remove}` object as undecidable. The *count* is
+  undecidable; the datatype, node kind, pattern and range of each added value are not. Closing this
+  would mean checking elements of `add` under the same components while leaving cardinality alone.

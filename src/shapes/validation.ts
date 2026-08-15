@@ -368,11 +368,15 @@ const isFiniteNumber = (v: unknown) => typeof v === 'number' && Number.isFinite(
  * string handed to an `xsd:integer` property does not merely skip a check, it
  * writes the wrong RDF term. Rejecting it is a correctness fix.
  *
- * Dates accept a `Date` *or* a string: a lexical form like `'2020-06-15'` is the
- * only way to express an `xsd:date` (a `Date` serializes to a full
- * `xsd:dateTime`), so rejecting strings there would leave no way to write one.
- * Lexical validity is the store's business. Datatypes with no obvious JS
- * counterpart (`xsd:duration`, `xsd:gYear`, `xsd:Bytes`) are not checked.
+ * Temporal properties take a `Date` and nothing else — one representation for a
+ * point in time, rather than a JS object and a hand-written lexical string that
+ * behave differently. The serializer derives the right lexical form from the
+ * declared datatype (`irToAlgebra.dateToTerm`), so an `xsd:date` property gets
+ * `"2020-06-15"^^xsd:date` from the same `Date` an `xsd:dateTime` property gets
+ * a full timestamp from.
+ *
+ * Datatypes with no obvious JS counterpart (`xsd:duration`, `xsd:gYear`,
+ * `xsd:Bytes`) are not checked.
  */
 const DATATYPE_RULES: Record<string, {accepts: (v: unknown) => boolean; expected: string}> = {
   [xsd.string.id]: {accepts: (v) => typeof v === 'string', expected: 'a string'},
@@ -382,9 +386,9 @@ const DATATYPE_RULES: Record<string, {accepts: (v: unknown) => boolean; expected
   [xsd.decimal.id]: {accepts: isFiniteNumber, expected: 'a number'},
   [xsd.float.id]: {accepts: isFiniteNumber, expected: 'a number'},
   [xsd.double.id]: {accepts: isFiniteNumber, expected: 'a number'},
-  [xsd.date.id]: {accepts: (v) => v instanceof Date || typeof v === 'string', expected: 'a Date or a lexical date string'},
-  [xsd.dateTime.id]: {accepts: (v) => v instanceof Date || typeof v === 'string', expected: 'a Date or a lexical dateTime string'},
-  [xsd.time.id]: {accepts: (v) => v instanceof Date || typeof v === 'string', expected: 'a Date or a lexical time string'},
+  [xsd.date.id]: {accepts: (v) => v instanceof Date, expected: 'a Date'},
+  [xsd.dateTime.id]: {accepts: (v) => v instanceof Date, expected: 'a Date'},
+  [xsd.time.id]: {accepts: (v) => v instanceof Date, expected: 'a Date'},
 };
 
 /** `sh:datatype` — the value's JavaScript type must match the declared datatype. */

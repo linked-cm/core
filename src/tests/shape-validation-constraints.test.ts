@@ -12,6 +12,8 @@ import {NodeReferenceValue} from '../queries/QueryFactory';
 import {validate} from '../shapes/validation';
 import {shacl} from '../ontologies/shacl';
 import {xsd} from '../ontologies/xsd';
+import {lower} from '../queries/lower';
+import {createToSparql} from '../sparql/irToAlgebra';
 
 const base = 'linked://tmp/constraints/';
 const prop = (s: string): NodeReferenceValue => ({id: `${base}props/${s}`});
@@ -43,6 +45,16 @@ class Target extends Shape {
 
   @literalProperty({path: prop('startedAt'), maxCount: 1, datatype: xsd.dateTime})
   get startedAt(): Date {
+    return null;
+  }
+
+  @literalProperty({path: prop('bornOn'), maxCount: 1, datatype: xsd.date})
+  get bornOn(): Date {
+    return null;
+  }
+
+  @literalProperty({path: prop('ringsAt'), maxCount: 1, datatype: xsd.time})
+  get ringsAt(): Date {
     return null;
   }
 
@@ -147,10 +159,24 @@ describe('sh:datatype', () => {
     expect(validate(Target, {score: 2}).conforms).toBe(true);
   });
 
-  test('dates accept a Date or a lexical string (the only way to write xsd:date)', () => {
+  test('temporal properties take a Date and nothing else', () => {
     expect(validate(Target, {startedAt: new Date()}).conforms).toBe(true);
-    expect(validate(Target, {startedAt: '2020-06-15'}).conforms).toBe(true);
-    expect(componentsFor(Target, {startedAt: 42})).toEqual(['DatatypeConstraintComponent']);
+    expect(componentsFor(Target, {startedAt: '2020-06-15'})).toEqual([
+      'DatatypeConstraintComponent',
+    ]);
+    expect(componentsFor(Target, {startedAt: 1592179200000})).toEqual([
+      'DatatypeConstraintComponent',
+    ]);
+    expect(validate(Target, {startedAt: '2020-06-15'}).results[0].resultMessage).toBe(
+      "Property 'startedAt' expects xsd:dateTime (a Date), but was given a string.",
+    );
+  });
+
+  test('an xsd:date property takes a Date too — not a lexical string', () => {
+    expect(validate(Target, {bornOn: new Date('2020-06-15')}).conforms).toBe(true);
+    expect(componentsFor(Target, {bornOn: '2020-06-15'})).toEqual([
+      'DatatypeConstraintComponent',
+    ]);
   });
 
   test('datatypes with no JS counterpart are not checked', () => {
@@ -282,6 +308,32 @@ describe('every violation at once', () => {
       // `code` has no pattern; `slug` does — this is the length pair only.
     ]);
     expect(componentsFor(Bounded, {ratio: 5})).toEqual(['MaxExclusiveConstraintComponent']);
+  });
+});
+
+describe('a Date reaches SPARQL as the datatype its property declares', () => {
+  const sparqlFor = (data: object) =>
+    createToSparql(lower(Target.create(data as any).withId('x:t1') as any) as any);
+
+  const instant = new Date('2020-06-15T09:30:00.000Z');
+
+  test('xsd:date gets a date, not a timestamp', () => {
+    expect(sparqlFor({bornOn: instant})).toContain('"2020-06-15"^^xsd:date');
+  });
+
+  test('xsd:dateTime gets the full timestamp', () => {
+    expect(sparqlFor({startedAt: instant})).toContain('"2020-06-15T09:30:00.000Z"^^xsd:dateTime');
+  });
+
+  test('xsd:time gets the time of day', () => {
+    expect(sparqlFor({ringsAt: instant})).toContain('"09:30:00.000Z"^^xsd:time');
+  });
+
+  test('one Date, three properties, three different terms', () => {
+    const sparql = sparqlFor({bornOn: instant, startedAt: instant, ringsAt: instant});
+    expect(sparql).toContain('"2020-06-15"^^xsd:date');
+    expect(sparql).toContain('"2020-06-15T09:30:00.000Z"^^xsd:dateTime');
+    expect(sparql).toContain('"09:30:00.000Z"^^xsd:time');
   });
 });
 
