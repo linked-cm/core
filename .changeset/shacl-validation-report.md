@@ -21,7 +21,9 @@ report.results[0];
 // }
 ```
 
-No builder, no store round-trip. Pass `{mode: 'partial'}` to check only the values provided (an update) rather than the whole node (a create), and `{maxDepth}` to bound descent into nested creates. `assertValid()` is the throwing form; `ShapeValidationError.report` carries the same report.
+No builder, no store round-trip, and no shape *class* required — `validate` takes a shape class or the plain `NodeShapeData` the decorators generate, and resolves inherited and nested shapes through the registry by id, so a caller holding only shape objects gets the same report. When such a lookup fails (a shape object whose id was never registered), the unresolved branch is now reported as an `sh:NodeConstraintComponent` violation rather than silently passing.
+
+Pass `{mode: 'partial'}` to check only the values provided (an update) rather than the whole node (a create), and `{maxDepth}` to bound descent into nested creates. `assertValid()` is the throwing form; `ShapeValidationError.report` carries the same report.
 
 Each result is one `sh:ValidationResult` under SHACL's own property names, with IRI-valued fields as `{id}` node references — so a report can be persisted by an ordinary create query against shape classes for `sh:ValidationReport` / `sh:ValidationResult`, with no transform step.
 
