@@ -6,9 +6,10 @@ packages: [core]
 
 # 027 — Shape validation report
 
-Status: **done**. Suite **1561 passed / 117 skipped**, typecheck green (baseline before this work: 1472 passed).
+Status: **done**. Suite **1565 passed / 117 skipped**, typecheck green (baseline before this work: 1472 passed).
 
-PR: [#188](https://github.com/linked-cm/core/pull/188) → `dev`.
+PRs: [#188](https://github.com/linked-cm/core/pull/188) (merged, released as 2.16.0) and the
+unresolvable-shape follow-up [#194](https://github.com/linked-cm/core/pull/194), both → `dev`.
 
 ## The problem
 
@@ -85,6 +86,23 @@ try { … } catch (e) { (e as ShapeValidationError).report.results }
 
 `validate` accepts a shape class or the plain `NodeShapeData` it carries. It never throws for invalid
 *data* — a violation is a result. It does throw when the *shape* argument is unusable.
+
+### Callers need no shape classes
+
+A caller holding only decorator-generated shape objects — a document-mapping pipeline, say — can
+validate with those alone. Neither inheritance nor nesting is carried *in* the shape object: a
+subclass's `propertyShapes` holds only its own, and a property's `valueShape` is a bare `{id}`. The
+validator resolves both through the registry by id, so passing the class is a convenience, never a
+requirement, and `validate(Slide, data)` and `validate(Slide.shape, data)` return the same report.
+
+That resolution can fail — for a shape object whose id was never registered, e.g. one deserialized
+where the definitions were never loaded. It used to fail *silently*: inherited required properties
+went unchecked (and any supplied looked undeclared), and an unresolvable nested value was skipped, so
+a node could be reported as conforming on the strength of a branch never looked at. Both now produce
+an `sh:NodeConstraintComponent` violation naming the unresolved shape. The two cases are distinguished
+in the message, because they are fixed differently: a property declaring a shape that is not
+registered, versus a property declaring none at all (where the fix is a `shape` on the
+`@objectProperty` decorator, or a `shape` key on the value).
 
 ## The report is 1-1 with SHACL, and materializable
 
@@ -239,7 +257,7 @@ It supplies `members` and still asserts exactly what its name says.
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
-| `shape-validation-report.test.ts` | 29 | Report structure and SHACL vocabulary, `complete` vs `partial`, nested descriptions and `maxDepth`, skipped values, `assertValid`, pipeline parity between `toJSON()` / `lower()` / inbound DSL-JSON |
+| `shape-validation-report.test.ts` | 33 | Report structure and SHACL vocabulary, `complete` vs `partial`, nested descriptions and `maxDepth`, skipped values, `assertValid`, pipeline parity between `toJSON()` / `lower()` / inbound DSL-JSON |
 | `shape-validation-constraints.test.ts` | 42 | Every value component, which checks need a whole node, set modifications, and the SPARQL terms produced for dates and numbers |
 | `shape-validation-materialization.test.ts` | 6 | Declares shape classes straight from the SHACL vocabulary and pushes a real report through a create query |
 | `mutation-shape-validation.test.ts` | 14 | Pre-existing cardinality / node-kind behaviour, carried through unchanged |
