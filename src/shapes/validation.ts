@@ -632,7 +632,12 @@ function isNodeDescription(value: unknown): boolean {
 // Entry points
 // ---------------------------------------------------------------------------
 
-/** Accepts a shape class (`Person`) or the plain `NodeShapeData` it carries. */
+/**
+ * What can be validated against: a shape class (`Person`) or the plain
+ * `NodeShapeData` the decorators generate (`Person.shape`, or the same object
+ * obtained anywhere else). The two are interchangeable — the class is unwrapped
+ * to its `shape` and nothing else about it is read.
+ */
 export type ValidatableShape = NodeShapeData | {shape: NodeShapeData};
 
 function resolveShapeData(shape: ValidatableShape): NodeShapeData {
@@ -657,6 +662,23 @@ function resolveShapeData(shape: ValidatableShape): NodeShapeData {
  * report.conforms; // false
  * report.results[0].sourceConstraintComponent.id; // …shacl#MaxCountConstraintComponent
  * ```
+ *
+ * **A shape class is optional.** The plain `NodeShapeData` the decorators
+ * generate validates identically, so a caller that only ever holds shape
+ * objects needs no class reference:
+ *
+ * ```ts
+ * validate(Person, data);        // ≡
+ * validate(Person.shape, data);  // same report
+ * ```
+ *
+ * That holds even though a shape object carries neither its inherited property
+ * shapes (a subclass's `propertyShapes` holds only its own) nor its nested
+ * shapes (`valueShape` is a bare `{id}`): both are resolved through the shape
+ * registry by id. A shape whose id is not registered therefore cannot be fully
+ * checked, and says so — see {@link unresolvedValueShapeMessage} and the
+ * inherited-properties check in `validateNode` — rather than reporting a node
+ * as conforming on the strength of a branch it could not look at.
  */
 export function validate(
   shape: ValidatableShape,
