@@ -13,7 +13,7 @@ import type {
   IRSetModificationValue,
   IRTraversePattern,
 } from '../queries/IntermediateRepresentation.js';
-import {getPropertyShapes} from '../shapes/nodeShapeData.js';
+import {getPropertyShapes, type PropertyShapeData} from '../shapes/nodeShapeData.js';
 import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
@@ -51,6 +51,8 @@ import {UnresolvedContextError} from '../queries/QueryContext.js';
 
 const RDF_TYPE = rdf.type.id;
 const XSD_DATETIME = xsd.dateTime.id;
+const XSD_DATE = xsd.date.id;
+const XSD_TIME = xsd.time.id;
 const XSD_BOOLEAN = xsd.boolean.id;
 const XSD_INTEGER = xsd.integer.id;
 const XSD_DOUBLE = xsd.double.id;
@@ -110,21 +112,54 @@ function resolveShapeScanIri(shapeId: string): string {
 const predicateTermCache = new Map<string, SparqlTerm>();
 let predicateTermCacheSize = -1;
 
-function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
+// The registry scan behind both predicate and datatype resolution, cached on the
+// same terms as the predicate cache above: successful lookups only, invalidated
+// by registry size.
+const propertyShapeCache = new Map<string, PropertyShapeData>();
+let propertyShapeCacheSize = -1;
+
+function findPropertyShapeById(propertyId: string): PropertyShapeData | undefined {
   const shapeClasses = getAllShapeClasses();
-  if (shapeClasses.size !== predicateTermCacheSize) {
-    predicateTermCache.clear();
-    predicateTermCacheSize = shapeClasses.size;
+  if (shapeClasses.size !== propertyShapeCacheSize) {
+    propertyShapeCache.clear();
+    propertyShapeCacheSize = shapeClasses.size;
   }
-  const cached = predicateTermCache.get(propertyId);
+  const cached = propertyShapeCache.get(propertyId);
   if (cached) return cached;
 
   for (const shapeClass of shapeClasses.values()) {
     const propertyShape = (
       shapeClass.shape ? getPropertyShapes(shapeClass.shape, true) : []
     ).find((prop: {id?: string}) => prop.id === propertyId);
-    if (!propertyShape) continue;
+    if (propertyShape) {
+      propertyShapeCache.set(propertyId, propertyShape);
+      return propertyShape;
+    }
+  }
+  return undefined;
+}
 
+/**
+ * The `sh:datatype` declared for a property, if any. Lets the serializer emit the
+ * term the shape asks for rather than one inferred from the JavaScript value: a
+ * numeric property gets the numeric type it declares, and an `xsd:date` /
+ * `xsd:time` property its own lexical form instead of a full timestamp.
+ */
+function resolvePropertyDatatype(propertyId: string): string | undefined {
+  return findPropertyShapeById(propertyId)?.datatype?.id;
+}
+
+function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
+  const registrySize = getAllShapeClasses().size;
+  if (registrySize !== predicateTermCacheSize) {
+    predicateTermCache.clear();
+    predicateTermCacheSize = registrySize;
+  }
+  const cached = predicateTermCache.get(propertyId);
+  if (cached) return cached;
+
+  const propertyShape = findPropertyShapeById(propertyId);
+  if (propertyShape) {
     const simplePathId = getSimplePathId(propertyShape.path);
     let term: SparqlTerm;
     if (simplePathId !== null) {
@@ -1628,12 +1663,50 @@ function resolveExpressionVariable(
 // Mutation conversions
 // ---------------------------------------------------------------------------
 
+/** The numeric datatypes a shape may declare, and the DSL accepts a number for. */
+const NUMERIC_DATATYPES = new Set([
+  XSD_INTEGER,
+  XSD_DOUBLE,
+  xsd.long.id,
+  xsd.decimal.id,
+  xsd.float.id,
+]);
+
+/**
+ * The datatype to write a number as: the one its property declares, falling back
+ * to the shape of the value itself. Without the declared datatype a property
+ * typed `xsd:long` stored `xsd:integer` and one typed `xsd:decimal` stored
+ * `xsd:double` — a value the store round-trips as a different term than the
+ * shape says it holds.
+ */
+function numericDatatype(value: number, datatype?: string): string {
+  if (datatype && NUMERIC_DATATYPES.has(datatype)) return datatype;
+  return Number.isInteger(value) ? XSD_INTEGER : XSD_DOUBLE;
+}
+
+/**
+ * A `Date` in the lexical form its property asks for. The DSL takes a `Date` and
+ * only a `Date` for temporal properties, so the declared `sh:datatype` is what
+ * decides whether that instant is written as a date, a time, or a full
+ * timestamp. With no declared datatype the term stays `xsd:dateTime`.
+ */
+function dateToTerm(value: Date, datatype?: string): SparqlTerm {
+  const iso = value.toISOString();
+  if (datatype === XSD_DATE) return literalTerm(iso.slice(0, 10), XSD_DATE);
+  if (datatype === XSD_TIME) return literalTerm(iso.slice(11), XSD_TIME);
+  return literalTerm(iso, XSD_DATETIME);
+}
+
 /**
  * Convert a field value to one or more SparqlTerm objects for triple objects.
+ *
+ * `datatype` is the property's declared `sh:datatype`, used for temporal values;
+ * other literals are still typed from the JavaScript value.
  */
 function fieldValueToTerms(
   value: IRFieldValue,
   options?: SparqlOptions,
+  datatype?: string,
 ): SparqlTerm[] {
   if (value === null || value === undefined) {
     return [];
@@ -1644,10 +1717,7 @@ function fieldValueToTerms(
   }
 
   if (typeof value === 'number') {
-    if (Number.isInteger(value)) {
-      return [literalTerm(String(value), XSD_INTEGER)];
-    }
-    return [literalTerm(String(value), XSD_DOUBLE)];
+    return [literalTerm(String(value), numericDatatype(value, datatype))];
   }
 
   if (typeof value === 'boolean') {
@@ -1655,7 +1725,7 @@ function fieldValueToTerms(
   }
 
   if (value instanceof Date) {
-    return [literalTerm(value.toISOString(), XSD_DATETIME)];
+    return [dateToTerm(value, datatype)];
   }
 
   // Computed/expression value in create: create lowers to INSERT DATA (ground
@@ -1685,7 +1755,7 @@ function fieldValueToTerms(
   if (Array.isArray(value)) {
     const terms: SparqlTerm[] = [];
     for (const item of value) {
-      terms.push(...fieldValueToTerms(item, options));
+      terms.push(...fieldValueToTerms(item, options, datatype));
     }
     return terms;
   }
@@ -1728,7 +1798,7 @@ function generateNodeDataTriples(
           triples.push(tripleOf(subjectTerm, propertyTerm, iriTerm(nested.uri)));
           triples.push(...nested.triples);
         } else {
-          const terms = fieldValueToTerms(item, options);
+          const terms = fieldValueToTerms(item, options, resolvePropertyDatatype(field.property));
           for (const term of terms) {
             triples.push(tripleOf(subjectTerm, propertyTerm, term));
           }
@@ -1746,7 +1816,7 @@ function generateNodeDataTriples(
     }
 
     // Simple values
-    const terms = fieldValueToTerms(field.value, options);
+    const terms = fieldValueToTerms(field.value, options, resolvePropertyDatatype(field.property));
     for (const term of terms) {
       triples.push(tripleOf(subjectTerm, propertyTerm, term));
     }
@@ -1847,7 +1917,7 @@ function processUpdateFields(
             insertPatterns.push(tripleOf(subjectTerm, propertyTerm, iriTerm(nested.uri)));
             insertPatterns.push(...nested.triples);
           } else {
-            const terms = fieldValueToTerms(addItem, options);
+            const terms = fieldValueToTerms(addItem, options, resolvePropertyDatatype(field.property));
             for (const term of terms) {
               insertPatterns.push(tripleOf(subjectTerm, propertyTerm, term));
             }
@@ -1884,7 +1954,7 @@ function processUpdateFields(
           insertPatterns.push(tripleOf(subjectTerm, propertyTerm, iriTerm(nested.uri)));
           insertPatterns.push(...nested.triples);
         } else {
-          const terms = fieldValueToTerms(item, options);
+          const terms = fieldValueToTerms(item, options, resolvePropertyDatatype(field.property));
           for (const term of terms) {
             insertPatterns.push(tripleOf(subjectTerm, propertyTerm, term));
           }
@@ -1953,7 +2023,7 @@ function processUpdateFields(
     deletePatterns.push(tripleOf(subjectTerm, propertyTerm, oldVar));
     oldValueTriples.push(tripleOf(subjectTerm, propertyTerm, oldVar));
 
-    const terms = fieldValueToTerms(field.value, options);
+    const terms = fieldValueToTerms(field.value, options, resolvePropertyDatatype(field.property));
     for (const term of terms) {
       insertPatterns.push(tripleOf(subjectTerm, propertyTerm, term));
     }

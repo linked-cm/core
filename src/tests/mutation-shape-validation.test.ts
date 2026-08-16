@@ -1,9 +1,10 @@
 /**
- * Lightweight structural validation of mutation values against the PropertyShape:
- * cardinality (min/maxCount) and node-kind (literal vs relation). Fails fast when
- * the mutation is normalized (`.toJSON()` / lower / exec) rather than surfacing a
- * confusing store error later. Structural only — it does not duplicate the
- * datatype/deep validation the store performs.
+ * Structural validation of mutation values against the PropertyShape:
+ * cardinality (min/maxCount) and node-kind (literal vs relation). Runs through
+ * the shared validator in `shapes/validation`, so `.toJSON()`, `lower()` and
+ * `exec()` all reject the same input, rather than surfacing a confusing store
+ * error later. Structural only — it does not duplicate the datatype/deep
+ * validation the store performs.
  */
 import {describe, expect, test} from '@jest/globals';
 import {linkedShape} from '../package';
@@ -101,8 +102,11 @@ describe('mutation value validation — node kind', () => {
   });
 
   test('an ambiguous node-kind property skips the kind check (accepts both)', () => {
-    expect(() => Team.create({anything: 'a-scalar'} as any).toJSON()).not.toThrow();
-    expect(() => Team.create({anything: {id: 'x:node'}} as any).toJSON()).not.toThrow();
+    // `members` is supplied because a create is validated as a complete node —
+    // omitting a required property is its own (separate) violation.
+    const members = ['a', 'b'];
+    expect(() => Team.create({members, anything: 'a-scalar'} as any).toJSON()).not.toThrow();
+    expect(() => Team.create({members, anything: {id: 'x:node'}} as any).toJSON()).not.toThrow();
   });
 });
 

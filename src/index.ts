@@ -8,6 +8,15 @@ export {rdfList} from './shapes/List.js';
 export {serializePathToNodeData} from './shapes/serializePathToNodeData.js';
 // Core public API surface (documented as root imports in the README).
 export {Shape} from './shapes/Shape.js';
+// SHACL-aligned validation of plain data objects against a shape.
+export {validate, assertValid, ShapeValidationError} from './shapes/validation.js';
+export type {
+  ValidationReport,
+  ValidationResult,
+  ValidationMode,
+  ValidateOptions,
+  ValidatableShape,
+} from './shapes/validation.js';
 export {LinkedStorage} from './utils/LinkedStorage.js';
 // New dynamic query building API (Phase 2)
 export {SelectBuilder, QueryBuilder} from './queries/QueryBuilder.js';

@@ -45,11 +45,13 @@ import type {IRDeleteQuery} from './DeleteQuery.js';
 import {isContextRefJSON, resolveContextId} from './ContextRef.js';
 import {assertWireVersion} from './wireVersion.js';
 import {
+  decodeNodeDataToRaw,
   valueShapeOf,
   type MutationJSON,
   type MutationNodeDataJSON,
   type MutationValueJSON,
 } from './MutationSerialization.js';
+import {assertValid, type ValidationMode} from '../shapes/validation.js';
 import {decodeValueExpr, type DslJsonValue} from './DslJsonExpression.js';
 import type {PropertyShapeData} from '../shapes/SHACL.js';
 
@@ -176,6 +178,25 @@ function lowerWhere(
  * Lower a mutation DSL-JSON envelope to the canonical IR mutation the dataset
  * expects. Mirrors the IR that `lower()` produces from the live builder.
  */
+/**
+ * Validate inbound node data against its shape before it becomes IR.
+ *
+ * The builders validate through `describe()`, which sees raw DSL data. This path
+ * never touches a builder, so without this an inbound mutation would be held to
+ * a weaker standard than a locally-built one — on the *less* trusted input, at
+ * that. `decodeNodeDataToRaw` produces exactly the raw form `describe()` would
+ * have validated (it is what `CreateBuilder.fromJSON` feeds through `.set()`),
+ * so both paths run the same checks. The second decode is the cost of validating
+ * at a boundary; it happens once per inbound mutation.
+ */
+function assertInboundDataValid(
+  json: MutationNodeDataJSON,
+  shape: NodeShapeData,
+  mode: ValidationMode,
+): void {
+  assertValid(shape, decodeNodeDataToRaw(json, shape), {mode});
+}
+
 export function lowerMutationJSON(
   json: MutationJSON,
 ): IRCreateQuery | IRUpdateQuery | IRDeleteQuery {
@@ -183,6 +204,7 @@ export function lowerMutationJSON(
   switch (json.op) {
     case 'create': {
       const shape = requireShape(json.shape);
+      assertInboundDataValid(json.data, shape, 'complete');
       return buildCanonicalCreateMutationIR({
         shape,
         description: decodeNodeData(json.data, shape),
@@ -190,6 +212,7 @@ export function lowerMutationJSON(
     }
     case 'update': {
       const shape = requireShape(json.shape);
+      assertInboundDataValid(json.data, shape, 'partial');
       const updates = decodeNodeData(json.data, shape);
       if (json.mode === 'for') {
         // A `{@ctx}` target resolves against the current context map; a mutation

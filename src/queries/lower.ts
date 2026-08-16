@@ -97,7 +97,10 @@ function resolveDescriptionContexts(desc: NodeDescriptionValue): NodeDescription
 
 function lowerCreate(spec: CreateLowerSpec): IRCreateQuery {
   const description = resolveDescriptionContexts(
-    new MutationQueryFactory().describe(spec.shapeClass.shape, spec.data, true),
+    new MutationQueryFactory().describe(spec.shapeClass.shape, spec.data, {
+      allowTopLevelId: true,
+      validate: 'complete',
+    }),
   );
   return buildCanonicalCreateMutationIR({shape: spec.shapeClass.shape, description});
 }
@@ -105,7 +108,7 @@ function lowerCreate(spec: CreateLowerSpec): IRCreateQuery {
 function lowerUpdate(spec: UpdateLowerSpec): IRUpdateQuery {
   const shape = spec.shapeClass.shape;
   const updates = resolveDescriptionContexts(
-    new MutationQueryFactory().describe(shape, spec.data),
+    new MutationQueryFactory().describe(shape, spec.data, {validate: 'partial'}),
   );
   if (spec.mode === 'for') {
     return buildCanonicalUpdateMutationIR({id: spec.targetId!, shape, updates});
