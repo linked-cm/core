@@ -90,7 +90,19 @@ export class MutationQueryFactory extends QueryFactory {
       throw new Error('Invalid update object');
     }
     if (validate) {
-      assertValid(shape, resolved, {mode: validate});
+      // DEFERRED on the `lego-demo` branch (per René): the dev merge started
+      // enforcing sh:datatype/value constraints on EVERY create/update, which
+      // rejects existing CN write paths that pass ISO strings for xsd:dateTime
+      // etc. (e.g. Project.enableCapability's `enabledAt`). Warn instead of throw
+      // so writes keep working; the standalone `validate()`/`assertValid()`
+      // exports are untouched (our confirm view + commit gate still use them).
+      // Re-enable this throw once the write paths are migrated to typed values.
+      try {
+        assertValid(shape, resolved, {mode: validate});
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(`[shape write-validation deferred] ${(e as Error).message}`);
+      }
     }
     return this.convertNodeDescription(resolved, shape);
   }
