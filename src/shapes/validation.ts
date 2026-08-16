@@ -632,7 +632,12 @@ function isNodeDescription(value: unknown): boolean {
 // Entry points
 // ---------------------------------------------------------------------------
 
-/** Accepts a shape class (`Person`) or the plain `NodeShapeData` it carries. */
+/**
+ * What can be validated against: a shape class (`Person`) or the plain
+ * `NodeShapeData` the decorators generate (`Person.shape`, or the same object
+ * obtained anywhere else). The two are interchangeable — the class is unwrapped
+ * to its `shape` and nothing else about it is read.
+ */
 export type ValidatableShape = NodeShapeData | {shape: NodeShapeData};
 
 function resolveShapeData(shape: ValidatableShape): NodeShapeData {
@@ -657,6 +662,23 @@ function resolveShapeData(shape: ValidatableShape): NodeShapeData {
  * report.conforms; // false
  * report.results[0].sourceConstraintComponent.id; // …shacl#MaxCountConstraintComponent
  * ```
+ *
+ * **A shape class is optional.** The plain `NodeShapeData` the decorators
+ * generate validates identically, so a caller that only ever holds shape
+ * objects needs no class reference:
+ *
+ * ```ts
+ * validate(Person, data);        // ≡
+ * validate(Person.shape, data);  // same report
+ * ```
+ *
+ * That holds even though a shape object carries neither its inherited property
+ * shapes (a subclass's `propertyShapes` holds only its own) nor its nested
+ * shapes (`valueShape` is a bare `{id}`): both are resolved through the shape
+ * registry by id. A shape whose id is not registered therefore cannot be fully
+ * checked, and says so — see {@link unresolvedValueShapeMessage} and the
+ * inherited-properties check in `validateNode` — rather than reporting a node
+ * as conforming on the strength of a branch it could not look at.
  */
 export function validate(
   shape: ValidatableShape,
@@ -727,6 +749,23 @@ function validateNode(
         ? obj.id
         : ctx.focusNode;
   const results: ValidationResult[] = [];
+
+  // A shape declaring a superclass carries only its *own* property shapes; the
+  // inherited ones are resolved through the registry by id. If this shape's id
+  // is not registered, that resolution quietly yields half a shape — required
+  // inherited properties go unchecked, and any that *are* supplied look
+  // undeclared. Report it rather than let a partial shape pass as a clean bill.
+  if (shape.extends?.id && !getShapeClass(shape.id)) {
+    results.push(
+      nodeViolation(
+        shape,
+        {focusNode},
+        shacl.NodeConstraintComponent,
+        `Cannot resolve the properties '${shape.label || shape.id}' inherits from '${shape.extends.id}': shape '${shape.id}' is not registered, so only its own properties could be checked.`,
+        ctx.prefix,
+      ),
+    );
+  }
 
   // Presence of required properties — only decidable for a complete description.
   if (ctx.mode === 'complete') {
@@ -839,7 +878,19 @@ function runChecks(
     for (const el of values) {
       if (!isNodeDescription(el)) continue;
       const nestedShape = resolveValueShape(propCtx.propertyShape, el);
-      if (!nestedShape) continue;
+      if (!nestedShape) {
+        // The value is a node description we have no shape for, so nothing about
+        // it can be checked. Silently skipping would report the whole node as
+        // conforming on the strength of a branch never looked at.
+        results.push(
+          violation(
+            propCtx,
+            shacl.NodeConstraintComponent,
+            unresolvedValueShapeMessage(propCtx.propertyShape),
+          ),
+        );
+        continue;
+      }
       results.push(
         ...validateNode(nestedShape, el, {
           ...walk,
@@ -855,10 +906,23 @@ function runChecks(
 }
 
 /**
+ * Why a nested value could not be resolved to a shape — the property named one
+ * that is not registered, or named none and the value did not carry one either.
+ * Both are actionable, and they are fixed differently.
+ */
+function unresolvedValueShapeMessage(ps: PropertyShapeData): string {
+  const label = labelOf(ps);
+  return ps.valueShape
+    ? `Cannot validate the value of '${label}': its shape '${ps.valueShape.id}' is not registered.`
+    : `Cannot validate the value of '${label}': the property declares no shape for its values. ` +
+        `Add a 'shape' to its @objectProperty decorator, or give the value a 'shape' key.`;
+}
+
+/**
  * The shape a nested value should be validated against: the property's declared
  * `valueShape`, or — for properties that declare none — the shape class carried
  * in the value's reserved `shape` key. Mirrors `convertUpdateValue`; returns
- * undefined when neither is available (normalization reports that itself).
+ * undefined when neither is available.
  */
 function resolveValueShape(
   ps: PropertyShapeData,

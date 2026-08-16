@@ -53,6 +53,17 @@ class Slide extends Shape {
   }
 }
 
+/** A real subclass, so `extends` is populated and inherited props live upstream. */
+@linkedShape
+class Employee extends Slide {
+  static targetClass = {id: `${base}types/Employee`} as any;
+
+  @literalProperty({path: prop('role'), maxCount: 1})
+  get role(): string {
+    return '';
+  }
+}
+
 describe('validate() — report shape', () => {
   test('a conforming object reports conforms with no results', () => {
     expect(validate(Slide, {title: 'Q3', tags: ['a', 'b']})).toEqual({
@@ -190,6 +201,50 @@ describe('validate() — values it cannot decide on are skipped', () => {
   test('an ambiguous node kind accepts both literals and nodes', () => {
     expect(validate(Slide, {title: 'ok', anything: 'scalar'}).conforms).toBe(true);
     expect(validate(Slide, {title: 'ok', anything: {id: 'x:1'}}).conforms).toBe(true);
+  });
+});
+
+describe('a shape it cannot resolve is reported, never silently skipped', () => {
+  // The validator resolves inherited and nested shapes through the registry by
+  // id, so a caller holding only shape objects needs no classes. When a lookup
+  // fails, the branch cannot be checked — reporting "conforms" would be a lie.
+
+  test('a nested value whose declared shape is not registered', () => {
+    const detached: any = {
+      ...Slide.shape,
+      id: `${Slide.shape.id}-detached`,
+      propertyShapes: Slide.shape.propertyShapes.map((ps) =>
+        ps.valueShape ? {...ps, valueShape: {id: `${ps.valueShape.id}-unregistered`}} : ps,
+      ),
+    };
+    const report = validate(detached, {title: 'ok', author: {fullName: 'A'}});
+    expect(report.conforms).toBe(false);
+    expect(report.results[0].sourceConstraintComponent).toEqual(shacl.NodeConstraintComponent);
+    expect(report.results[0].propertyPath).toBe('author');
+    expect(report.results[0].resultMessage).toMatch(/is not registered/);
+  });
+
+  test('a nested value under a property that declares no shape', () => {
+    const report = validate(Slide, {title: 'ok', anything: {some: 'object'}});
+    expect(report.conforms).toBe(false);
+    expect(report.results[0].resultMessage).toMatch(/declares no shape for its values/);
+  });
+
+  test('a shape whose inherited properties cannot be resolved', () => {
+    // `extends` is only set for real shape inheritance, and the inherited
+    // property shapes live on the parent — invisible if the id is unregistered.
+    const detached: any = {...Employee.shape, id: `${Employee.shape.id}-detached`};
+    expect(Employee.shape.extends).toBeTruthy();
+    const report = validate(detached, {role: 'dev'});
+    expect(report.conforms).toBe(false);
+    expect(report.results[0].resultMessage).toMatch(/Cannot resolve the properties/);
+  });
+
+  test('registered shapes report none of this — object or class, same answer', () => {
+    const data = {title: 'ok', author: {fullName: 'A'}};
+    expect(validate(Slide.shape, data).conforms).toBe(true);
+    expect(validate(Slide, data)).toEqual(validate(Slide.shape, data));
+    expect(validate(Employee, {title: 'T', role: 'dev'}).conforms).toBe(true);
   });
 });
 
