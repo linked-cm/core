@@ -75,18 +75,17 @@ export abstract class Shape {
   __queryContextName?: string;
   id?: string;
 
-  constructor() {
-    // Shapes are metadata, not data: a Shape subclass carries no live per-instance
-    // values (its decorated getters return only typing stubs), so `new SomeShape()`
-    // is always a mistake. The query DSL never reaches here — it builds
-    // constructor-less proxy targets via `createShapeTarget()` (Object.create), and
-    // SHACL metadata is plain `NodeShapeData`/`PropertyShapeData` objects. Force
-    // consumers to the DSL instead of constructing broken instances.
-    const name = (new.target as {name?: string} | undefined)?.name || 'Shape';
-    throw new Error(
-      `Cannot instantiate shape \`${name}\` directly — shapes are metadata, not data. ` +
-        `Use the DSL instead: ${name}.select(...), .create(...), .update(...), or .delete(...).`,
-    );
+  // Instantiation guard DEFERRED on the `lego-demo` branch (per René): some
+  // framework shapes (e.g. server `LocalFileStore`) legitimately `extends Shape`
+  // and are constructed as runtime service objects, which the upstream guard
+  // (core report 026) rejects at backend boot. The `validate()`/`assertValid()`
+  // work from the same dev merge is KEPT; only the constructor throw is relaxed —
+  // restoring pre-guard behaviour: accept an optional node ref and set `id`
+  // (mirrors `createShapeTarget`). Re-enable the guard once those shapes migrate.
+  constructor(node?: string | {id?: string}) {
+    if (node !== undefined) {
+      this.id = typeof node === 'string' ? node : node.id;
+    }
   }
 
   get nodeShape(): NodeShapeData {
