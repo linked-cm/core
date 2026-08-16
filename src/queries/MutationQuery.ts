@@ -17,9 +17,25 @@ import {getShapeClass} from '../utils/ShapeClass.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {asContextRef} from './QueryContext.js';
-import {shacl} from '../ontologies/shacl.js';
+import {
+  assertValid,
+  undeclaredPropertyMessage,
+  type ValidationMode,
+} from '../shapes/validation.js';
 
 export type NodeId = {id: string} | string;
+
+/** Options for {@link MutationQueryFactory.describe}. */
+export interface DescribeOptions {
+  /** Create data may carry a top-level `id`; update data may not. */
+  allowTopLevelId?: boolean;
+  /**
+   * Validate the data against the shape before normalizing, throwing a
+   * `ShapeValidationError` with every violation. Omit to skip validation
+   * (normalization-only, e.g. when the caller has already validated).
+   */
+  validate?: ValidationMode;
+}
 
 export class MutationQueryFactory extends QueryFactory {
   /**
@@ -27,13 +43,17 @@ export class MutationQueryFactory extends QueryFactory {
    * IR-free step shared by `toJSON()` and `lower()`. Kept on this base (which
    * imports no IR) so the builders can normalize for serialization without
    * pulling the canonical-IR pipeline.
+   *
+   * This is also the single validation gate: pass `validate` and the resolved
+   * data is checked against the shape first, so `toJSON()`, `lower()` and
+   * `exec()` reject exactly the same input. See `shapes/validation`.
    */
   describe(
     shape: NodeShapeData,
     data: unknown,
-    allowTopLevelId: boolean = false,
+    options: DescribeOptions = {},
   ): NodeDescriptionValue {
-    return this.convertUpdateObject(data as any, shape, allowTopLevelId);
+    return this.convertUpdateObject(data as any, shape, options);
   }
 
   /** Normalize delete ids (strings / `{id}`) to `NodeReferenceValue[]` (IR-free). */
@@ -44,15 +64,16 @@ export class MutationQueryFactory extends QueryFactory {
   protected convertUpdateObject(
     obj,
     shape: NodeShapeData,
-    allowTopLevelId: boolean = false,
+    {allowTopLevelId = false, validate}: DescribeOptions = {},
   ): NodeDescriptionValue {
+    let resolved;
     if (typeof obj === 'object' && !(obj instanceof Date) && obj !== null) {
       if (!allowTopLevelId && 'id' in obj) {
         throw new Error(
           'You cannot use id in the top level of an update object',
         );
       }
-      return this.convertNodeDescription(obj, shape);
+      resolved = obj;
     } else if (typeof obj === 'function') {
       const shapeClass = shape.id ? getShapeClass(shape.id) : undefined;
       if (!shapeClass) {
@@ -63,10 +84,15 @@ export class MutationQueryFactory extends QueryFactory {
       if (typeof result !== 'object' || result === null) {
         throw new Error('Update function must return an object');
       }
-      return this.convertNodeDescription(result, shape);
+      // Validate what the callback produced, not the callback itself.
+      resolved = result;
     } else {
       throw new Error('Invalid update object');
     }
+    if (validate) {
+      assertValid(shape, resolved, {mode: validate});
+    }
+    return this.convertNodeDescription(resolved, shape);
   }
 
   protected isSetModification(obj, shape) {
@@ -162,9 +188,10 @@ export class MutationQueryFactory extends QueryFactory {
     for (var key in obj) {
       let propShape = props.find((p) => p.label === key);
       if (!propShape) {
-        throw Error(
-          `Invalid property key: ${key}. The shape ${shape.label || shape.id.split('/').pop()} does not have a registered property with this name. Make sure the get/set method exists, and that it uses a @objectProperty or @literalProperty decorator.`,
-        );
+        // Also reported as an `sh:ClosedConstraintComponent` violation when the
+        // caller validates; kept here because normalization cannot build a field
+        // without a property shape (`describe()` may run without validation).
+        throw Error(undeclaredPropertyMessage(key, shape));
       } else {
         fields.push(this.createNodePropertyValue(obj[key], propShape));
       }
@@ -184,104 +211,10 @@ export class MutationQueryFactory extends QueryFactory {
     value,
     propShape: PropertyShapeData,
   ): UpdateNodePropertyValue {
-    this.validateAgainstShape(value, propShape);
     return {
       prop: propShape,
       val: this.convertUpdateValue(value, propShape),
     } as UpdateNodePropertyValue;
-  }
-
-  /**
-   * Lightweight structural validation of a single property value against its
-   * PropertyShapeData — cardinality (`minCount`/`maxCount`) and node-kind (literal
-   * vs relation). This is *structural* only (from metadata already in hand); it
-   * does not duplicate datatype/deep validation, which the store performs. It
-   * fails fast at the call site with a clear message instead of surfacing a
-   * confusing store error later.
-   *
-   * Skips values whose final shape isn't known here: computed expressions,
-   * context refs, `unset` (null/undefined), and set-modifications (`{add,remove}`
-   * — the resulting count depends on the node's current state).
-   */
-  protected validateAgainstShape(value, propShape: PropertyShapeData): void {
-    // A `null` value clears the property. Clearing a required (minCount>=1)
-    // property is a cardinality violation — the same as providing zero values —
-    // so it is rejected exactly like an empty array (both spellings of "clear
-    // it" behave identically).
-    if (value === null) {
-      if (typeof propShape.minCount === 'number' && propShape.minCount > 0) {
-        throw new Error(
-          `Property '${propShape.label || propShape.id}' requires at least ${propShape.minCount} value(s) and cannot be cleared.`,
-        );
-      }
-      return;
-    }
-    if (
-      value === undefined ||
-      isExpressionNode(value) ||
-      asContextRef(value) ||
-      (typeof value === 'function') ||
-      (typeof value === 'object' && this.isSetModification(value, propShape))
-    ) {
-      return;
-    }
-
-    const label = propShape.label || propShape.id;
-    const elems = Array.isArray(value) ? value : [value];
-    const count = elems.length;
-
-    // --- cardinality ---
-    if (typeof propShape.maxCount === 'number' && count > propShape.maxCount) {
-      throw new Error(
-        `Property '${label}' allows at most ${propShape.maxCount} value(s), but ${count} were provided.`,
-      );
-    }
-    if (typeof propShape.minCount === 'number' && propShape.minCount > 0 && count < propShape.minCount) {
-      throw new Error(
-        `Property '${label}' requires at least ${propShape.minCount} value(s), but ${count} were provided.`,
-      );
-    }
-
-    // --- node kind: literal vs relation ---
-    const expectsLiteral = this.expectsLiteral(propShape);
-    const expectsNode = this.expectsNode(propShape);
-    if (!expectsLiteral && !expectsNode) return; // ambiguous/unspecified kind — don't enforce
-    for (const el of elems) {
-      if (el === null || el === undefined || isExpressionNode(el) || asContextRef(el)) continue;
-      const isScalar =
-        typeof el === 'string' ||
-        typeof el === 'number' ||
-        typeof el === 'boolean' ||
-        el instanceof Date;
-      if (expectsLiteral && !isScalar) {
-        throw new Error(
-          `Property '${label}' is a literal property but was given a ${typeof el === 'object' ? 'node/object' : typeof el} value.`,
-        );
-      }
-      if (expectsNode && isScalar) {
-        throw new Error(
-          `Property '${label}' is a relation (object) property but was given a literal (${typeof el}). Provide a {id} reference or a nested object.`,
-        );
-      }
-    }
-  }
-
-  /** True when the property clearly accepts only literal values. */
-  private expectsLiteral(ps: PropertyShapeData): boolean {
-    if (ps.nodeKind) return ps.nodeKind.id === shacl.Literal.id;
-    return !!ps.datatype && !ps.valueShape;
-  }
-
-  /** True when the property clearly accepts only nodes (IRIs/blank nodes). */
-  private expectsNode(ps: PropertyShapeData): boolean {
-    if (ps.nodeKind) {
-      return (
-        ps.nodeKind.id === shacl.IRI.id ||
-        ps.nodeKind.id === shacl.BlankNode.id ||
-        ps.nodeKind.id === shacl.BlankNodeOrIRI.id
-      );
-    }
-    return !!ps.valueShape;
   }
 
   protected convertUpdateValue(

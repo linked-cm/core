@@ -77,7 +77,12 @@ export const sourceShape = ns('sourceShape');
 export const resultSeverity = ns('resultSeverity');
 export const resultPath = ns('resultPath');
 export const value = ns('value');
+/** `sh:message` — a custom message declared on a shape or constraint. */
 export const message = ns('message');
+/** `sh:resultMessage` — the message carried by a validation result. */
+export const resultMessage = ns('resultMessage');
+/** `sh:detail` — links a validation result to the results that explain it. */
+export const detail = ns('detail');
 export const Violation = ns('Violation');
 export const AbstractResult = ns('AbstractResult');
 export const sourceConstraintComponent = ns('sourceConstraintComponent');
@@ -86,6 +91,18 @@ export const NodeConstraintComponent = ns('NodeConstraintComponent');
 export const DatatypeConstraintComponent = ns('DatatypeConstraintComponent');
 export const MinLengthConstraintComponent = ns('MinLengthConstraintComponent');
 export const MaxLengthConstraintComponent = ns('MaxLengthConstraintComponent');
+export const MinInclusiveConstraintComponent = ns('MinInclusiveConstraintComponent');
+export const MaxInclusiveConstraintComponent = ns('MaxInclusiveConstraintComponent');
+export const MinExclusiveConstraintComponent = ns('MinExclusiveConstraintComponent');
+export const MaxExclusiveConstraintComponent = ns('MaxExclusiveConstraintComponent');
+export const PatternConstraintComponent = ns('PatternConstraintComponent');
+export const InConstraintComponent = ns('InConstraintComponent');
+export const MinCountConstraintComponent = ns('MinCountConstraintComponent');
+export const MaxCountConstraintComponent = ns('MaxCountConstraintComponent');
+export const NodeKindConstraintComponent = ns('NodeKindConstraintComponent');
+export const ClosedConstraintComponent = ns('ClosedConstraintComponent');
+export const Warning = ns('Warning');
+export const Info = ns('Info');
 export const result = ns('result');
 
 //make sure every node is also exported here
@@ -145,6 +162,8 @@ export const shacl = {
   resultPath,
   value,
   message,
+  resultMessage,
+  detail,
   Violation,
   sourceConstraintComponent,
   ClassConstraintComponent,
@@ -152,6 +171,18 @@ export const shacl = {
   DatatypeConstraintComponent,
   MinLengthConstraintComponent,
   MaxLengthConstraintComponent,
+  MinCountConstraintComponent,
+  MaxCountConstraintComponent,
+  MinInclusiveConstraintComponent,
+  MaxInclusiveConstraintComponent,
+  MinExclusiveConstraintComponent,
+  MaxExclusiveConstraintComponent,
+  PatternConstraintComponent,
+  InConstraintComponent,
+  NodeKindConstraintComponent,
+  ClosedConstraintComponent,
+  Warning,
+  Info,
   AbstractResult,
   result,
   alternativePath,
