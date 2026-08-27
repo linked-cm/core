@@ -97,6 +97,29 @@ function buildSyncThunk(nodeShape: NodeShapeData, iri: string, ds?: IDataset): (
   };
 }
 
+/** Options controlling how {@link syncShapes} treats store shapes that are not in code. */
+export interface SyncShapesOptions {
+  /**
+   * How to treat NodeShapes present in the store but not in the current process's code:
+   * - `'all'` (default) — prune every store-only shape as an orphan. Correct for a
+   *   **single-writer** dataset (CN's own storage sync, tests), where "not in code" ⇒ deleted.
+   * - `'ownedNamespaces'` — prune a store-only shape ONLY if its IRI falls within a namespace
+   *   this process actually writes (the package-namespace of one of its code-registered shapes,
+   *   i.e. the IRI prefix up to the last `/` or `#`). This is the **multi-writer** rule (arch-04:
+   *   one app-data dataset, several writers): an app booting `syncShapesOnBoot` must not delete
+   *   shapes another writer (e.g. CN's `enableCapability`) materialized into the same dataset in a
+   *   package the app never registers. Renames/removals WITHIN the app's own package still prune.
+   * - `'none'` — never prune; purely additive (delete→recreate the code shapes, touch nothing else).
+   */
+  orphanScope?: 'all' | 'ownedNamespaces' | 'none';
+}
+
+/** The owning namespace of a shape IRI — everything up to and including the last `/` or `#`. */
+function shapeNamespace(iri: string): string {
+  const cut = Math.max(iri.lastIndexOf('/'), iri.lastIndexOf('#'));
+  return cut >= 0 ? iri.slice(0, cut + 1) : iri;
+}
+
 /**
  * Plan an idempotent sync of all code-registered (non-framework) NodeShapes into the store as
  * SHACL data — the forward (code → graph) materialization of arch-05 "code is canonical".
@@ -108,14 +131,22 @@ function buildSyncThunk(nodeShape: NodeShapeData, iri: string, ds?: IDataset): (
  * Each in-code shape's thunk runs `delete → create` in order (the delete cascade-cleans the old
  * property shapes / list / path subtrees via the containment cascade, the create rebuilds them).
  * Shapes present in the store but no longer in code are deleted as orphans (their owned subtree
- * cascades too). Reads existing shape IRIs for orphan detection.
+ * cascades too) — subject to `options.orphanScope`. Reads existing shape IRIs for orphan detection.
  *
  * `ds` (optional) targets an explicit dataset instead of the global router. It is a **plan-time**
  * parameter: it feeds both the orphan-detection read (so orphans are computed against the same
  * store they'll be pruned from) and every delete/create thunk. Omitted → today's global behavior;
  * the returned thunks stay nullary either way.
+ *
+ * `options.orphanScope` (default `'all'`) scopes the orphan sweep — see {@link SyncShapesOptions}.
+ * Multi-writer datasets (an app materializing on boot next to CN's capability shapes) MUST pass
+ * `'ownedNamespaces'` so the sweep never clobbers another writer's shapes.
  */
-export async function syncShapes(ds?: IDataset): Promise<Array<() => Promise<void>>> {
+export async function syncShapes(
+  ds?: IDataset,
+  options?: SyncShapesOptions,
+): Promise<Array<() => Promise<void>>> {
+  const orphanScope = options?.orphanScope ?? 'all';
   // 1. Enumerate code-registered user shapes (exclude framework/meta shapes).
   const userShapes: Array<{iri: string; nodeShape: NodeShapeData}> = [];
   for (const [iri, shapeClass] of getAllShapeClasses()) {
@@ -127,24 +158,31 @@ export async function syncShapes(ds?: IDataset): Promise<Array<() => Promise<voi
     userShapes.push({iri, nodeShape: shapeClass.shape});
   }
   const localShapeIris = new Set(userShapes.map((s) => s.iri));
-
-  // 2. Identity-read existing NodeShape IRIs (ids only) for orphan detection. Must hit the same
-  //    `ds` the thunks target, or orphans get computed against the wrong store.
-  const existingRows = (await (NodeShape as unknown as {
-    select: () => {exec: (target?: IDataset) => Promise<Array<{id: string}>>};
-  }).select().exec(ds)) as Array<{id: string}>;
-  const existingShapeIris = new Set(existingRows.map((r) => r.id));
+  // Namespaces this process actually writes — the ownership scope for `'ownedNamespaces'` pruning.
+  const ownedNamespaces = new Set(userShapes.map((s) => shapeNamespace(s.iri)));
 
   const thunks: Array<() => Promise<void>> = [];
 
-  // 3. Per in-code shape: delete (cascade) then recreate.
+  // 2. Per in-code shape: delete (cascade) then recreate.
   for (const {iri, nodeShape} of userShapes) {
     thunks.push(buildSyncThunk(nodeShape, iri, ds));
   }
 
-  // 4. Orphan shapes (in store, not in code) → delete (cascade cleans their owned subtree).
-  for (const iri of existingShapeIris) {
-    if (!localShapeIris.has(iri)) {
+  // 3. Orphan sweep (unless disabled). Identity-read existing NodeShape IRIs (ids only). Must hit
+  //    the same `ds` the thunks target, or orphans get computed against the wrong store.
+  if (orphanScope !== 'none') {
+    const existingRows = (await (NodeShape as unknown as {
+      select: () => {exec: (target?: IDataset) => Promise<Array<{id: string}>>};
+    }).select().exec(ds)) as Array<{id: string}>;
+
+    // Orphan shapes (in store, not in code) → delete (cascade cleans their owned subtree). In
+    // `'ownedNamespaces'` mode, only shapes within a namespace this process writes are eligible —
+    // other writers' shapes (different package namespace) are left untouched.
+    for (const {id: iri} of existingRows) {
+      if (localShapeIris.has(iri)) continue;
+      if (orphanScope === 'ownedNamespaces' && !ownedNamespaces.has(shapeNamespace(iri))) {
+        continue;
+      }
       thunks.push(() =>
         (DeleteBuilder.from(NodeShape, {id: iri}).exec(ds) as Promise<unknown>).then(
           () => undefined,
