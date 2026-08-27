@@ -62,12 +62,13 @@ Simple `PathRef` values (single IRI) are backward-compatible with the pre-existi
 - **`PATH_OPERATOR_CHARS`** — regex for detecting path operators in strings
 
 ### `src/paths/normalizePropertyPath.ts`
-- **`normalizePropertyPath(input: PropertyPathDecoratorInput): PathExpr`** — normalizes any input form to canonical PathExpr: strings with operators are parsed, arrays become `{seq}`, `{id}` and structured PathExpr pass through
+- **`normalizePropertyPath(input: PropertyPathDecoratorInput): PathExpr`** — normalizes any input form to canonical PathExpr: strings with operators are parsed, arrays become `{seq}`, `{id}` and structured PathExpr pass through. **Amended — see the end of this report:** a bare absolute IRI is a ref, not an expression.
 - **`PropertyPathDecoratorInput`** — union type: `string | {id} | PathExpr | array`
 - **`getSimplePathId(expr: PathExpr): string | null`** — extracts IRI from simple paths (backward compat helper)
 
 ### `src/paths/pathExprToSparql.ts`
 - **`pathExprToSparql(expr: PathExpr): string`** — renders PathExpr to SPARQL property path syntax with correct precedence parenthesization
+- **`canonicalPathKey(expr: PathExpr): string`** — a stable, prefix-INDEPENDENT identity for a path. **Added — see the end of this report.**
 - **`collectPathUris(expr: PathExpr): string[]`** — walks AST collecting full IRIs for PREFIX block generation
 - Uses `formatUri()` from sparqlUtils for full-IRI-to-prefixed-form rendering
 
@@ -188,3 +189,46 @@ The parser and AST accept `negatedPropertySet` (valid SPARQL). SHACL serializati
 
 - **SHACL RDF serialization** (`docs/ideas/015-shacl-rdf-serialization.md`) — serialize full shapes (including constraints) to SHACL RDF triples. Three routes explored in ideation.
 - **Builder API for property paths** — fluent API like `path.inv('foaf:knows').zeroOrMore()`. Deferred per ideation decision #6.
+
+
+---
+
+## Amendment — a path identity, and a bare-IRI parsing bug
+
+Landed after this report, in the same two files it documents.
+
+### `canonicalPathKey(expr)` — new
+
+A `PathExpr` needs a scalar form whenever it is used as an **identity**: keying a map of
+properties, comparing two paths, or naming a property across a process boundary.
+
+`pathExprToSparql` cannot serve that, and this report already says why without drawing the
+conclusion — it "uses `formatUri()` for full-IRI-to-prefixed-form rendering". Prefix registration
+is ambient process state, so the same path renders differently in two processes. Correct for a
+query string; disqualifying for a key.
+
+`canonicalPathKey` renders with absolute IRIs, always, never prefixed. A **simple** path returns
+the bare predicate IRI, so single-predicate property identities are unchanged and only complex
+paths gain a new spelling.
+
+It is an identity, not a round-trippable path: a bare IRI is not valid property-path syntax, so
+a simple key cannot be fed back through `parsePropertyPath`. Complex keys can. There is a test
+asserting the throw, so the simple case is not "fixed" into `<iri>` — which would silently rekey
+every property in every catalog.
+
+### `normalizePropertyPath` threw on any bare absolute IRI — fixed
+
+`'https://schema.org/name'` contains `/`, so it matched `PATH_OPERATOR_CHARS` and was handed to
+the parser, which then failed on the `//` in the scheme.
+
+Invisible for as long as paths arrived as `NamedNode`s or prefixed names from decorators — which
+is every example in this report. It appears the moment a plain IRI **string** is used, which is
+the ordinary form for a simple property in a shape catalog read from a store.
+
+A hierarchical IRI (`scheme://…`) is now distinguished from a prefixed-name sequence, so
+`'ex:a/ex:b'` still parses as a sequence and `'<a>/<b>'` still parses as an expression.
+
+`PropertyShapeConfig.path` now documents all four accepted forms, including the one this report
+never states: an ontology term is passed **directly** (`documents.confidence`), never via `.id` —
+`createNameSpace` already returns a `{id}` ref, so `.id` unwraps it back to the bare string that
+used to throw.
