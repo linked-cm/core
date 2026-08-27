@@ -7,6 +7,7 @@
 import type {PathExpr, PathRef} from './PropertyPathExpr.js';
 import {isPathRef} from './PropertyPathExpr.js';
 import {formatUri} from '../sparql/sparqlUtils.js';
+import {Prefix} from '../utils/Prefix.js';
 
 // ---------------------------------------------------------------------------
 // Precedence levels (higher = tighter binding)
@@ -75,47 +76,84 @@ function walkPathExpr(expr: PathExpr, uris: string[]): void {
  * Adds parentheses only when needed for correct precedence.
  */
 export function pathExprToSparql(expr: PathExpr): string {
-  return renderExpr(expr, 0);
+  return renderExpr(expr, 0, refToSparql);
 }
 
-function renderExpr(expr: PathExpr, parentPrec: number): string {
+type RefFormatter = (ref: PathRef) => string;
+
+/**
+ * Absolute, prefix-independent rendering of a single path reference.
+ *
+ * BOTH spellings are expanded. A `{id}` ref usually carries a full IRI, but not always — the
+ * shape catalog and hand-written fixtures both produce `{id: 'schema:name'}`. Expanding only the
+ * string form would give one path two different keys depending on how it was spelled, which is
+ * the one thing a canonical key may never do.
+ */
+const absoluteIri = (ref: PathRef): string =>
+  Prefix.toFullIfPossible(typeof ref === 'string' ? ref : ref.id);
+
+function refToAbsolute(ref: PathRef): string {
+  return `<${absoluteIri(ref)}>`;
+}
+
+/**
+ * A stable, prefix-INDEPENDENT identity for a property path.
+ *
+ * `pathExprToSparql` renders for humans and for queries: it shortens IRIs via `formatUri`, so the
+ * same path serializes differently depending on which prefixes happen to be registered in the
+ * current process. That is fine for a query string and disqualifying for a wire key — the
+ * extraction contract uses this value to name a property across process boundaries, and a
+ * catalog written in one process must match a result read in another.
+ *
+ * So: absolute IRIs, always, never prefixed. Round-trips through `parsePropertyPath`.
+ *
+ * A SIMPLE path returns the bare predicate IRI rather than `<iri>`, because that is what a
+ * single-predicate property has always been identified by — widening `propertyIri` to a full
+ * path (plan-035 D13) must not change the key of the overwhelmingly common case.
+ */
+export function canonicalPathKey(expr: PathExpr): string {
+  if (isPathRef(expr)) return absoluteIri(expr);
+  return renderExpr(expr, 0, refToAbsolute);
+}
+
+function renderExpr(expr: PathExpr, parentPrec: number, ref: RefFormatter = refToSparql): string {
   if (isPathRef(expr)) {
-    return refToSparql(expr);
+    return ref(expr);
   }
 
   if ('seq' in expr) {
-    const inner = expr.seq.map((e) => renderExpr(e, PREC_SEQ)).join('/');
+    const inner = expr.seq.map((e) => renderExpr(e, PREC_SEQ, ref)).join('/');
     return parentPrec > PREC_SEQ ? `(${inner})` : inner;
   }
 
   if ('alt' in expr) {
-    const inner = expr.alt.map((e) => renderExpr(e, PREC_ALT)).join('|');
+    const inner = expr.alt.map((e) => renderExpr(e, PREC_ALT, ref)).join('|');
     return parentPrec > PREC_ALT ? `(${inner})` : inner;
   }
 
   if ('inv' in expr) {
-    return `^${renderExpr(expr.inv, PREC_UNARY)}`;
+    return `^${renderExpr(expr.inv, PREC_UNARY, ref)}`;
   }
 
   if ('zeroOrMore' in expr) {
-    return `${renderExpr(expr.zeroOrMore, PREC_PRIMARY)}*`;
+    return `${renderExpr(expr.zeroOrMore, PREC_PRIMARY, ref)}*`;
   }
 
   if ('oneOrMore' in expr) {
-    return `${renderExpr(expr.oneOrMore, PREC_PRIMARY)}+`;
+    return `${renderExpr(expr.oneOrMore, PREC_PRIMARY, ref)}+`;
   }
 
   if ('zeroOrOne' in expr) {
-    return `${renderExpr(expr.zeroOrOne, PREC_PRIMARY)}?`;
+    return `${renderExpr(expr.zeroOrOne, PREC_PRIMARY, ref)}?`;
   }
 
   if ('negatedPropertySet' in expr) {
     const items = expr.negatedPropertySet.map((item) => {
       if (typeof item === 'string' || (typeof item === 'object' && 'id' in item && !('inv' in item))) {
-        return refToSparql(item as PathRef);
+        return ref(item as PathRef);
       }
       const invItem = item as {inv: PathRef};
-      return `^${refToSparql(invItem.inv)}`;
+      return `^${ref(invItem.inv)}`;
     });
     return items.length === 1 ? `!${items[0]}` : `!(${items.join('|')})`;
   }

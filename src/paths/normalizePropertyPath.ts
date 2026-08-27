@@ -16,6 +16,23 @@ export type PropertyPathDecoratorInput =
   | PropertyPathDecoratorInput[]
   | PathExpr;
 
+/**
+ * An absolute IRI written bare, e.g. `https://schema.org/name` or `urn:prop:sku`.
+ *
+ * Two forms, and the distinction from a PREFIXED-NAME SEQUENCE is the whole difficulty:
+ *
+ *  - A hierarchical IRI carries `://`, which `ex:friend/ex:name` never does. The `/` inside it
+ *    is part of the IRI, not a sequence separator.
+ *  - A non-hierarchical IRI (`urn:prop:sku`) has a scheme and NO path operator at all.
+ *
+ * So `ex:friend/ex:name` is still read as a sequence, and `<a>/<b>` — which starts with `<`,
+ * not a scheme — still parses as an expression.
+ */
+const isBareIri = (value: string): boolean => {
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) return !/[|^*+?()!<>\s]/.test(value);
+  return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) && !PATH_OPERATOR_CHARS.test(value);
+};
+
 /** Path expression operator keys used to detect structured PathExpr objects. */
 const PATH_EXPR_KEYS = new Set(['seq', 'alt', 'inv', 'zeroOrMore', 'oneOrMore', 'zeroOrOne', 'negatedPropertySet']);
 
@@ -39,7 +56,19 @@ export function normalizePropertyPath(input: PropertyPathDecoratorInput): PathEx
 
   // String input
   if (typeof input === 'string') {
-    if (PATH_OPERATOR_CHARS.test(input)) {
+    if (isBareIri(input)) {
+      // A bare absolute IRI is a PathRef, not an expression — even though it contains `/` and
+      // `:`, which `PATH_OPERATOR_CHARS` matches. Without this, `https://schema.org/name` is fed
+      // to the parser and dies at the `//` in its scheme.
+      //
+      // It never showed up while paths arrived as NamedNodes or prefixed names from decorators.
+      // It bites the moment a plain IRI string is used — which `PropertyDetails.path` now is for
+      // every simple property in a shape catalog.
+      //
+      // A genuine sequence of absolute IRIs is written `<a>/<b>` and contains `<`, so the two
+      // are unambiguous.
+      result = input;
+    } else if (PATH_OPERATOR_CHARS.test(input)) {
       result = parsePropertyPath(input);
     } else {
       result = input;
