@@ -185,7 +185,8 @@ writes the wrong RDF term, silently. There is nothing to warn about.
 | `xsd:boolean` | boolean |
 | `xsd:integer`, `xsd:long` | number, integral |
 | `xsd:decimal`, `xsd:float`, `xsd:double` | finite number |
-| `xsd:date`, `xsd:dateTime`, `xsd:time` | `Date` — nothing else |
+| `xsd:date`, `xsd:dateTime` | `Date` — nothing else |
+| `xsd:time` | a lexical string, `HH:MM:SS` (+ optional ms and offset) — **amended, see below** |
 | `xsd:duration`, `xsd:gYear`, `xsd:Bytes` | unchecked (no obvious JS counterpart) |
 
 ### The serializer had to follow
@@ -198,7 +199,7 @@ datatype and derives the term from it:
 | --- | --- |
 | `xsd:date` | `"2020-06-15"^^xsd:date` |
 | `xsd:dateTime` | `"2020-06-15T09:30:00.000Z"^^xsd:dateTime` |
-| `xsd:time` | `"09:30:00.000Z"^^xsd:time` |
+| `xsd:time` | *(amended — see below)* |
 | none | `"…"^^xsd:dateTime` (unchanged) |
 
 Numbers use the same hook (`numericDatatype`): a property declared `xsd:long` previously stored
@@ -245,7 +246,8 @@ property off a value. The existing `mutation-serialization` suite caught this.
    `sh:minCount` result per property.
 4. Value constraints (datatype, ranges, lengths, pattern, `in`) are enforced where they previously
    were not — on creates, updates, and set-modification values.
-5. `xsd:date`/`xsd:dateTime`/`xsd:time` properties reject lexical strings.
+5. `xsd:date`/`xsd:dateTime` properties reject lexical strings. (`xsd:time` now *requires* one —
+   amended, see below.)
 6. `xsd:long` and `xsd:decimal` properties emit their declared datatype instead of `xsd:integer` /
    `xsd:double`.
 
@@ -308,3 +310,47 @@ Creates validate as `complete`, updates as `partial`, matching the local pipelin
 None updated: `docs/architecture/` holds `publishing.md` and `runtime-instances.md`, neither of which
 covers validation, mutation contracts, or serialization. No new architecture doc was warranted —
 this work changed enforcement inside an existing pipeline, not its structure or boundaries.
+
+
+---
+
+## Amendment — `xsd:time` takes a string, not a `Date`
+
+Landed after this report. Recorded here rather than in a new report, because it reverses a
+decision this document states and leaving both standing would make the record untrustworthy.
+
+**What changed.** `xsd:date` and `xsd:dateTime` are unchanged and still take a `Date` and only a
+`Date`. `xsd:time` now takes a pattern-checked **string** and rejects a `Date`.
+
+**Why the original decision did not hold.** A time of day is not an instant. Using `Date` for one
+means inventing a date to carry it — and this report's own serializer table shows the
+consequence: `"09:30:00.000Z"^^xsd:time` was derived by slicing a full timestamp and discarding
+the date half. That half is not merely redundant; it makes two identical clock times recorded on
+different days compare unequal, and it forces a caller to pick an arbitrary date to express
+"half past nine".
+
+JavaScript has no time-only type. `Temporal.PlainTime` is the right answer and is not available
+in Node yet, so the lexical form is the honest representation.
+
+**Accepted:** `HH:MM:SS` with optional milliseconds and an optional `Z` / `±HH:MM` offset. Ranges
+are enforced by the pattern (hours `00-23`, minutes and seconds `00-59`), so `"25:00:00"` is
+rejected rather than written as a malformed literal no engine will match.
+
+**The serializer still follows the declared datatype**, which is what makes this safe. Mutation
+literals are typed from the *JavaScript* type when they reach SPARQL, so a plain string would be
+written as a plain literal and silently stop matching the property it was meant to fill. A string
+on an `xsd:time` property is typed from the declaration instead:
+
+| Declared | Value | Term |
+| --- | --- | --- |
+| `xsd:time` | `'14:30:00'` | `"14:30:00"^^xsd:time` |
+
+That behaviour is driven by an explicit allow-list (`STRING_LEXICAL_DATATYPES`) rather than
+"type every string from whatever is declared". A string reaching a numeric property is a mistake
+`assertValid` rejects; typing it from the declaration would instead write a plausible-looking
+`"abc"^^xsd:integer` and hide the error in the data. Only datatypes for which a string is a valid
+lexical form belong in the list.
+
+**Impact.** Breaking for `xsd:time` only. Two tests in `shape-validation-constraints.test.ts`
+encoded the old behaviour and were updated with the reasoning inline. Covered by
+`src/tests/xsd-time-string.test.ts` (22 cases).
