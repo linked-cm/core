@@ -325,15 +325,19 @@ describe('a Date reaches SPARQL as the datatype its property declares', () => {
     expect(sparqlFor({startedAt: instant})).toContain('"2020-06-15T09:30:00.000Z"^^xsd:dateTime');
   });
 
-  test('xsd:time gets the time of day', () => {
-    expect(sparqlFor({ringsAt: instant})).toContain('"09:30:00.000Z"^^xsd:time');
+  test('xsd:time takes a STRING, and a Date is rejected', () => {
+    // Changed deliberately. A Date cannot express a time of day without inventing a date to
+    // carry it — the date half is meaningless, is discarded here, and makes two identical clock
+    // times on different days compare unequal. `xsd:time` takes its lexical form instead, which
+    // `irToAlgebra` types from the declared datatype. See `xsd-time-string.test.ts`.
+    expect(sparqlFor({ringsAt: '09:30:00.000'})).toContain('"09:30:00.000"^^xsd:time');
+    expect(() => sparqlFor({ringsAt: instant})).toThrow(/time string like/);
   });
 
-  test('one Date, three properties, three different terms', () => {
-    const sparql = sparqlFor({bornOn: instant, startedAt: instant, ringsAt: instant});
+  test('one Date, two properties, two different terms', () => {
+    const sparql = sparqlFor({bornOn: instant, startedAt: instant});
     expect(sparql).toContain('"2020-06-15"^^xsd:date');
     expect(sparql).toContain('"2020-06-15T09:30:00.000Z"^^xsd:dateTime');
-    expect(sparql).toContain('"09:30:00.000Z"^^xsd:time');
   });
 });
 

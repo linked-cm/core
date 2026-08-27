@@ -371,16 +371,33 @@ const isFiniteNumber = (v: unknown) => typeof v === 'number' && Number.isFinite(
  * string handed to an `xsd:integer` property does not merely skip a check, it
  * writes the wrong RDF term. Rejecting it is a correctness fix.
  *
- * Temporal properties take a `Date` and nothing else — one representation for a
- * point in time, rather than a JS object and a hand-written lexical string that
- * behave differently. The serializer derives the right lexical form from the
- * declared datatype (`irToAlgebra.dateToTerm`), so an `xsd:date` property gets
- * `"2020-06-15"^^xsd:date` from the same `Date` an `xsd:dateTime` property gets
- * a full timestamp from.
+ * `xsd:date` and `xsd:dateTime` take a `Date` and nothing else — one representation for a point
+ * in time, rather than a JS object and a hand-written lexical string that behave differently.
+ * The serializer derives the right lexical form from the declared datatype
+ * (`irToAlgebra.dateToTerm`), so an `xsd:date` property gets `"2020-06-15"^^xsd:date` from the
+ * same `Date` an `xsd:dateTime` property gets a full timestamp from.
+ *
+ * `xsd:time` is the exception, and takes a STRING. A `Date` cannot express a time of day without
+ * inventing a date to carry it: the date half is meaningless, has to be discarded on
+ * serialization, and makes two identical clock times on different days compare unequal. JS has
+ * no time-only type — `Temporal.PlainTime` is the right answer and is not available yet — so the
+ * lexical form is the honest representation. It is pattern-checked here, and `irToAlgebra` types
+ * it from the declared datatype so it is written `"10:30:00"^^xsd:time` rather than as a plain
+ * literal.
  *
  * Datatypes with no obvious JS counterpart (`xsd:duration`, `xsd:gYear`,
  * `xsd:Bytes`) are not checked.
  */
+/**
+ * `HH:MM:SS` with optional milliseconds and optional timezone.
+ *
+ * Ranges are enforced by the pattern rather than parsed: hours 00-23, minutes and seconds 00-59,
+ * so "25:00:00" is rejected where a looser `\d{2}` would let it through and write a malformed
+ * literal. The optional `Z`/offset is included because it is valid `xsd:time` — rejecting
+ * "14:30:00Z" would make this stricter than the datatype it validates.
+ */
+const XSD_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,3})?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)?$/;
+
 const DATATYPE_RULES: Record<string, {accepts: (v: unknown) => boolean; expected: string}> = {
   [xsd.string.id]: {accepts: (v) => typeof v === 'string', expected: 'a string'},
   [xsd.boolean.id]: {accepts: (v) => typeof v === 'boolean', expected: 'a boolean'},
@@ -391,7 +408,10 @@ const DATATYPE_RULES: Record<string, {accepts: (v: unknown) => boolean; expected
   [xsd.double.id]: {accepts: isFiniteNumber, expected: 'a number'},
   [xsd.date.id]: {accepts: (v) => v instanceof Date, expected: 'a Date'},
   [xsd.dateTime.id]: {accepts: (v) => v instanceof Date, expected: 'a Date'},
-  [xsd.time.id]: {accepts: (v) => v instanceof Date, expected: 'a Date'},
+  [xsd.time.id]: {
+    accepts: (v) => typeof v === 'string' && XSD_TIME_PATTERN.test(v),
+    expected: 'a time string like "14:30:00", "14:30:00.250" or "14:30:00Z"',
+  },
 };
 
 /** `sh:datatype` — the value's JavaScript type must match the declared datatype. */
