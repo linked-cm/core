@@ -210,6 +210,21 @@ export interface ObjectPropertyShapeConfig extends PropertyShapeConfig {
 export interface PropertyShapeConfig {
   /**
    * The property path of this property shape.
+   *
+   * Four accepted forms, all equivalent where they overlap:
+   *
+   * - **An ontology term** — `documents.confidence`. The idiom for real shapes: it reuses the
+   *   ontology, so a namespace changes in one place. `createNameSpace` returns a `{id}` ref, so
+   *   the term IS the second form and is passed DIRECTLY — never `documents.confidence.id`,
+   *   which unwraps it back to a bare string.
+   * - **A node reference** — `{id: 'https://example.org/vocab#startsAt'}`. What the first form
+   *   produces. Convenient in tests, or wherever an ontology module would be overkill.
+   * - **A bare IRI or prefixed name** — `'https://example.org/vocab#startsAt'`, `'ex:startsAt'`.
+   * - **A path expression** — `'ex:a/ex:b'`, `{seq: [...]}`, `{inv: ...}`, and the other
+   *   operators. An array is read as a sequence.
+   *
+   * A string is parsed as an expression only when it is not a bare absolute IRI: `ex:a/ex:b` is
+   * a sequence, while the `/` inside `https://example.org/vocab#x` belongs to the IRI.
    */
   path: PropertyPathInputList;
   /**
