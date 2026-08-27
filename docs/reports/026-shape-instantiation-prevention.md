@@ -4,6 +4,10 @@ summary: Shapes are now metadata-only. `Shape` subclasses can no longer be insta
 
 # Disallow Shape instances — plain-object SHACL metadata
 
+> **The constructor guard is currently DEFERRED — see the amendment at the end.** Everything
+> else in this report stands: SHACL metadata is still plain objects, the DSL still builds
+> constructor-less proxy targets, and the free functions are unchanged. Only the throw is off.
+
 ## Outcome
 
 No `Shape` subclass is instantiated anywhere in the codebase:
@@ -177,3 +181,37 @@ Consumers who only use the query DSL need no change.
 - README override-behavior note updated to the free-function form.
 - Changeset: `.changeset/shape-metadata-plain-objects.md` (minor) documents the
   behavioral change and the new/deprecated exports.
+
+
+---
+
+## Amendment — the constructor guard is deferred
+
+Landed after this report. Recorded here rather than left to be discovered, because this document
+is the reason someone would expect `new SomeShape()` to throw.
+
+**What changed.** The constructor returns to its pre-guard behaviour: it accepts an optional node
+reference and sets `id`, mirroring `createShapeTarget`. Nothing else in this report changes —
+plain-object metadata, the free functions and `createShapeTarget` are all untouched, and so is
+the `validate()` / `assertValid()` work from the same release.
+
+**Why.** The principle stands: shapes are metadata, `new SomeShape()` carries no live data, and
+it is normally a mistake. But several framework classes legitimately `extends Shape` and are
+constructed as runtime **service objects**, and the guard crashes a consuming backend at boot:
+
+- `LinkedServer`
+- `BackendAPIStore`
+- `LocalFileStore`
+- `LincdAPI`
+- `LincdWebApp`
+
+(`FusekiStore` is constructed in a dozen places downstream.)
+
+That is a real collision between two uses of `Shape` — "metadata description" and "convenient
+base class for a service" — not carelessness at a call site. Resolving it means migrating those
+classes to composition or a non-`Shape` base, which is more than a call-site fix and did not
+belong inside the change that surfaced it.
+
+**Exit condition.** Re-enable the throw once those classes are migrated. It is one revertible
+commit, deliberately kept separate so reinstating the guard is a findable step rather than an
+archaeology exercise.
