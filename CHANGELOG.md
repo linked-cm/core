@@ -1,5 +1,72 @@
 # Changelog
 
+## 2.17.0
+
+### Minor Changes
+
+- [#198](https://github.com/linked-cm/core/pull/198) [`4a3f607`](https://github.com/linked-cm/core/commit/4a3f6070089396cc596a01703dcfc8939fcb69f0) Thanks [@flyon](https://github.com/flyon)! - Add `canonicalPathKey(expr)` — a stable, prefix-independent identity for a property path.
+
+  A `PathExpr` needs a scalar form whenever it is used as an identity: keying a map of properties, comparing two paths, or naming a property across a process boundary. `pathExprToSparql` cannot serve that purpose — it renders for humans and for queries, shortening IRIs via `formatUri`, so the same path serialises differently depending on which prefixes happen to be registered in the current process.
+
+  ```ts
+  import { canonicalPathKey } from "@_linked/core/paths/pathExprToSparql";
+
+  canonicalPathKey("https://schema.org/name"); // 'https://schema.org/name'
+  canonicalPathKey({ id: "https://schema.org/name" }); // 'https://schema.org/name' — same key
+  canonicalPathKey({ seq: [a, b] }); // '<a>/<b>'
+  canonicalPathKey({ inv: a }); // '^<a>'
+  ```
+
+  Absolute IRIs, always, never prefixed, so a catalog written in one process matches the same catalog read in another. A **simple** path returns the bare predicate IRI, so single-predicate property identities are unchanged and only complex paths gain a new spelling. Note it is an _identity_, not a round-trippable path: a bare IRI is not valid property-path syntax, so a simple key cannot be fed back to `parsePropertyPath` (complex keys can).
+
+  **Fixes:** `normalizePropertyPath` threw on any bare absolute IRI. `'https://schema.org/name'` contains `/`, so it matched the path-operator test and was handed to the path parser, which then failed on the `//` in the scheme. This was invisible for as long as paths arrived as `NamedNode`s or prefixed names from decorators, and appears the moment a plain IRI string is used — which is every simple property in a shape catalog. A hierarchical IRI is now distinguished from a prefixed-name sequence, so `'ex:a/ex:b'` still parses as a sequence and `'<a>/<b>'` still parses as an expression.
+
+  `PropertyShapeConfig.path` now documents all four accepted forms, including that an ontology term is passed **directly** (`documents.confidence`) and never via `.id` — which would unwrap it back to the bare string.
+
+- [#199](https://github.com/linked-cm/core/pull/199) [`ec22ee1`](https://github.com/linked-cm/core/commit/ec22ee170eed4c9dfb2366b6fcd73d800ec16525) Thanks [@flyon](https://github.com/flyon)! - `syncShapes` can scope its orphan sweep to the namespaces it owns.
+
+  The sweep previously pruned every store-only shape it found. In a **multi-writer** dataset — an app-data store written by more than one package — that means one writer's sync deletes shapes another writer legitimately owns.
+
+  ```ts
+  await syncShapes(shapes, { orphanScope: "ownedNamespaces" });
+  ```
+
+  - `'all'` _(default, unchanged)_ — prune every store-only shape. Correct when the sync is the sole writer.
+  - `'ownedNamespaces'` — only prune shapes in namespaces this sync owns.
+  - `'none'` — never prune.
+
+  Additive: omit the option and behaviour is exactly as before.
+
+- [#201](https://github.com/linked-cm/core/pull/201) [`fe7ed7d`](https://github.com/linked-cm/core/commit/fe7ed7de71c0fc95727c5f8e7bcdce97dc19bdf3) Thanks [@flyon](https://github.com/flyon)! - `xsd:time` properties take a pattern-checked **string**, written as a typed literal.
+
+  **Breaking for `xsd:time` only:** a `Date` on an `xsd:time` property is now rejected. `xsd:date` and `xsd:dateTime` are unchanged and still take a `Date` and only a `Date`.
+
+  A time of day is not an instant. Using `Date` for one means inventing a date to carry it: the date half is meaningless, is discarded during serialisation anyway, and makes two identical clock times recorded on different days compare unequal. JavaScript has no time-only type — `Temporal.PlainTime` is the right answer and is not yet available — so the lexical form is the honest representation.
+
+  ```ts
+  @literalProperty({path: schedule.startsAt, datatype: xsd.time, maxCount: 1})
+  get startsAt(): string { return ''; }
+
+  Appointment.create({startsAt: '14:30:00'});
+  // <…> <…#startsAt> "14:30:00"^^xsd:time .
+  ```
+
+  Accepted: `HH:MM:SS`, optional milliseconds, optional `Z` or `±HH:MM` offset — `'14:30:00'`, `'14:30:00.250'`, `'14:30:00Z'`, `'14:30:00.250+02:00'`. Ranges are enforced _by the pattern_ (hours `00-23`, minutes and seconds `00-59`), so `'25:00:00'` is rejected rather than written as a malformed literal that no engine will match — a failure that otherwise surfaces as "the data is simply missing". The optional timezone is accepted because it is valid `xsd:time`; rejecting `'14:30:00Z'` would make the check stricter than the datatype it validates.
+
+  **The serialisation half matters as much as the validation.** Mutation literals are typed from the _JavaScript_ type when they reach SPARQL, so a plain string would be written as a plain literal and silently stop matching the property it was meant to fill. A string on an `xsd:time` property is now typed from the **declared** datatype instead.
+
+  That behaviour is driven by an explicit allow-list rather than "type every string from whatever is declared". A string reaching a numeric or boolean property is a mistake `assertValid` rejects; typing it from the declaration would instead write a plausible-looking `"abc"^^xsd:integer` and hide the error in the data. Only datatypes for which a string is a valid lexical form belong in the list.
+
+### Patch Changes
+
+- [#200](https://github.com/linked-cm/core/pull/200) [`0fc0fcf`](https://github.com/linked-cm/core/commit/0fc0fcf988e07624ae13acc4540c63975ed89a5a) Thanks [@flyon](https://github.com/flyon)! - Temporarily relax the `new Shape()` constructor guard.
+
+  The guard added in the shape-instantiation work rejects `new SomeShape()` outright, on the principle that shapes are metadata rather than data. That principle stands — but several framework classes legitimately `extends Shape` and are constructed as runtime service objects (`LinkedServer`, `BackendAPIStore`, `LocalFileStore`, `LincdAPI`, `LincdWebApp`), and the guard crashes a consuming backend at boot.
+
+  The constructor returns to its pre-guard behaviour: it accepts an optional node reference and sets `id`, mirroring `createShapeTarget`. `validate()` / `assertValid()` from the same release are **untouched** — only the constructor throw is deferred.
+
+  This is a deliberate, temporary relaxation, kept as one revertible commit. Re-enable the guard once those classes move to composition or a non-`Shape` base.
+
 ## 2.16.1
 
 ### Patch Changes
