@@ -127,3 +127,26 @@ describe('getSimplePathId', () => {
     expect(getSimplePathId({inv: 'ex:a'})).toBeNull();
   });
 });
+
+describe('bare absolute IRIs are PathRefs, not expressions', () => {
+  // `PropertyDetails.path` is a plain IRI string for every simple property in a shape catalog.
+  // Before this, the `//` in the scheme was fed to the path parser and threw — invisible while
+  // paths arrived as NamedNodes or prefixed names from decorators.
+  it.each([
+    'https://schema.org/name',
+    'http://www.w3.org/2000/01/rdf-schema#label',
+    'urn:prop:sku',
+    'https://id.linked.cm/lego/vocab#launchDate',
+  ])('%s stays a single ref', (iri) => {
+    expect(normalizePropertyPath(iri)).toBe(iri);
+  });
+
+  it('still parses a genuine expression written with angle brackets', () => {
+    expect(normalizePropertyPath('<https://ex.org/a>/<https://ex.org/b>'))
+      .toEqual({seq: ['https://ex.org/a', 'https://ex.org/b']});
+  });
+
+  it('still parses prefixed-name expressions', () => {
+    expect(normalizePropertyPath('ex:a/ex:b')).toEqual({seq: ['ex:a', 'ex:b']});
+  });
+});

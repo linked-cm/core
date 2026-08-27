@@ -112,6 +112,52 @@ describe('syncShapes', () => {
   });
 });
 
+describe('syncShapes orphanScope (multi-writer, arch-04)', () => {
+  const userIri = () => TUser.shape.id;
+  // An orphan in the SAME package namespace as the app's shapes (a renamed/removed app shape).
+  const OWNED_ORPHAN = 'https://linked.cm/shape/syncshapes-test/GoneShape';
+  // An orphan in a DIFFERENT package namespace — a second writer's shape (e.g. a CN
+  // capability shape materialized into the same app-data dataset via syncShape).
+  const FOREIGN_ORPHAN = 'https://id.linked.cm/shape/documents/SourceDocument';
+
+  beforeEach(() => installMock([userIri(), OWNED_ORPHAN, FOREIGN_ORPHAN]));
+
+  test("default ('all') prunes both the owned and the foreign orphan", async () => {
+    const plan = await syncShapes();
+    for (const run of plan) await run();
+    const deletes = calls.filter((c) => c.kind === 'delete').map((c) => c.id);
+    expect(deletes).toContain(OWNED_ORPHAN);
+    expect(deletes).toContain(FOREIGN_ORPHAN);
+  });
+
+  test("'ownedNamespaces' prunes the owned orphan but preserves the foreign one", async () => {
+    const plan = await syncShapes(undefined, {orphanScope: 'ownedNamespaces'});
+    for (const run of plan) await run();
+    const deletes = calls.filter((c) => c.kind === 'delete').map((c) => c.id);
+    const creates = calls.filter((c) => c.kind === 'create').map((c) => c.id);
+    // app's own shape still materialized
+    expect(creates).toContain(userIri());
+    // renamed/removed shape in the app's own namespace still pruned
+    expect(deletes).toContain(OWNED_ORPHAN);
+    // the second writer's shape is left untouched — no delete, no create
+    expect(deletes).not.toContain(FOREIGN_ORPHAN);
+    expect(creates).not.toContain(FOREIGN_ORPHAN);
+  });
+
+  test("'none' prunes nothing — purely additive", async () => {
+    const plan = await syncShapes(undefined, {orphanScope: 'none'});
+    for (const run of plan) await run();
+    const deletes = calls.filter((c) => c.kind === 'delete').map((c) => c.id);
+    const creates = calls.filter((c) => c.kind === 'create').map((c) => c.id);
+    // code shape is still delete→recreated
+    expect(creates).toContain(userIri());
+    expect(deletes).toContain(userIri());
+    // no orphan (owned or foreign) is swept
+    expect(deletes).not.toContain(OWNED_ORPHAN);
+    expect(deletes).not.toContain(FOREIGN_ORPHAN);
+  });
+});
+
 describe('syncShape (single)', () => {
   const userIri = () => TUser.shape.id;
   const otherIri = () => TOther.shape.id;

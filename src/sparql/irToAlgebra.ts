@@ -1685,10 +1685,14 @@ function numericDatatype(value: number, datatype?: string): string {
 }
 
 /**
- * A `Date` in the lexical form its property asks for. The DSL takes a `Date` and
- * only a `Date` for temporal properties, so the declared `sh:datatype` is what
- * decides whether that instant is written as a date, a time, or a full
- * timestamp. With no declared datatype the term stays `xsd:dateTime`.
+ * A `Date` in the lexical form its property asks for. `xsd:date` and `xsd:dateTime` take a `Date`
+ * and only a `Date`, so the declared `sh:datatype` is what decides whether that instant is
+ * written as a date or a full timestamp. With no declared datatype the term stays `xsd:dateTime`.
+ *
+ * `xsd:time` takes a STRING instead (see `STRING_LEXICAL_DATATYPES`): a `Date` cannot represent a
+ * time of day without inventing a date alongside it, which then has to be discarded here and
+ * makes two identical clock times on different days compare unequal. The `XSD_TIME` branch below
+ * remains for a `Date` that reaches an `xsd:time` property some other way.
  */
 function dateToTerm(value: Date, datatype?: string): SparqlTerm {
   const iso = value.toISOString();
@@ -1698,10 +1702,23 @@ function dateToTerm(value: Date, datatype?: string): SparqlTerm {
 }
 
 /**
+ * Datatypes whose lexical form IS a string, so a plain string value must be typed from the
+ * DECLARED datatype rather than written as a plain literal.
+ *
+ * A deliberate allow-list rather than "type every string from whatever is declared". A string
+ * reaching a numeric or boolean property is a mistake that `assertValid` rejects; typing it here
+ * would instead write a well-formed-looking `"abc"^^xsd:integer` and hide the error in the data.
+ * Only datatypes a string is a VALID lexical form for belong here.
+ */
+const STRING_LEXICAL_DATATYPES = new Set<string>([XSD_TIME]);
+
+/**
  * Convert a field value to one or more SparqlTerm objects for triple objects.
  *
- * `datatype` is the property's declared `sh:datatype`, used for temporal values;
- * other literals are still typed from the JavaScript value.
+ * `datatype` is the property's declared `sh:datatype`. It decides the term type for temporal
+ * values and for the string-lexical datatypes above; every other literal is still typed from the
+ * JavaScript value, because that is what makes a wrong JS type a visible failure rather than a
+ * silently mistyped triple.
  */
 function fieldValueToTerms(
   value: IRFieldValue,
@@ -1713,6 +1730,12 @@ function fieldValueToTerms(
   }
 
   if (typeof value === 'string') {
+    // A plain literal is `xsd:string` in RDF 1.1, so a string for an `xsd:string` property needs
+    // no explicit datatype. Anything else in the allow-list must carry one, or it is written
+    // untyped and stops matching the property it was meant to fill.
+    if (datatype && STRING_LEXICAL_DATATYPES.has(datatype)) {
+      return [literalTerm(value, datatype)];
+    }
     return [literalTerm(value)];
   }
 

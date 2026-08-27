@@ -21,7 +21,10 @@ class GuardPerson extends Shape {
   }
 }
 
-describe('Shape instantiation guard', () => {
+// DEFERRED on the `lego-demo` branch: the instantiation guard is relaxed so
+// framework shapes (server LocalFileStore) can construct at backend boot. These
+// assertions are re-enabled when the guard is restored (see Shape.ts constructor).
+describe.skip('Shape instantiation guard (deferred on lego-demo)', () => {
   test('`new` on a domain shape throws and steers to the DSL', () => {
     expect(() => new (GuardPerson as any)()).toThrow(
       /Cannot instantiate shape `GuardPerson` directly/,

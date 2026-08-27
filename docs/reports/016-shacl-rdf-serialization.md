@@ -165,3 +165,23 @@ materialization), [04-storage-model](../../../../docs/architecture/04-storage-mo
 queries → IDataset; default graph), and [10-code-structure §Testing](../../../../docs/architecture/10-code-structure.md)
 (jest unit + Fuseki integration, matching core's `sparql-fuseki.test.ts` convention). No architecture
 changes required; reverse import deferred to CN.
+
+
+### Update — `orphanScope` on `syncShapes()`
+
+The store-wide orphan sweep described above assumes the sync is the **only writer**. In a
+multi-writer dataset — app-data written by more than one package — that assumption is wrong in a
+destructive direction: every shape another writer owns looks like an orphan, and the sweep
+deletes it.
+
+`syncShapes(shapes, {orphanScope})` scopes the sweep:
+
+- `'all'` *(default, unchanged)* — prune every store-only shape. Correct when the sync owns the
+  dataset.
+- `'ownedNamespaces'` — prune only shapes in namespaces this sync owns.
+- `'none'` — never prune.
+
+Additive: omit the option and behaviour is exactly as documented above. This is a middle ground
+between the two extremes already in this report — the store-wide sweep of `syncShapes()` and the
+no-sweep-at-all of `syncShape(target)` — for the case where a writer owns *some* of a shared
+store and needs removals to still take effect within its own namespaces.
