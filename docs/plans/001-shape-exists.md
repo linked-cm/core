@@ -1,6 +1,6 @@
 ---
 summary: Add a boolean existence check to the query API — `Shape.exists(id)` plus a terminal `.exists()` on SelectBuilder — so "does this node exist?" has a correct, cheap, non-swallowing expression instead of the `select().where(...).one().catch(() => null)` workaround.
-status: Ideation
+status: Plan
 packages: [core]
 ---
 
@@ -132,3 +132,106 @@ Documented on both the method and the static.
 Additive, `minor`. No IR, algebra, serializer, wire-format or `IDataset` change. Two new public
 methods over the existing, already-golden-tested SELECT path, plus tests that pin the emitted
 SPARQL so the shape of the query becomes guarded public behaviour rather than an accident.
+
+---
+
+## Plan
+
+### Contracts
+
+```ts
+// src/queries/QueryBuilder.ts — on SelectBuilder
+/**
+ * Whether any row matches this query. Executes immediately and resolves to a
+ * boolean — never a row, never null.
+ *
+ * Errors are NOT swallowed: a store or transport failure rejects. "Does not
+ * exist" and "could not ask" stay distinguishable.
+ */
+exists(target?: IDataset): Promise<boolean>;
+
+// src/shapes/Shape.ts — static
+/**
+ * Whether a node with this id exists as an instance of this shape.
+ * `Person.exists({id})` / `Person.exists('linked://…')`.
+ * A null/undefined id resolves to `false` without querying.
+ */
+static exists<S extends Shape>(
+  this: ShapeConstructor<S>,
+  id: string | NodeReferenceValue | PendingQueryContext | null | undefined,
+  target?: IDataset,
+): Promise<boolean>;
+```
+
+### Implementation of `SelectBuilder.exists`
+
+```ts
+exists(target?: IDataset): Promise<boolean> {
+  return this.clone({
+    // drop anything that cannot change whether a row exists
+    selectFn: undefined,
+    fieldSet: undefined,
+    selectAllLabels: undefined,
+    preloads: undefined,
+    sortByFn: undefined,
+    sortDirection: undefined,
+    _sortBy: undefined,
+    // cheapest correct bound
+    limit: 1,
+  })
+    .exec(target)
+    .then((r) => (Array.isArray(r) ? r.length > 0 : r != null));
+}
+```
+
+`clone()` spreads `...overrides` last, so explicit `undefined` values do clear the fields.
+No `catch` anywhere in the chain — by design.
+
+`Shape.exists` is `SelectBuilder.from(this).for(id).exists(target)`. `.for()` already sets
+`singleResult` and handles `null` / `PendingQueryContext`.
+
+### Emitted SPARQL (the contract the tests pin)
+
+```sparql
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?a0
+WHERE {
+  ?a0 rdf:type <https://linked.cm/shape/core/Person> .
+  FILTER(?a0 = <linked://tmp/entities/p1>)
+}
+LIMIT 1
+```
+
+One variable, one type triple, one equality filter, `LIMIT 1`. No `OPTIONAL`, no property
+predicates, no `ORDER BY` — regardless of what was chained before `.exists()`.
+
+### Files
+
+| File | Change |
+|---|---|
+| `src/queries/QueryBuilder.ts` | add `exists()` terminal to `SelectBuilder` |
+| `src/shapes/Shape.ts` | add `static exists()` next to `selectAll` |
+| `src/test-helpers/query-fixtures.ts` | add `existsById` / `existsWhere` query factories for the golden suite |
+| `src/tests/query-builder.test.ts` | IR-level assertions (normalisation, limit, subjectId, no projection) |
+| `src/tests/sparql-select-golden.test.ts` | exact SPARQL golden for both entry points |
+| `src/tests/sparql-fuseki-coverage.test.ts` | true / false / where-clause against real Fuseki |
+| `.changeset/shape-exists.md` | minor |
+| `docs/reports/028-shape-exists.md` | report (wrapup) |
+
+### Pitfalls
+
+- **`p.id` is not projectable.** `QueryShape.get id()` returns `undefined` on the proxy target, and
+  `FieldSet.traceFieldsWithProxy` silently returns `[]` — so `select(p => p.id)` is indistinguishable
+  from `select()`. Do not build on it; rely on the root-alias projection instead.
+- **`exec()` re-wraps errors** in a plain `Error` with the stack stringified. `.exists()` must not
+  add a second layer and must not catch.
+- **`UnresolvedContextError` → `null`** inside `exec()`. That is an existing, deliberate
+  short-circuit and correctly reads as `false` here; do not special-case it.
+- **`Boolean(row)` vs `row != null`**: use the explicit null check. A row is always an object, but
+  the array branch needs `length > 0` and mixing the two under `Boolean()` would silently accept
+  `[]` as true.
+- `clone()` must receive every cleared key explicitly — omitting one carries the old value through.
+
+### Non-goals
+
+`ASK`, existence without the `rdf:type` scan, and a boolean on the DSL-JSON wire. Backlogged.
