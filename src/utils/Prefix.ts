@@ -55,14 +55,42 @@ export class Prefix {
     return [];
   }
 
+  /**
+   * Compact a full IRI to `prefix:local`, but ONLY when `local` is a legal
+   * SPARQL 1.1 `PN_LOCAL`. Otherwise undefined, so callers emit `<full-iri>`.
+   *
+   * Returning an invalid prefixed name is not a cosmetic problem: `#` is not in
+   * `PN_LOCAL`, so a namespace that merely string-prefixes another one turns
+   * `https://data.create.now/access#PolicyRegistry` into
+   * `create-now:access#PolicyRegistry`, where the tokenizer ends the name at
+   * `create-now:access` and reads `#PolicyRegistry .` as a COMMENT — eating the
+   * triple terminator and producing a query the store rejects with a parse
+   * error that points at the *next* line. See docs/plans/041.
+   *
+   * The check is an allowlist on purpose. A blocklist (this used to exclude
+   * only `/`) is wrong again the moment another illegal character shows up;
+   * over-rejecting only costs a longer full IRI, never correctness.
+   */
   static toPrefixed(fullURI: string) {
     let match = this.findMatch(fullURI);
     if (match.length > 0) {
       const postFix = fullURI.substring(match[0].length);
-      if (!postFix.includes('/')) {
+      if (Prefix.isValidLocalName(postFix)) {
         return match[1] + ':' + postFix;
       }
     }
+  }
+
+  /**
+   * Is this a local part we can safely emit after `prefix:`?
+   *
+   * A conservative ASCII subset of `PN_LOCAL`: no leading/trailing `.`, no `%`
+   * escapes, and none of the characters (`#`, `/`, `?`, `@`, ...) that would
+   * end the token early. Empty is allowed — `prefix:` is a valid PNAME_LN.
+   */
+  static isValidLocalName(local: string): boolean {
+    if (local === '') return true;
+    return /^[A-Za-z0-9_:](?:[A-Za-z0-9_:.-]*[A-Za-z0-9_:-])?$/.test(local);
   }
 
   static toPrefixedIfPossible(fullURI: string) {
