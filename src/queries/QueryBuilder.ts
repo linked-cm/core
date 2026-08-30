@@ -325,27 +325,43 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * await Person.exists({id});                                        // the common case
    * ```
    *
-   * The query is normalised to its cheapest correct form first: the projection,
-   * preloads and sorting are dropped (none of them can change *whether* a row
-   * exists — projected properties lower to `OPTIONAL` traversals) and `LIMIT 1` is
-   * forced. Filters, `minus` entries, the subject and any `offset` are kept, since
-   * those do decide it. So `.select(…).orderBy(…).exists()` costs exactly the same
+   * ### The query is normalised to its cheapest correct form first
+   *
+   * **Dropped** — the projection, preloads, sorting *and pagination* (`limit`/`offset`).
+   * **Kept** — filters, `minus` entries and the subject: those decide whether a match
+   * exists. `LIMIT 1` is then applied.
+   *
+   * So `.select(…).orderBy(…).offset(10).exists()` costs, and answers, exactly the same
    * as a bare `.exists()`:
    *
    * ```sparql
    * SELECT DISTINCT ?a0 WHERE { ?a0 rdf:type <…> . FILTER(?a0 = <…>) } LIMIT 1
    * ```
    *
-   * **Errors are not swallowed.** A store, transport or lowering failure rejects
-   * the returned promise; it is never reported as `false`. "Does not exist" and
-   * "could not ask" must stay distinguishable — conflating them silently turns
-   * every `exists ? update : create` into an unconditional `create`.
+   * Pagination is dropped rather than honoured on purpose. `OFFSET` skips rows of the
+   * *solution sequence*, whose cardinality depends on the projection — a multi-valued
+   * projected property yields several rows per subject. Keeping `offset` while dropping
+   * the projection would let the same chain answer `true` before normalisation and
+   * `false` after. `exists()` therefore answers a question about the **match set**,
+   * not about a page of it.
+   *
+   * ### Errors are not swallowed
+   *
+   * A store, transport or lowering failure rejects the returned promise; it is never
+   * reported as `false`. That includes an unresolved query-context reference in a
+   * where clause, which `exec()` deliberately reports as `null` ("not ready") but
+   * which `exists()` must not flatten into a boolean.
+   *
+   * The one case that does resolve `false` without querying is a query with **no
+   * subject to ask about** — `.for(null)`, `.for(undefined)`, or an unresolved
+   * `PendingQueryContext` *as the subject*. "Does the node with no id exist?" has a
+   * correct total answer, and it is `false`.
    *
    * @param target Optional explicit dataset, as for {@link exec}.
    */
-  exists(target?: IDataset): Promise<boolean> {
-    return this.clone({
-      // Drop everything that cannot change whether a row exists.
+  async exists(target?: IDataset): Promise<boolean> {
+    const result = await this.clone({
+      // Drop everything that cannot change whether a match exists, plus pagination.
       selectFn: undefined,
       fieldSet: undefined,
       selectAllLabels: undefined,
@@ -353,13 +369,11 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       sortByFn: undefined,
       sortDirection: undefined,
       _sortBy: undefined,
-      // The cheapest correct bound.
+      offset: undefined,
+      // The cheapest correct bound. Replaces any limit set earlier in the chain.
       limit: 1,
-    })
-      .exec(target)
-      .then((result) =>
-        Array.isArray(result) ? result.length > 0 : result != null,
-      );
+    })._run(target, false);
+    return Array.isArray(result) ? result.length > 0 : result != null;
   }
 
   /**
@@ -699,26 +713,41 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    *   dispatch — only `.exec(target)` overrides.
    */
   async exec(target?: IDataset): Promise<Result> {
+    return this._run(target, true) as Promise<Result>;
+  }
+
+  /**
+   * Shared execution path for {@link exec} and {@link exists}.
+   *
+   * @param swallowUnresolvedContext When true (the `exec` path), a where-clause
+   *   context reference that has not resolved yet surfaces as `null` — "not ready",
+   *   which a reactive layer re-runs once the context lands. `exists()` passes
+   *   false: it must not turn "could not ask" into a boolean.
+   */
+  private async _run(
+    target: IDataset | undefined,
+    swallowUnresolvedContext: boolean,
+  ): Promise<unknown> {
     if (this._nullSubject) {
       // .for(null/undefined) was called — return null instead of executing a broken query.
-      return null as Result;
+      return null;
     }
     if (this._pendingContextName && !this._subject?.id) {
       // Pending context hasn't resolved yet — return null rather than querying without a subject.
-      return null as Result;
+      return null;
     }
     // Dispatch the live (closed) query; the dataset decides whether to lower it.
     // `async` ensures a missing global dispatch surfaces as a rejected promise, not a sync throw.
     const dispatch = target ?? getQueryDispatch();
     try {
-      return (await dispatch.selectQuery(this)) as Result;
+      return await dispatch.selectQuery(this);
     } catch (err) {
       // A where-clause context reference that hasn't resolved yet surfaces as
       // UnresolvedContextError when the dataset lowers the query. For SELECT this
       // means "not ready" — return null (a reactive layer re-runs once it lands),
       // mirroring the pending-subject behavior. Mutations still throw.
-      if (err instanceof UnresolvedContextError) {
-        return null as Result;
+      if (swallowUnresolvedContext && err instanceof UnresolvedContextError) {
+        return null;
       }
       throw Error(`Error while executing query: ${(err as Error).stack}.\n\nQuery related to this error: ${JSON.stringify(this.toJSON())}`);
     }

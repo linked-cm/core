@@ -194,8 +194,10 @@ export abstract class Shape {
    * caller. Runs the cheapest correct query: one projected variable, the shape's
    * type triple, an equality filter on the subject, `LIMIT 1`.
    *
-   * A `null`/`undefined` id (or an unresolved query context) resolves to `false`
-   * without touching the store.
+   * A `null`/`undefined` id resolves to `false` without touching the store — as does
+   * a `PendingQueryContext` whose value has not landed yet, since there is no subject
+   * to ask about. (An unresolved context inside a *where clause* rejects instead; see
+   * {@link QueryBuilder.exists}.)
    *
    * **Errors reject — they are never reported as `false`.** Do not wrap this in a
    * `.catch(() => false)`: that is exactly how a broken existence check hides,
@@ -204,15 +206,18 @@ export abstract class Shape {
    * For "does *anything* match?", compose on the builder instead:
    * `await Person.select().where(p => p.name.equals('Semmy')).exists()`.
    *
-   * @param id The node id, as a string IRI or a `{id}` reference.
+   * @param id The node id: a string IRI, a `{id}` reference, or a `PendingQueryContext`.
+   *   A malformed string IRI rejects (it does not throw synchronously).
    * @param target Optional explicit dataset to run against; omitted uses the
    *   global query dispatch.
    */
-  static exists<S extends Shape>(
+  static async exists<S extends Shape>(
     this: ShapeConstructor<S>,
     id: string | NodeReferenceValue | PendingQueryContext | null | undefined,
     target?: IDataset,
   ): Promise<boolean> {
+    // `async`, so that a bad string IRI (resolveUriOrThrow, inside .for()) rejects
+    // rather than throwing synchronously past the caller's .catch().
     return QueryBuilder.from(this).for(id).exists(target);
   }
 

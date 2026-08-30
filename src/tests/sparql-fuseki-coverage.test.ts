@@ -1002,12 +1002,50 @@ describe('coverage — .exists() against Fuseki', () => {
     ).toBe(true);
   });
 
+  test('.exists() drops pagination — offset does not flip the answer', async () => {
+    if (!fusekiAvailable) return;
+    // p1 has two friends, so this projection yields 2 solution rows per subject.
+    // If exists() dropped the projection but kept OFFSET 1, the normalised query
+    // would produce 1 row, skip it, and wrongly answer false.
+    expect(
+      await Person.select((p: any) => p.friends.name)
+        .for({id: `${ENT}p1`})
+        .offset(1)
+        .exists(store),
+    ).toBe(true);
+    // An offset past the end of the *un-normalised* result set must not read as absent.
+    expect(
+      await Person.select((p: any) => p.name).offset(500).exists(store),
+    ).toBe(true);
+  });
+
+  test('.exists() ignores a previously set limit, including limit(0)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.select().limit(0).exists(store)).toBe(true);
+  });
+
+  test('.forAll(ids).exists() — true if any of the ids is there', async () => {
+    if (!fusekiAvailable) return;
+    expect(
+      await Person.selectAll().forAll([`${ENT}nobody`, `${ENT}p2`]).exists(store),
+    ).toBe(true);
+    expect(
+      await Person.selectAll().forAll([`${ENT}nobody`, `${ENT}no-one`]).exists(store),
+    ).toBe(false);
+  });
+
   test('.exists() answers "any at all" when nothing is targeted', async () => {
     if (!fusekiAvailable) return;
     expect(await Person.select().exists(store)).toBe(true);
     await clearAllData();
-    expect(await Person.select().exists(store)).toBe(false);
-    expect(await Person.exists({id: `${ENT}p1`}, store)).toBe(false);
+    try {
+      expect(await Person.select().exists(store)).toBe(false);
+      expect(await Person.exists({id: `${ENT}p1`}, store)).toBe(false);
+    } finally {
+      // All fuseki suites share one dataset — restore it here rather than relying
+      // on the next beforeEach, so a failure above cannot strand an empty store.
+      await reloadBase();
+    }
   });
 
   test('a real store failure rejects rather than resolving false', async () => {

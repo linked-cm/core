@@ -1,6 +1,6 @@
 ---
 summary: Add a boolean existence check to the query API — `Shape.exists(id)` plus a terminal `.exists()` on SelectBuilder — so "does this node exist?" has a correct, cheap, non-swallowing expression instead of the `select().where(...).one().catch(() => null)` workaround.
-status: Implementation
+status: Review
 packages: [core]
 ---
 
@@ -302,3 +302,80 @@ repo documents for them.
 - [ ] Branch `feat/shape-exists`, PR into **`dev`** (never `main`), watch checks.
 
 **Validation:** full `npm test` green (baseline 67 suites / ~1626 tests + typecheck), changeset present.
+
+
+---
+
+## Review
+
+Phase 4 validation was green (67 suites, 1645 passed, typecheck clean) but an independent read of
+the diff found four correctness defects — one of them in the *design* recorded during ideation.
+
+| # | Finding | Severity |
+|---|---|---|
+| R1 | `.exists()` kept `offset` while dropping the projection. Those are not independent: `OFFSET` skips rows of the **solution sequence**, whose cardinality depends on the projection. `Person.select(p => p.friends.name).for(p1).offset(1).exists()` answered `true` un-normalised (2 friend rows, skip 1) and `false` normalised (1 row, skip 1). The same chain, opposite answers. | high |
+| R2 | `exec()` converts `UnresolvedContextError` to `null` ("not ready", a reactive layer re-runs). `.exists()` inherited that and flattened it to `false` — the exact "could not ask reported as does not exist" failure this feature exists to eliminate, and directly contrary to its own TSDoc. | high |
+| R3 | `Shape.exists('bad-prefix:x')` threw **synchronously** out of `resolveUriOrThrow` inside `.for()`, escaping a caller's `.catch()` despite the declared `Promise<boolean>`. | medium |
+| R4 | The Fuseki "ignores projection and sorting" test was a tautology — projected properties already lower to `OPTIONAL` and `ORDER BY` never drops rows, so it passed identically with normalisation removed entirely. Several other tests injected a fake dataset and so only exercised the boolean mapping. | test quality |
+
+Also noted, not acted on: all seven Fuseki suites share one hardcoded dataset (`nashville-test`),
+so any run without `--runInBand` corrupts itself. The `test:fuseki` script was fixed in Phase 3;
+the shared-dataset design is pre-existing — backlogged.
+
+## Iteration 1 — Ideation
+
+### Gap 1 of 3: pagination in an existence check (R1)
+
+Three ways out: (a) honour `offset` by keeping the projection when one is set — restores
+correctness but makes the query's cost depend on an unrelated chain element, defeating "cheapest
+correct"; (b) reject when `offset` is set — safe, but hostile for a chain assembled elsewhere;
+(c) **drop pagination entirely**.
+
+Chose (c). It makes the normalisation rule total and statable in one line — *`exists()` answers a
+question about the match set, not about a page of it* — and removes a special case rather than
+adding one. `limit` is dropped for the same reason, which also settles the degenerate
+`.limit(0).exists()` (now `true` when rows exist, rather than `true` when they do not).
+
+### Gap 2 of 3: "not ready" versus "not there" (R2)
+
+Option (a): document the carve-out and keep the `null`. Rejected — the whole premise is that this
+distinction must not be silently lost, and a doc note does not restore it to the caller.
+Option (b): **do not swallow `UnresolvedContextError` on the `exists` path.**
+
+Chose (b). `exec()`'s swallow is deliberate and stays exactly as it was — a reactive layer
+re-running a SELECT is a different contract from a terminal boolean. Implemented by extracting
+`exec()`'s body into a private `_run(target, swallowUnresolvedContext)` that both entry points
+share, so the two behaviours sit side by side and neither can drift.
+
+The `.for(null)` / pending-*subject* short-circuits stay `false`: "does the node with no id
+exist?" is a question with a correct total answer. The where-clause case is different — there the
+query itself could not be formed.
+
+### Gap 3 of 3: sync throw past a promise contract (R3)
+
+`static exists` is now `async`, which converts any synchronous throw in builder assembly into a
+rejection. One keyword; no behavioural change other than the one intended.
+
+## Iteration 1 — Plan
+
+- `src/queries/QueryBuilder.ts` — extract `exec()` → `_run(target, swallowUnresolvedContext)`;
+  `exists()` becomes `async`, adds `offset: undefined` to the cleared set, calls `_run(target, false)`.
+  TSDoc rewritten: an explicit dropped/kept list, the `OFFSET` rationale, and the precise boundary
+  between "rejects" and "resolves false".
+- `src/shapes/Shape.ts` — `static async exists`; TSDoc corrected on `PendingQueryContext` and on
+  malformed string IRIs.
+- Tests — add `existsPaginated` fixture; new assertions for pagination-dropped (IR, golden and live
+  Fuseki with a genuinely multi-row projection), `minus` retained, `.forAll().exists()`,
+  `.limit(0)`, unresolved-context rejecting *while `exec()` still resolves null*, and no synchronous
+  throw. Make the destructive Fuseki test restore its dataset in a `finally`.
+
+## Iteration 1 — Phases
+
+### Phase 5 — apply R1–R4 — **done**
+
+- [x] `_run` extraction, `exists()` drops pagination, both entry points `async`.
+- [x] TSDoc corrected on both methods.
+- [x] 15 new/strengthened tests.
+
+**Validation:** `npm test` → **67 suites, 1654 passed / 120 skipped**, typecheck clean.
+(Baseline before this work: 1626 passed.)

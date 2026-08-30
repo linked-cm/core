@@ -139,6 +139,14 @@ LIMIT 1`);
     expect(decorated).toBe(bare);
   });
 
+  test('existsPaginated — offset/limit are dropped, not honoured', async () => {
+    const paginated = await goldenSelect(existsFactories.existsPaginated);
+    const bare = await goldenSelect(existsFactories.existsById);
+    expect(paginated).toBe(bare);
+    expect(paginated).not.toContain('OFFSET');
+    expect(paginated).toContain('LIMIT 1');
+  });
+
   test('selectAllProperties', async () => {
     const sparql = await goldenSelect(queryFactories.selectAllProperties);
     expect(sparql).toBe(

@@ -749,10 +749,17 @@ export const queryFactories = {
 export const existsFactories = {
   existsById: () => Person.exists(entity('p1')),
   existsWhere: () => Person.select().where((p) => p.name.equals('Semmy')).exists(),
-  // Normalisation: this must lower to exactly the same IR as `existsById`.
+  // Normalisation: each of these must lower to exactly the same IR as `existsById`.
   existsNormalised: () =>
     Person.select((p) => [p.name, p.friends.name])
       .orderBy((p) => p.name)
       .for(entity('p1'))
+      .exists(),
+  // Pagination is dropped too — see the OFFSET note on SelectBuilder.exists().
+  existsPaginated: () =>
+    Person.select((p) => p.friends.name)
+      .for(entity('p1'))
+      .offset(10)
+      .limit(50)
       .exists(),
 };
