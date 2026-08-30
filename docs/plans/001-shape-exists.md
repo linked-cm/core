@@ -1,6 +1,6 @@
 ---
 summary: Add a boolean existence check to the query API — `Shape.exists(id)` plus a terminal `.exists()` on SelectBuilder — so "does this node exist?" has a correct, cheap, non-swallowing expression instead of the `select().where(...).one().catch(() => null)` workaround.
-status: Plan
+status: Tasks
 packages: [core]
 ---
 
@@ -235,3 +235,57 @@ predicates, no `ORDER BY` — regardless of what was chained before `.exists()`.
 ### Non-goals
 
 `ASK`, existence without the `rdf:type` scan, and a boolean on the DSL-JSON wire. Backlogged.
+
+---
+
+## Phases
+
+Dependency graph: **P1 → P2 → P3 → P4**. P1 is the only phase producing runtime code; P2/P3 are
+test-only and could run in parallel with each other, but P3 needs the fixtures added in P2, so they
+are sequenced. P4 is docs/release metadata and depends on the final test counts.
+
+### Phase 1 — `exists()` on the builder and the shape
+
+- [ ] `SelectBuilder.exists(target?: IDataset): Promise<boolean>` in `src/queries/QueryBuilder.ts`,
+      placed after `one()`. Clears projection / preloads / sorting, forces `limit: 1`, no `catch`.
+- [ ] `static exists()` in `src/shapes/Shape.ts`, placed directly after `selectAll`, delegating to
+      `QueryBuilder.from(this).for(id).exists(target)`.
+- [ ] TSDoc on both stating: returns a real boolean, and errors reject rather than reading as `false`.
+
+**Validation:** `npm run typecheck` clean.
+
+### Phase 2 — IR-level tests
+
+- [ ] Add `existsById` and `existsWhere` factories to `src/test-helpers/query-fixtures.ts`.
+- [ ] In `src/tests/query-builder.test.ts`, a `describe('SelectBuilder — exists')` group asserting on
+      `lower(...)` of the normalised builder: `projection.length === 0`, `resultMap.length === 0`,
+      `limit === 1`, `sortBy` absent, `subjectId` set for the `.for()` form, `where` preserved for the
+      where form, and that a chained `.select(p => p.name).orderBy(...)` normalises to the same IR as
+      a bare `.exists()`.
+- [ ] Assert `Person.exists(null)` resolves `false` without dispatching.
+
+**Validation:** the new group passes; no existing test in the file changes.
+
+### Phase 3 — SPARQL golden + live Fuseki
+
+- [ ] In `src/tests/sparql-select-golden.test.ts`, exact-string goldens for `existsById` and
+      `existsWhere` in the house `expect(sparql).toBe(\`…\`)` style — pinning that the query has one
+      projected variable, no `OPTIONAL`, no `ORDER BY`, and `LIMIT 1`.
+- [ ] In `src/tests/sparql-fuseki-coverage.test.ts`, a `describe` covering: existing id → `true`;
+      absent id → `false`; a where-clause that matches → `true`; one that does not → `false`; and a
+      wrong-shape id (a `Dog` iri asked of `Person`) → `false`. Each test guarded by
+      `if (!fusekiAvailable) return;`.
+- [ ] A test that a store failure **rejects** rather than resolving `false` (inject a dataset whose
+      `selectQuery` throws, via `exists(dataset)`), proving the swallow-bug cannot recur.
+
+**Validation:** `npm run test:fuseki` green with Docker up; goldens byte-exact.
+
+### Phase 4 — changeset, report, PR
+
+- [ ] `.changeset/shape-exists.md` — `'@_linked/core': minor`, prose in house style.
+- [ ] `docs/reports/028-shape-exists.md` — convert the plan, matching report 027's structure
+      (status line with suite counts, problem, API, design decisions, test coverage table, deferred).
+- [ ] Remove `docs/plans/001-shape-exists.md`.
+- [ ] Branch `feat/shape-exists`, PR into **`dev`** (never `main`), watch checks.
+
+**Validation:** full `npm test` green (baseline 67 suites / ~1626 tests + typecheck), changeset present.
