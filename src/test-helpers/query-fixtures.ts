@@ -302,15 +302,6 @@ export const queryFactories = {
     ),
   selectAllProperties: () => Person.selectAll(),
   selectAll: () => Person.select(),
-  // Existence checks — the query is normalised to its cheapest form by .exists(),
-  // so `existsNormalised` must lower to exactly the same IR as `existsById`.
-  existsById: () => Person.exists(entity('p1')),
-  existsWhere: () => Person.select().where((p) => p.name.equals('Semmy')).exists(),
-  existsNormalised: () =>
-    Person.select((p) => [p.name, p.friends.name])
-      .orderBy((p) => p.name)
-      .for(entity('p1'))
-      .exists(),
   selectWhereNameSemmy: () =>
     Person.select().where((p) => p.name.equals('Semmy')),
   whereAndOrAnd: () =>
@@ -742,4 +733,26 @@ export const queryFactories = {
       name: p.name,
       nameLen: (p.name as any).strlen(),
     })).where(((p: any) => p.name.strlen().gt(2)) as any),
+};
+
+/**
+ * Existence-check factories, kept **out of `queryFactories`** on purpose.
+ *
+ * Every entry in `queryFactories` returns a live, serializable builder — the
+ * DSL-JSON round-trip suite enumerates them all and calls `.toJSON()` on each.
+ * `.exists()` is terminal: it returns `Promise<boolean>`, not a builder. It has
+ * no wire representation because it needs none — it lowers to an ordinary SELECT.
+ *
+ * `captureQuery` still yields the IR/SPARQL these produce, so the golden suite
+ * consumes them the same way.
+ */
+export const existsFactories = {
+  existsById: () => Person.exists(entity('p1')),
+  existsWhere: () => Person.select().where((p) => p.name.equals('Semmy')).exists(),
+  // Normalisation: this must lower to exactly the same IR as `existsById`.
+  existsNormalised: () =>
+    Person.select((p) => [p.name, p.friends.name])
+      .orderBy((p) => p.name)
+      .for(entity('p1'))
+      .exists(),
 };

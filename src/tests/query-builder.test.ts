@@ -1,7 +1,7 @@
 import {describe, expect, test, beforeAll} from '@jest/globals';
 import {Person, tmpEntityBase} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
-import {queryFactories} from '../test-helpers/query-fixtures';
+import {existsFactories} from '../test-helpers/query-fixtures';
 import {entity, captureDslIR, sanitize} from '../test-helpers/test-utils';
 import {QueryBuilder} from '../queries/QueryBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
@@ -896,7 +896,7 @@ describe('undecorated property access in a query', () => {
 
 describe('SelectBuilder — .exists()', () => {
   test('Person.exists(id) lowers to a bare, single-row, subject-filtered query', async () => {
-    const ir = await captureQuery(queryFactories.existsById);
+    const ir = await captureQuery(existsFactories.existsById);
     expect(ir.subjectId).toBe(entity('p1').id);
     expect(ir.singleResult).toBe(true);
     expect(ir.limit).toBe(1);
@@ -907,14 +907,14 @@ describe('SelectBuilder — .exists()', () => {
   });
 
   test('.exists() normalises away projection, preloads and sorting', async () => {
-    const bare = await captureQuery(queryFactories.existsById);
-    const decorated = await captureQuery(queryFactories.existsNormalised);
+    const bare = await captureQuery(existsFactories.existsById);
+    const decorated = await captureQuery(existsFactories.existsNormalised);
     // A chained .select(...).orderBy(...) costs exactly the same as a bare exists.
     expect(sanitize(decorated)).toEqual(sanitize(bare));
   });
 
   test('.exists() keeps the where clause — it decides whether a row exists', async () => {
-    const ir = await captureQuery(queryFactories.existsWhere);
+    const ir = await captureQuery(existsFactories.existsWhere);
     expect(ir.limit).toBe(1);
     expect(ir.projection).toHaveLength(0);
     expect(ir.where).toBeDefined();

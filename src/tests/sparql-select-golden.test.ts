@@ -7,7 +7,7 @@
  * exact SPARQL string output.
  */
 import {describe, expect, test} from '@jest/globals';
-import {queryFactories} from '../test-helpers/query-fixtures';
+import {queryFactories, existsFactories} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {selectToSparql} from '../sparql/irToAlgebra';
 import {setQueryContext} from '../queries/QueryContext';
@@ -109,7 +109,7 @@ WHERE {
   // before it: one projected variable, the type triple, LIMIT 1. No OPTIONAL,
   // no property predicates, no ORDER BY.
   test('existsById', async () => {
-    const sparql = await goldenSelect(queryFactories.existsById);
+    const sparql = await goldenSelect(existsFactories.existsById);
     expect(sparql).toBe(
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
@@ -121,7 +121,7 @@ LIMIT 1`);
   });
 
   test('existsWhere', async () => {
-    const sparql = await goldenSelect(queryFactories.existsWhere);
+    const sparql = await goldenSelect(existsFactories.existsWhere);
     expect(sparql).toBe(
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
@@ -134,8 +134,8 @@ LIMIT 1`);
   });
 
   test('existsNormalised — a chained select/orderBy costs the same as a bare exists', async () => {
-    const decorated = await goldenSelect(queryFactories.existsNormalised);
-    const bare = await goldenSelect(queryFactories.existsById);
+    const decorated = await goldenSelect(existsFactories.existsNormalised);
+    const bare = await goldenSelect(existsFactories.existsById);
     expect(decorated).toBe(bare);
   });
 
