@@ -22,11 +22,17 @@ Until now "does this node exist?" had no direct expression. The natural workarou
 indistinguishable from a missing node, silently turning every
 `exists ? update : create` into an unconditional `create`.
 
-`.exists()` returns a real `Promise<boolean>` and never catches: a store or transport
-failure rejects. It also normalises the query to its cheapest correct form first —
-projection, preloads and sorting are dropped (none of them can change *whether* a row
-exists), `LIMIT 1` is forced — so `Person.select(p => p.name).orderBy(…).exists()` emits
-the same minimal `SELECT DISTINCT ?a0 … LIMIT 1` as a bare `Person.exists({id})`.
+`.exists()` returns a real `Promise<boolean>` and never catches: a store, transport or
+lowering failure rejects, including an unresolved query-context reference in a where
+clause (which `exec()` still reports as `null`, unchanged).
+
+It also normalises the query to its cheapest correct form first. Dropped: the projection,
+preloads, sorting and pagination — none of them can change whether a *match* exists, and
+honouring `offset` while dropping the projection could actively flip the answer, since
+`OFFSET` skips rows of a solution sequence whose cardinality depends on the projection.
+Kept: filters, `minus` entries and the subject. `LIMIT 1` is then applied. So
+`Person.select(p => p.name).orderBy(…).offset(10).exists()` emits the same minimal
+`SELECT DISTINCT ?a0 … LIMIT 1` as a bare `Person.exists({id})`.
 
 Purely additive. No IR, algebra, wire-format or `IDataset` change — it lowers to an
 ordinary SELECT, so every store implementation supports it as-is.
