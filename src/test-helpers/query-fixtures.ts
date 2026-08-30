@@ -302,6 +302,15 @@ export const queryFactories = {
     ),
   selectAllProperties: () => Person.selectAll(),
   selectAll: () => Person.select(),
+  // Existence checks — the query is normalised to its cheapest form by .exists(),
+  // so `existsNormalised` must lower to exactly the same IR as `existsById`.
+  existsById: () => Person.exists(entity('p1')),
+  existsWhere: () => Person.select().where((p) => p.name.equals('Semmy')).exists(),
+  existsNormalised: () =>
+    Person.select((p) => [p.name, p.friends.name])
+      .orderBy((p) => p.name)
+      .for(entity('p1'))
+      .exists(),
   selectWhereNameSemmy: () =>
     Person.select().where((p) => p.name.equals('Semmy')),
   whereAndOrAnd: () =>

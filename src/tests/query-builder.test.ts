@@ -1,6 +1,7 @@
 import {describe, expect, test, beforeAll} from '@jest/globals';
 import {Person, tmpEntityBase} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
+import {queryFactories} from '../test-helpers/query-fixtures';
 import {entity, captureDslIR, sanitize} from '../test-helpers/test-utils';
 import {QueryBuilder} from '../queries/QueryBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
@@ -885,5 +886,83 @@ describe('undecorated property access in a query', () => {
     expect(() =>
       Person.select((p: any) => [p.friends.size()]).toJSON(),
     ).not.toThrow();
+  });
+});
+
+
+// =============================================================================
+// .exists() — boolean existence checks
+// =============================================================================
+
+describe('SelectBuilder — .exists()', () => {
+  test('Person.exists(id) lowers to a bare, single-row, subject-filtered query', async () => {
+    const ir = await captureQuery(queryFactories.existsById);
+    expect(ir.subjectId).toBe(entity('p1').id);
+    expect(ir.singleResult).toBe(true);
+    expect(ir.limit).toBe(1);
+    // Nothing is projected — the root alias alone answers the question.
+    expect(ir.projection).toHaveLength(0);
+    expect(ir.resultMap).toHaveLength(0);
+    expect(ir.sortBy).toBeUndefined();
+  });
+
+  test('.exists() normalises away projection, preloads and sorting', async () => {
+    const bare = await captureQuery(queryFactories.existsById);
+    const decorated = await captureQuery(queryFactories.existsNormalised);
+    // A chained .select(...).orderBy(...) costs exactly the same as a bare exists.
+    expect(sanitize(decorated)).toEqual(sanitize(bare));
+  });
+
+  test('.exists() keeps the where clause — it decides whether a row exists', async () => {
+    const ir = await captureQuery(queryFactories.existsWhere);
+    expect(ir.limit).toBe(1);
+    expect(ir.projection).toHaveLength(0);
+    expect(ir.where).toBeDefined();
+    expect(ir.subjectId).toBeUndefined();
+  });
+
+  test('resolves true when a row comes back, false when none does', async () => {
+    const found = {selectQuery: async () => [{id: entity('p1').id}] as any};
+    const empty = {selectQuery: async () => [] as any};
+    await expect(Person.select().exists(found as any)).resolves.toBe(true);
+    await expect(Person.select().exists(empty as any)).resolves.toBe(false);
+  });
+
+  test('single-result form maps a row to true and null to false', async () => {
+    const found = {selectQuery: async () => ({id: entity('p1').id}) as any};
+    const missing = {selectQuery: async () => null as any};
+    await expect(Person.select().for(entity('p1')).exists(found as any)).resolves.toBe(true);
+    await expect(Person.select().for(entity('p1')).exists(missing as any)).resolves.toBe(false);
+  });
+
+  test('a null/undefined id resolves false without dispatching a query', async () => {
+    const ir = await captureQuery(() => Person.exists(null));
+    expect(ir).toBeUndefined();
+    await expect(Person.exists(null)).resolves.toBe(false);
+    await expect(Person.exists(undefined)).resolves.toBe(false);
+  });
+
+  test('a store failure REJECTS — it is never reported as false', async () => {
+    // The bug this API replaces: `.catch(() => null)` around a select made an
+    // unreachable store indistinguishable from a missing node, so every
+    // `exists ? update : create` silently became an unconditional create.
+    const broken = {
+      selectQuery: async () => {
+        throw new Error('fuseki is down');
+      },
+    };
+    await expect(Person.exists(entity('p1'), broken as any)).rejects.toThrow(
+      /fuseki is down/,
+    );
+    await expect(
+      Person.select().where((p) => p.name.equals('Semmy')).exists(broken as any),
+    ).rejects.toThrow(/fuseki is down/);
+  });
+
+  test('.exists() is terminal — it returns a promise, not a builder', () => {
+    const result = Person.select().exists({selectQuery: async () => [] as any} as any);
+    expect(result).toBeInstanceOf(Promise);
+    expect((result as any).where).toBeUndefined();
+    return expect(result).resolves.toBe(false);
   });
 });

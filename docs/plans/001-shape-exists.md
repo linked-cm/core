@@ -255,17 +255,21 @@ are sequenced. P4 is docs/release metadata and depends on the final test counts.
 **Validation:** `npm run typecheck` clean. ✅ (`Shape.ts` needed two new type-only imports:
 `PendingQueryContext`, `IDataset`.)
 
-### Phase 2 — IR-level tests
+### Phase 2 — IR-level tests — **done**
 
-- [ ] Add `existsById` and `existsWhere` factories to `src/test-helpers/query-fixtures.ts`.
-- [ ] In `src/tests/query-builder.test.ts`, a `describe('SelectBuilder — exists')` group asserting on
+- [x] Add `existsById`, `existsWhere` and `existsNormalised` factories to `src/test-helpers/query-fixtures.ts`.
+- [x] In `src/tests/query-builder.test.ts`, a `describe('SelectBuilder — .exists()')` group asserting on
       `lower(...)` of the normalised builder: `projection.length === 0`, `resultMap.length === 0`,
       `limit === 1`, `sortBy` absent, `subjectId` set for the `.for()` form, `where` preserved for the
       where form, and that a chained `.select(p => p.name).orderBy(...)` normalises to the same IR as
       a bare `.exists()`.
-- [ ] Assert `Person.exists(null)` resolves `false` without dispatching.
+- [x] Assert `Person.exists(null)` resolves `false` without dispatching.
+- [x] **Moved up from Phase 3:** the store-failure test. It needs no Fuseki (a stub `IDataset`
+      whose `selectQuery` throws is enough) so it belongs in the always-run suite rather than the
+      docker-gated one — the anti-regression test for the original bug must never be skippable.
+- [x] Also asserted: `.exists()` returns a `Promise`, not a chainable builder.
 
-**Validation:** the new group passes; no existing test in the file changes.
+**Validation:** 8 new tests pass, `query-builder.test.ts` 94 passed, no existing test changed. ✅
 
 ### Phase 3 — SPARQL golden + live Fuseki
 
