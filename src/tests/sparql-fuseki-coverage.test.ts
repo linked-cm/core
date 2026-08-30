@@ -950,3 +950,72 @@ describe('coverage §1 — bulk/conditional mutations', () => {
     expect(ids(remaining)).toEqual(['p2']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Existence checks against a live store.
+// ---------------------------------------------------------------------------
+
+describe('coverage — .exists() against Fuseki', () => {
+  // Re-seed: the mutation suites above leave the dataset emptied.
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  test('Shape.exists(id) → true for a node that is there', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.exists({id: `${ENT}p1`}, store)).toBe(true);
+  });
+
+  test('Shape.exists(id) → false for a node that is not', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.exists({id: `${ENT}nobody`}, store)).toBe(false);
+    expect(await Person.exists('https://does.not/exist', store)).toBe(false);
+  });
+
+  test('Shape.exists(id) accepts a plain string IRI', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.exists(`${ENT}p2`, store)).toBe(true);
+  });
+
+  test('existence is shape-scoped — a Dog iri is not a Person', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Dog.exists({id: `${ENT}dog1`}, store)).toBe(true);
+    expect(await Person.exists({id: `${ENT}dog1`}, store)).toBe(false);
+  });
+
+  test('.exists() with a where clause — matching and non-matching', async () => {
+    if (!fusekiAvailable) return;
+    expect(
+      await Person.select().where((p: any) => p.name.equals('Semmy')).exists(store),
+    ).toBe(true);
+    expect(
+      await Person.select().where((p: any) => p.name.equals('Nobody')).exists(store),
+    ).toBe(false);
+  });
+
+  test('.exists() ignores projection and sorting but honours the subject', async () => {
+    if (!fusekiAvailable) return;
+    // hobby is unset on p3 — a projected property must not gate existence.
+    expect(
+      await Person.select((p: any) => p.hobby)
+        .orderBy((p: any) => p.name)
+        .for({id: `${ENT}p3`})
+        .exists(store),
+    ).toBe(true);
+  });
+
+  test('.exists() answers "any at all" when nothing is targeted', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.select().exists(store)).toBe(true);
+    await clearAllData();
+    expect(await Person.select().exists(store)).toBe(false);
+    expect(await Person.exists({id: `${ENT}p1`}, store)).toBe(false);
+  });
+
+  test('a real store failure rejects rather than resolving false', async () => {
+    if (!fusekiAvailable) return;
+    const broken = new FusekiStore(
+      process.env.FUSEKI_BASE_URL || 'http://localhost:3939',
+      'no-such-dataset-here',
+    );
+    await expect(Person.exists({id: `${ENT}p1`}, broken)).rejects.toThrow();
+  });
+});

@@ -271,19 +271,27 @@ are sequenced. P4 is docs/release metadata and depends on the final test counts.
 
 **Validation:** 8 new tests pass, `query-builder.test.ts` 94 passed, no existing test changed. ✅
 
-### Phase 3 — SPARQL golden + live Fuseki
+### Phase 3 — SPARQL golden + live Fuseki — **done**
 
-- [ ] In `src/tests/sparql-select-golden.test.ts`, exact-string goldens for `existsById` and
+- [x] In `src/tests/sparql-select-golden.test.ts`, exact-string goldens for `existsById` and
       `existsWhere` in the house `expect(sparql).toBe(\`…\`)` style — pinning that the query has one
       projected variable, no `OPTIONAL`, no `ORDER BY`, and `LIMIT 1`.
-- [ ] In `src/tests/sparql-fuseki-coverage.test.ts`, a `describe` covering: existing id → `true`;
+- [x] In `src/tests/sparql-fuseki-coverage.test.ts`, a `describe` covering: existing id → `true`;
       absent id → `false`; a where-clause that matches → `true`; one that does not → `false`; and a
       wrong-shape id (a `Dog` iri asked of `Person`) → `false`. Each test guarded by
       `if (!fusekiAvailable) return;`.
-- [ ] A test that a store failure **rejects** rather than resolving `false` (inject a dataset whose
-      `selectQuery` throws, via `exists(dataset)`), proving the swallow-bug cannot recur.
+- [x] A test that a store failure **rejects** rather than resolving `false` — done twice: with a
+      stub dataset in Phase 2 (always runs) and with a real `FusekiStore` pointed at a non-existent
+      dataset here.
 
-**Validation:** `npm run test:fuseki` green with Docker up; goldens byte-exact.
+**Validation:** 3 goldens byte-exact; `sparql-fuseki*` **185 passed / 3 suites** with Docker up. ✅
+
+**Deviation — `test:fuseki` was missing `--runInBand`.** Running the documented command failed
+~40 pre-existing tests before my changes too: the three `sparql-fuseki*` suites share one Fuseki
+dataset (`nashville-test`) and clobber each other's seed data when Jest runs them in parallel
+workers. `npm test` has always passed because *it* passes `--runInBand`. Added the same flag to
+`test:fuseki` — a one-word fix, but without it the new tests are not runnable via the command the
+repo documents for them.
 
 ### Phase 4 — changeset, report, PR
 

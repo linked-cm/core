@@ -105,6 +105,40 @@ WHERE {
 }`);
   });
 
+  // .exists() normalises the query down to this shape whatever was chained
+  // before it: one projected variable, the type triple, LIMIT 1. No OPTIONAL,
+  // no property predicates, no ORDER BY.
+  test('existsById', async () => {
+    const sparql = await goldenSelect(queryFactories.existsById);
+    expect(sparql).toBe(
+`PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?a0
+WHERE {
+  ?a0 rdf:type <${P}> .
+  FILTER(?a0 = <linked://tmp/entities/p1>)
+}
+LIMIT 1`);
+  });
+
+  test('existsWhere', async () => {
+    const sparql = await goldenSelect(queryFactories.existsWhere);
+    expect(sparql).toBe(
+`PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+SELECT DISTINCT ?a0
+WHERE {
+  ?a0 rdf:type <${P}> .
+  ?a0 <${P}/name> ?a0_name .
+  FILTER(?a0_name = "Semmy")
+}
+LIMIT 1`);
+  });
+
+  test('existsNormalised — a chained select/orderBy costs the same as a bare exists', async () => {
+    const decorated = await goldenSelect(queryFactories.existsNormalised);
+    const bare = await goldenSelect(queryFactories.existsById);
+    expect(decorated).toBe(bare);
+  });
+
   test('selectAllProperties', async () => {
     const sparql = await goldenSelect(queryFactories.selectAllProperties);
     expect(sparql).toBe(
