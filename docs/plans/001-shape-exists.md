@@ -1,6 +1,6 @@
 ---
 summary: Add a boolean existence check to the query API — `Shape.exists(id)` plus a terminal `.exists()` on SelectBuilder — so "does this node exist?" has a correct, cheap, non-swallowing expression instead of the `select().where(...).one().catch(() => null)` workaround.
-status: Tasks
+status: Implementation
 packages: [core]
 ---
 
@@ -244,15 +244,16 @@ Dependency graph: **P1 → P2 → P3 → P4**. P1 is the only phase producing ru
 test-only and could run in parallel with each other, but P3 needs the fixtures added in P2, so they
 are sequenced. P4 is docs/release metadata and depends on the final test counts.
 
-### Phase 1 — `exists()` on the builder and the shape
+### Phase 1 — `exists()` on the builder and the shape — **done**
 
-- [ ] `SelectBuilder.exists(target?: IDataset): Promise<boolean>` in `src/queries/QueryBuilder.ts`,
+- [x] `SelectBuilder.exists(target?: IDataset): Promise<boolean>` in `src/queries/QueryBuilder.ts`,
       placed after `one()`. Clears projection / preloads / sorting, forces `limit: 1`, no `catch`.
-- [ ] `static exists()` in `src/shapes/Shape.ts`, placed directly after `selectAll`, delegating to
+- [x] `static exists()` in `src/shapes/Shape.ts`, placed directly after `selectAll`, delegating to
       `QueryBuilder.from(this).for(id).exists(target)`.
-- [ ] TSDoc on both stating: returns a real boolean, and errors reject rather than reading as `false`.
+- [x] TSDoc on both stating: returns a real boolean, and errors reject rather than reading as `false`.
 
-**Validation:** `npm run typecheck` clean.
+**Validation:** `npm run typecheck` clean. ✅ (`Shape.ts` needed two new type-only imports:
+`PendingQueryContext`, `IDataset`.)
 
 ### Phase 2 — IR-level tests
 

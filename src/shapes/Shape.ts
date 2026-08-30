@@ -13,6 +13,8 @@ import type {
 import type {NodeReferenceValue, UpdatePartial} from '../queries/QueryFactory.js';
 import type {NodeId} from '../queries/MutationQuery.js';
 import {QueryBuilder} from '../queries/QueryBuilder.js';
+import type {PendingQueryContext} from '../queries/QueryContext.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import {CreateBuilder} from '../queries/CreateBuilder.js';
 import {UpdateBuilder} from '../queries/UpdateBuilder.js';
 import {DeleteBuilder, type DeleteId} from '../queries/DeleteBuilder.js';
@@ -174,6 +176,44 @@ export abstract class Shape {
     this: ShapeConstructor<S>,
   ): QueryBuilder<S, any, ResultType> {
     return QueryBuilder.from(this).selectAll() as QueryBuilder<S, any, ResultType>;
+  }
+
+  /**
+   * Whether a node with this id exists as an instance of this shape.
+   *
+   * ```typescript
+   * if (await SourceDocument.exists({id})) {
+   *   await SourceDocument.update(values).for({id});
+   * } else {
+   *   await SourceDocument.create({id, ...values});
+   * }
+   * ```
+   *
+   * Resolves to a real `boolean` — unlike `select().where(…).one()`, which resolves
+   * to a row or `null` and leaves the conversion (and the failure modes) to the
+   * caller. Runs the cheapest correct query: one projected variable, the shape's
+   * type triple, an equality filter on the subject, `LIMIT 1`.
+   *
+   * A `null`/`undefined` id (or an unresolved query context) resolves to `false`
+   * without touching the store.
+   *
+   * **Errors reject — they are never reported as `false`.** Do not wrap this in a
+   * `.catch(() => false)`: that is exactly how a broken existence check hides,
+   * turning every `exists ? update : create` into an unconditional `create`.
+   *
+   * For "does *anything* match?", compose on the builder instead:
+   * `await Person.select().where(p => p.name.equals('Semmy')).exists()`.
+   *
+   * @param id The node id, as a string IRI or a `{id}` reference.
+   * @param target Optional explicit dataset to run against; omitted uses the
+   *   global query dispatch.
+   */
+  static exists<S extends Shape>(
+    this: ShapeConstructor<S>,
+    id: string | NodeReferenceValue | PendingQueryContext | null | undefined,
+    target?: IDataset,
+  ): Promise<boolean> {
+    return QueryBuilder.from(this).for(id).exists(target);
   }
 
   /**

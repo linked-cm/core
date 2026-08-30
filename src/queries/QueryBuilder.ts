@@ -316,6 +316,53 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /**
+   * Whether **any** row matches this query. Executes immediately and resolves to a
+   * real `boolean` — never a row, never `null`, never an array the caller has to
+   * interpret.
+   *
+   * ```ts
+   * await Person.select().where(p => p.name.equals('Semmy')).exists(); // boolean
+   * await Person.exists({id});                                        // the common case
+   * ```
+   *
+   * The query is normalised to its cheapest correct form first: the projection,
+   * preloads and sorting are dropped (none of them can change *whether* a row
+   * exists — projected properties lower to `OPTIONAL` traversals) and `LIMIT 1` is
+   * forced. Filters, `minus` entries, the subject and any `offset` are kept, since
+   * those do decide it. So `.select(…).orderBy(…).exists()` costs exactly the same
+   * as a bare `.exists()`:
+   *
+   * ```sparql
+   * SELECT DISTINCT ?a0 WHERE { ?a0 rdf:type <…> . FILTER(?a0 = <…>) } LIMIT 1
+   * ```
+   *
+   * **Errors are not swallowed.** A store, transport or lowering failure rejects
+   * the returned promise; it is never reported as `false`. "Does not exist" and
+   * "could not ask" must stay distinguishable — conflating them silently turns
+   * every `exists ? update : create` into an unconditional `create`.
+   *
+   * @param target Optional explicit dataset, as for {@link exec}.
+   */
+  exists(target?: IDataset): Promise<boolean> {
+    return this.clone({
+      // Drop everything that cannot change whether a row exists.
+      selectFn: undefined,
+      fieldSet: undefined,
+      selectAllLabels: undefined,
+      preloads: undefined,
+      sortByFn: undefined,
+      sortDirection: undefined,
+      _sortBy: undefined,
+      // The cheapest correct bound.
+      limit: 1,
+    })
+      .exec(target)
+      .then((result) =>
+        Array.isArray(result) ? result.length > 0 : result != null,
+      );
+  }
+
+  /**
    * Preload a component's query fields at the given property path.
    *
    * This merges the component's query paths into this query's selection,
