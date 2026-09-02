@@ -191,8 +191,13 @@ export abstract class Shape {
    *
    * Resolves to a real `boolean` — unlike `select().where(…).one()`, which resolves
    * to a row or `null` and leaves the conversion (and the failure modes) to the
-   * caller. Runs the cheapest correct query: one projected variable, the shape's
-   * type triple, an equality filter on the subject, `LIMIT 1`.
+   * caller. Runs the cheapest correct query: against a SPARQL store, an
+   * `ASK WHERE { ?a0 rdf:type <ShapeClass> . FILTER(?a0 = <id>) }` — the shape's
+   * type triple and an equality filter on the subject, nothing else. A store with
+   * no boolean primitive answers the same pattern as `SELECT … LIMIT 1`.
+   *
+   * Note the type triple: this asks whether the node exists **as an instance of
+   * this shape**. A node with that IRI and a different type answers `false`.
    *
    * A `null`/`undefined` id resolves to `false` without touching the store — as does
    * a `PendingQueryContext` whose value has not landed yet, since there is no subject

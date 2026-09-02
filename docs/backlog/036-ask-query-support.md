@@ -1,37 +1,56 @@
 ---
-summary: Add SPARQL ASK end-to-end (algebra, serializer, wire op, IDataset.askQuery) if a boolean is ever needed on the wire or existence is needed without the shape's rdf:type scan. Deliberately not done for `Shape.exists`, which lowers to an ordinary SELECT.
+summary: What is left of ASK after report 029 shipped it — type-free existence (`ASK { <uri> ?p ?o }`, which no API can express today) and an `op:'ask'` wire envelope for a remote store that wants to answer the boolean itself rather than degrading to SELECT.
 packages: [core]
 ---
 
-# 036 — `ASK` query support
+# 036 — `ASK`: what remains
 
-`Shape.exists()` / `SelectBuilder.exists()` (report 028) answer existence with
-`SELECT DISTINCT ?a0 WHERE { … } LIMIT 1`, not `ASK`. That was chosen deliberately: it needs no
-pipeline change and therefore works on every `IDataset` — Fuseki, Host Agent, remote/DSL-JSON —
-without any store opting in.
+`ASK` itself landed in report 029. `Shape.exists()` / `SelectBuilder.exists()` now emit
+`ASK WHERE { … }` against any store implementing `IDataset.askQuery` (every `SparqlDataset`), and
+degrade to the original `SELECT … LIMIT 1` on stores that do not. Two items from the original
+survey were deliberately left out of that change.
 
-Reasons `ASK` might still be wanted later:
+## 1. Existence without the type constraint — the valuable one
 
-- **Existence without the type constraint.** Every select scan emits `?a0 rdf:type <ShapeClass> .`
-  (`irToAlgebra.ts`, `resolveShapeScanIri`). So `Person.exists(id)` means "exists *as a Person*".
-  There is currently no way to ask "is there any node with this IRI at all?".
-- A boolean on the wire rather than a one-row result set.
+Every select scan emits `?a0 rdf:type <ShapeClass> .` (`irToAlgebra.ts`, `resolveShapeScanIri`), and
+`selectToAlgebra` throws without a `query.root`. So `Person.exists(id)` means "exists **as a
+Person**" — correct for what it is, but there is still no way to ask the plain question:
 
-What it would take (surveyed, not started):
+```sparql
+ASK { <uri> ?p ?o }
+```
 
-| Layer | File | Change |
-|---|---|---|
-| Algebra | `src/sparql/SparqlAlgebra.ts` | `SparqlAskPlan` in the `SparqlPlan` union |
-| Serializer | `src/sparql/algebraToString.ts` | `askPlanToSparql` → `ASK WHERE { … }` |
-| IR → algebra | `src/sparql/irToAlgebra.ts` | `askToAlgebra` / `askToSparql` (reuse `selectToAlgebra`'s pattern build, drop steps 7–9) |
-| Result mapping | `src/sparql/resultMapping.ts` | `SparqlJsonResults` has **no `boolean` field** today; widen it + `mapSparqlAskResult` |
-| IR | `src/queries/IntermediateRepresentation.ts` | `IRAskQuery`, `AskResult = boolean` |
-| Wire | `QueryBuilderSerialization.ts`, `fromJSON.ts`, `wireVersion.ts` | `op: 'ask'` + wire-version bump |
-| Contract | `src/interfaces/IDataset.ts` | `askQuery?(q): Promise<boolean>` |
-| Dispatch | `queries/queryDispatch.ts`, `utils/LinkedStorage.ts` | routing |
-| Downstream | `packages/execution-gateway`, `packages/server` (`BackendAPIStoreProvider`) | endpoint method |
+"Is there any node with this IRI at all", independent of shape. That is a different question from
+anything the query DSL currently expresses, and it needs a non-shape-scoped entry point —
+`LinkedStorage.nodeExists(uri)` or similar, *not* an option on `Shape.exists()`, which is
+shape-scoped by design.
 
-~15 files across 3 packages. Note the trap: an **optional** `askQuery` on `IDataset` means every
-store that does not implement it either errors or silently falls back — reintroducing the
-quiet-wrong-answer failure mode that `exists()` was built to remove. Any implementation should make
-the fallback to SELECT explicit and shared, not per-store.
+It does not need the IR: `selectToAlgebra` cannot express a rootless scan, but nothing forces this
+through `selectToAlgebra`. The cheap version is a direct serializer plus a dispatch route:
+
+```ts
+export function nodeExistsToSparql(iri: string): string {
+  return `ASK WHERE { ${formatUri(iri)} ?p ?o }`;
+}
+```
+
+~20 lines plus the entry point and its routing. The reason it is not done: it is a new public
+capability, not a re-plumbing of an existing one, and no caller has asked for it yet.
+
+## 2. `op: 'ask'` on the DSL-JSON wire
+
+Not needed today, and that is a property of how the degradation was placed rather than an
+oversight. A remote/DSL-JSON store forwards `query.toJSON()`; it does not implement `askQuery`, so
+it takes the shared `askViaSelect` and forwards an ordinary select envelope — exactly what it sent
+before. Nothing new crosses the wire.
+
+It becomes worth doing only when a remote peer should answer the boolean *itself* — saving a result
+set on the far side of the network, which is where the payload difference stops being noise. That
+is the ~15-file, 3-package change the original survey described: `QueryBuilderSerialization`,
+`fromJSON`, wire version, plus `execution-gateway` and `server`.
+
+One thing that survey got slightly wrong, checked since: a wire-version bump is not what protects an
+old peer. `assertWireVersion` only rejects on a **major** mismatch, so `1.0 → 1.1` gates nothing.
+What protects it is `fromJSON.ts`, which throws `Unknown query op` on an unrecognised `op` rather
+than falling through to `SelectBuilder` — so an old peer fails loud instead of silently re-running
+the query as a SELECT. The ordering constraint is still real: deploy the receiving side first.

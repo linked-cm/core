@@ -4,7 +4,7 @@ import type {SelectQuery} from '../queries/SelectQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
-import {setQueryDispatch} from '../queries/queryDispatch.js';
+import {setQueryDispatch, resolveExistence} from '../queries/queryDispatch.js';
 import {getShapeClass} from './ShapeClass.js';
 import type {NodeShapeData} from '../shapes/SHACL.js';
 
@@ -55,6 +55,7 @@ export abstract class LinkedStorage {
     }
     setQueryDispatch({
       selectQuery: (q) => this.selectQuery(q),
+      askQuery: (q) => this.askQuery(q),
       createQuery: (q) => this.createQuery(q),
       updateQuery: (q) => this.updateQuery(q),
       deleteQuery: (q) => this.deleteQuery(q),
@@ -134,6 +135,32 @@ export abstract class LinkedStorage {
       );
     }
     return dataset.selectQuery(query) as Promise<ResultType>;
+  }
+
+  /**
+   * Route an existence check to the shape's dataset.
+   *
+   * `askQuery` is optional on `IDataset`, and this router cannot know until it has
+   * resolved the shape whether the dataset behind it can answer a boolean. That
+   * choice — and the degradation to a normalised `SELECT … LIMIT 1` when it
+   * cannot — belongs to `resolveExistence`, which the builder also goes through.
+   * Nothing about the existence contract is re-implemented here.
+   */
+  static askQuery(query: SelectQuery): Promise<boolean> {
+    if (!query?.shape) {
+      return Promise.reject(
+        new Error(
+          'Invalid select query passed to LinkedStorage.askQuery(): missing shape.',
+        ),
+      );
+    }
+    const dataset = this.resolveDatasetForQueryShape(query.shape);
+    if (!dataset?.selectQuery) {
+      return Promise.reject(
+        new Error('No query dataset configured. Call LinkedStorage.setDefaultDataset().'),
+      );
+    }
+    return resolveExistence(dataset, query);
   }
 
   static updateQuery<ResponseType>(query: UpdateQuery): Promise<ResponseType> {

@@ -14,7 +14,7 @@ import {
 import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
-import {getQueryDispatch} from './queryDispatch.js';
+import {getQueryDispatch, resolveExistence} from './queryDispatch.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {NodeShapeData} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
@@ -332,11 +332,16 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * exists. `LIMIT 1` is then applied.
    *
    * So `.select(…).orderBy(…).offset(10).exists()` costs, and answers, exactly the same
-   * as a bare `.exists()`:
+   * as a bare `.exists()`. Against a store that implements `askQuery` (any
+   * `SparqlDataset`) that normalised query goes out as:
    *
    * ```sparql
-   * SELECT DISTINCT ?a0 WHERE { ?a0 rdf:type <…> . FILTER(?a0 = <…>) } LIMIT 1
+   * ASK WHERE { ?a0 rdf:type <…> . FILTER(?a0 = <…>) }
    * ```
+   *
+   * A store without a boolean primitive answers the identical pattern as
+   * `SELECT DISTINCT ?a0 … LIMIT 1` and converts. Which of the two runs cannot
+   * change the answer — only how much comes back over the wire.
    *
    * Pagination is dropped rather than honoured on purpose. `OFFSET` skips rows of the
    * *solution sequence*, whose cardinality depends on the projection — a multi-valued
@@ -350,7 +355,9 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * A store, transport or lowering failure rejects the returned promise; it is never
    * reported as `false`. That includes an unresolved query-context reference in a
    * where clause, which `exec()` deliberately reports as `null` ("not ready") but
-   * which `exists()` must not flatten into a boolean.
+   * which `exists()` must not flatten into a boolean — and a store whose `askQuery`
+   * resolves to something that is not a boolean, which rejects rather than being
+   * coerced into one.
    *
    * The one case that does resolve `false` without querying is a query with **no
    * subject to ask about** — `.for(null)`, `.for(undefined)`, or an unresolved
@@ -371,8 +378,14 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       _sortBy: undefined,
       offset: undefined,
       // The cheapest correct bound. Replaces any limit set earlier in the chain.
+      // Kept even on the ASK path: it is what the SELECT degradation needs, and
+      // `askToAlgebra` ignores a limit of 1 or more.
       limit: 1,
-    })._run(target, false);
+    })._run(target, false, 'exists');
+    // `_run` in 'exists' mode resolves to a real boolean, or to `null` from the
+    // no-subject short-circuit. `result != null` alone would read a `false` from
+    // a store's `askQuery` as "present" — hence the explicit boolean arm.
+    if (typeof result === 'boolean') return result;
     return Array.isArray(result) ? result.length > 0 : result != null;
   }
 
@@ -723,10 +736,17 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    *   context reference that has not resolved yet surfaces as `null` — "not ready",
    *   which a reactive layer re-runs once the context lands. `exists()` passes
    *   false: it must not turn "could not ask" into a boolean.
+   * @param mode `'select'` returns the store's result set. `'exists'` hands the
+   *   query to {@link resolveExistence}, which picks the target's `askQuery` (a
+   *   SPARQL store answers `ASK WHERE { … }`) or the shared SELECT degradation and
+   *   enforces the boolean contract on both. Either way the guards and error
+   *   handling below still apply, which is why `exists()` runs through here rather
+   *   than down a path of its own.
    */
   private async _run(
     target: IDataset | undefined,
     swallowUnresolvedContext: boolean,
+    mode: 'select' | 'exists' = 'select',
   ): Promise<unknown> {
     if (this._nullSubject) {
       // .for(null/undefined) was called — return null instead of executing a broken query.
@@ -740,6 +760,9 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     // `async` ensures a missing global dispatch surfaces as a rejected promise, not a sync throw.
     const dispatch = target ?? getQueryDispatch();
     try {
+      if (mode === 'exists') {
+        return await resolveExistence(dispatch, this);
+      }
       return await dispatch.selectQuery(this);
     } catch (err) {
       // A where-clause context reference that hasn't resolved yet surfaces as

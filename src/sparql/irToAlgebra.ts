@@ -19,6 +19,7 @@ import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import type {
   SparqlSelectPlan,
+  SparqlAskPlan,
   SparqlInsertDataPlan,
   SparqlDeleteInsertPlan,
   SparqlAlgebraNode,
@@ -35,6 +36,7 @@ import type {
 import {type SparqlOptions, generateEntityUri} from './sparqlUtils.js';
 import {
   selectPlanToSparql,
+  askPlanToSparql,
   insertDataPlanToSparql,
   deleteInsertPlanToSparql,
 } from './algebraToString.js';
@@ -2649,6 +2651,56 @@ export function updateWhereToAlgebra(
 }
 
 // ---------------------------------------------------------------------------
+// Ask conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts an IRSelectQuery to a SparqlAskPlan — the same WHERE body the SELECT
+ * would produce, with the projection and every solution modifier dropped.
+ *
+ * `ASK` answers a question about the **match set**, so anything that only shapes
+ * or windows the *solution sequence* is irrelevant to it: `projection`,
+ * `orderBy` and a `limit` of 1 or more are ignored.
+ *
+ * Two modifiers are **rejected rather than ignored**, because dropping them could
+ * change the answer:
+ *
+ * - `offset` — skips solutions, so `OFFSET n` over a single-solution pattern is
+ *   the difference between "no rows" and "a match exists".
+ * - `limit < 1` — `SELECT … LIMIT 0` returns no rows where `ASK` over the same
+ *   pattern answers `true`.
+ *
+ * Neither can reach here through the DSL: `SelectBuilder.exists()` drops `offset`
+ * and replaces any earlier limit with `1`. The guards are for direct callers.
+ *
+ * Note: the pattern is built by {@link selectToAlgebra}, which walks the
+ * projection to discover the property triples it references. Those are emitted as
+ * `OPTIONAL` blocks, so on an un-normalised IR they cost a little and cannot change
+ * the boolean. `exists()` normalises the projection away before this is reached.
+ */
+export function askToAlgebra(
+  query: IRSelectQuery,
+  options?: SparqlOptions,
+): SparqlAskPlan {
+  if (query.offset !== undefined) {
+    throw new Error(
+      'askToAlgebra: ASK cannot honour OFFSET — it skips solutions, so dropping it ' +
+      'could change the answer. Remove `offset` from the query before asking whether ' +
+      'a match exists.',
+    );
+  }
+  if (query.limit !== undefined && query.limit < 1) {
+    throw new Error(
+      `askToAlgebra: ASK cannot honour LIMIT ${query.limit} — a limit below 1 returns ` +
+      'no rows where ASK over the same pattern answers true. Remove the limit before ' +
+      'asking whether a match exists.',
+    );
+  }
+  const {algebra} = selectToAlgebra(query, options);
+  return {type: 'ask', algebra};
+}
+
+// ---------------------------------------------------------------------------
 // Convenience wrappers: IR → algebra → SPARQL string in one call
 // ---------------------------------------------------------------------------
 
@@ -2661,6 +2713,17 @@ export function selectToSparql(
 ): string {
   const plan = selectToAlgebra(query, options);
   return selectPlanToSparql(plan, options);
+}
+
+/**
+ * Converts an IRSelectQuery to a SPARQL `ASK` string.
+ */
+export function askToSparql(
+  query: IRSelectQuery,
+  options?: SparqlOptions,
+): string {
+  const plan = askToAlgebra(query, options);
+  return askPlanToSparql(plan, options);
 }
 
 /**

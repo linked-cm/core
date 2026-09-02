@@ -1057,3 +1057,83 @@ describe('coverage — .exists() against Fuseki', () => {
     await expect(Person.exists({id: `${ENT}p1`}, broken)).rejects.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The existence check is an ASK against a live store — and agrees with the
+// SELECT degradation it replaces.
+// ---------------------------------------------------------------------------
+
+describe('coverage — .exists() emits ASK against Fuseki', () => {
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  /** Wraps the live store, recording the SPARQL it actually sends. */
+  const spyStore = () => {
+    const sent: string[] = [];
+    const spy = Object.create(store) as FusekiStore & {
+      executeSparqlSelect(sparql: string): Promise<any>;
+    };
+    spy.executeSparqlSelect = function (sparql: string) {
+      sent.push(sparql);
+      return (store as any).executeSparqlSelect(sparql);
+    };
+    return {spy, sent};
+  };
+
+  test('the query on the wire is an ASK, not a SELECT', async () => {
+    if (!fusekiAvailable) return;
+    const {spy, sent} = spyStore();
+    expect(await Person.exists({id: `${ENT}p1`}, spy)).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('ASK WHERE {');
+    expect(sent[0]).not.toContain('SELECT');
+    expect(sent[0]).not.toContain('LIMIT');
+  });
+
+  test('Fuseki answers ASK with the boolean shape the mapper expects', async () => {
+    if (!fusekiAvailable) return;
+    // Guards the SparqlAskResults type against the real endpoint: an ASK
+    // response carries `boolean` and no `results` key at all.
+    const present = await executeSparqlQuery(
+      `ASK WHERE { <${ENT}p1> ?p ?o }`,
+    );
+    expect(present).toEqual({head: {}, boolean: true});
+    const absent = await executeSparqlQuery(
+      `ASK WHERE { <${ENT}nobody> ?p ?o }`,
+    );
+    expect(absent).toEqual({head: {}, boolean: false});
+  });
+
+  test('ASK and the SELECT degradation agree on every exists fixture', async () => {
+    if (!fusekiAvailable) return;
+    // askViaSelect is only sound if it answers identically. Run each case both
+    // ways against the same live data and compare.
+    const selectOnly: any = {
+      selectQuery: (q: any) => (store as any).selectQuery(q),
+    };
+    const cases: Array<[string, () => any]> = [
+      ['present', () => Person.select().for(`${ENT}p1`)],
+      ['absent', () => Person.select().for(`${ENT}nobody`)],
+      ['where match', () => Person.select().where((p: any) => p.name.equals('Semmy'))],
+      ['where miss', () => Person.select().where((p: any) => p.name.equals('Nobody'))],
+      ['wrong shape', () => Person.select().for(`${ENT}dog1`)],
+      ['any at all', () => Person.select()],
+      ['forAll partial', () => Person.selectAll().forAll([`${ENT}nobody`, `${ENT}p2`])],
+      ['projected + sorted', () =>
+        Person.select((p: any) => p.hobby).orderBy((p: any) => p.name).for(`${ENT}p3`)],
+    ];
+    for (const [label, build] of cases) {
+      const viaAsk = await build().exists(store);
+      const viaSelect = await build().exists(selectOnly);
+      expect(`${label}=${viaAsk}`).toBe(`${label}=${viaSelect}`);
+    }
+  });
+
+  test('a shape-scoped ASK still excludes a node of another type', async () => {
+    if (!fusekiAvailable) return;
+    // ASK drops the projection, not the rdf:type scan — Person.exists() still
+    // means "exists as a Person". (Type-free existence is backlog 036.)
+    const {spy, sent} = spyStore();
+    expect(await Person.exists({id: `${ENT}dog1`}, spy)).toBe(false);
+    expect(sent[0]).toContain('rdf:type');
+  });
+});

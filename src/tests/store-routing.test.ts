@@ -106,3 +106,71 @@ describe('LinkedStorage store routing', () => {
     expect(defaultStore.calls.update).toBe(0);
   });
 });
+
+// =============================================================================
+// Existence checks route like everything else — and degrade in one place
+// =============================================================================
+
+describe('LinkedStorage.askQuery routing', () => {
+  /** A store that can answer a boolean directly. */
+  const createAskStore = (answer: boolean) => {
+    const calls = {ask: 0, select: 0};
+    const store: IDataset = {
+      selectQuery: async () => {
+        calls.select += 1;
+        return [] as any;
+      },
+      askQuery: async () => {
+        calls.ask += 1;
+        return answer;
+      },
+    };
+    return {store, calls};
+  };
+
+  test('routes to the shape-pinned dataset, not the default', async () => {
+    const defaultStore = createAskStore(false);
+    const personStore = createAskStore(true);
+    LinkedStorage.setDefaultDataset(defaultStore.store);
+    LinkedStorage.setDatasetForShapes(personStore.store, RoutedPerson);
+
+    await expect(
+      LinkedStorage.askQuery(RoutedPerson.select() as any),
+    ).resolves.toBe(true);
+    expect(personStore.calls.ask).toBe(1);
+    expect(defaultStore.calls.ask).toBe(0);
+  });
+
+  test('a routed dataset without askQuery degrades to its selectQuery', async () => {
+    // The router cannot know before resolving the shape whether the dataset
+    // behind it answers booleans. The degradation is the shared askViaSelect —
+    // this asserts the routed store still gets asked, and correctly.
+    const selectOnly = createStore();
+    LinkedStorage.setDefaultDataset(selectOnly.store);
+    LinkedStorage.setDatasetForShapes(selectOnly.store, RoutedPet);
+
+    await expect(LinkedStorage.askQuery(RoutedPet.select() as any)).resolves.toBe(
+      false,
+    );
+    expect(selectOnly.calls.select).toBe(1);
+  });
+
+  test('a store failure propagates — it is never routed into a false', async () => {
+    const broken: IDataset = {
+      selectQuery: async () => {
+        throw new Error('store unreachable');
+      },
+    };
+    LinkedStorage.setDefaultDataset(broken);
+    LinkedStorage.setDatasetForShapes(broken, RoutedPet);
+
+    await expect(
+      LinkedStorage.askQuery(RoutedPet.select() as any),
+    ).rejects.toThrow(/store unreachable/);
+  });
+
+  test('rejects a query with no shape rather than answering it', async () => {
+    LinkedStorage.setDefaultDataset(createAskStore(true).store);
+    await expect(LinkedStorage.askQuery({} as any)).rejects.toThrow(/missing shape/);
+  });
+});

@@ -9,6 +9,7 @@ import {walkPropertyPath} from '../queries/PropertyPath';
 import {FieldSet} from '../queries/FieldSet';
 import {setQueryContext, getQueryContext, PendingQueryContext, UnresolvedContextError} from '../queries/QueryContext';
 import {lower} from '../queries/lower';
+import {resolveExistence} from '../queries/queryDispatch';
 
 const personShape = Person.shape;
 
@@ -903,7 +904,7 @@ describe('SelectBuilder — .exists()', () => {
     // Nothing is projected — the root alias alone answers the question.
     expect(ir.projection).toHaveLength(0);
     expect(ir.resultMap).toHaveLength(0);
-    expect(ir.sortBy).toBeUndefined();
+    expect(ir.orderBy).toBeUndefined();
   });
 
   test('.exists() normalises away projection, preloads and sorting', async () => {
@@ -1027,5 +1028,187 @@ describe('SelectBuilder — .exists()', () => {
     expect(result).toBeInstanceOf(Promise);
     expect((result as any).where).toBeUndefined();
     return expect(result).resolves.toBe(false);
+  });
+});
+
+// =============================================================================
+// .exists() → ASK dispatch
+// =============================================================================
+
+describe('SelectBuilder — .exists() prefers askQuery', () => {
+  /** A store that answers booleans directly, recording what it was asked. */
+  const askStore = (answer: boolean) => {
+    const seen: {ask: number; select: number; query?: any} = {ask: 0, select: 0};
+    const store = {
+      askQuery: async (q: any) => {
+        seen.ask += 1;
+        seen.query = q;
+        return answer;
+      },
+      selectQuery: async () => {
+        seen.select += 1;
+        return [] as any;
+      },
+    };
+    return {store, seen};
+  };
+
+  test('uses askQuery when the target has one, and does not also select', async () => {
+    const {store, seen} = askStore(true);
+    await expect(Person.exists(entity('p1'), store as any)).resolves.toBe(true);
+    expect(seen.ask).toBe(1);
+    expect(seen.select).toBe(0);
+  });
+
+  test('askQuery returning FALSE resolves false — not "not null, therefore true"', async () => {
+    // The conversion `.exists()` shipped on was `result != null`, which reads a
+    // literal `false` from a store as "present". The boolean arm in exists()
+    // exists for exactly this, and this test is what holds it in place.
+    const {store, seen} = askStore(false);
+    await expect(Person.exists(entity('p1'), store as any)).resolves.toBe(false);
+    expect(seen.ask).toBe(1);
+  });
+
+  test('askQuery receives the normalised query, not the decorated chain', async () => {
+    const {store, seen} = askStore(true);
+    await Person.select((p) => p.name)
+      .orderBy((p) => p.name)
+      .for(entity('p1'))
+      .offset(10)
+      .exists(store as any);
+    const ir = lower(seen.query);
+    expect(ir.limit).toBe(1);
+    expect(ir.offset).toBeUndefined();
+    expect(ir.projection).toHaveLength(0);
+    expect(ir.orderBy).toBeUndefined();
+  });
+
+  test('a store failure on the ASK path REJECTS — same contract as the SELECT path', async () => {
+    const broken = {
+      askQuery: async () => {
+        throw new Error('fuseki is down');
+      },
+      selectQuery: async () => [] as any,
+    };
+    await expect(Person.exists(entity('p1'), broken as any)).rejects.toThrow(
+      /fuseki is down/,
+    );
+  });
+
+  test('an unresolved where-clause context still REJECTS on the ASK path', async () => {
+    const unresolving = {
+      askQuery: async () => {
+        throw new UnresolvedContextError('user');
+      },
+      selectQuery: async () => [] as any,
+    };
+    await expect(Person.select().exists(unresolving as any)).rejects.toThrow();
+  });
+
+  test('a null id short-circuits to false without reaching askQuery', async () => {
+    const {store, seen} = askStore(true);
+    await expect(Person.exists(null, store as any)).resolves.toBe(false);
+    expect(seen.ask).toBe(0);
+    expect(seen.select).toBe(0);
+  });
+
+  test('exec() never takes the ASK path', async () => {
+    const {store, seen} = askStore(true);
+    await Person.select((p) => p.name).exec(store as any);
+    expect(seen.ask).toBe(0);
+    expect(seen.select).toBe(1);
+  });
+
+  test('a store without askQuery degrades to SELECT and agrees with one that has it', async () => {
+    // The degradation is a slower answer, not a different one.
+    for (const [rows, expected] of [
+      [[{id: entity('p1').id}], true],
+      [[], false],
+    ] as const) {
+      const selectOnly = {selectQuery: async () => rows as any};
+      const asking = {
+        askQuery: async () => expected,
+        selectQuery: async () => rows as any,
+      };
+      await expect(Person.exists(entity('p1'), selectOnly as any)).resolves.toBe(expected);
+      await expect(Person.exists(entity('p1'), asking as any)).resolves.toBe(expected);
+    }
+  });
+});
+
+// =============================================================================
+// The existence contract — what a store is allowed to answer with
+// =============================================================================
+
+describe('SelectBuilder — .exists() enforces the boolean contract', () => {
+  // A store that answers with something truthy but not a boolean used to slip
+  // through as "exists": the conversion was `result != null`. Coercion here is
+  // exactly the quiet-wrong-answer this API family exists to remove, so a
+  // non-boolean is a rejected store contract, not an answer.
+  test.each([
+    ['a truthy object', {} as any],
+    ['a row array', [{id: 'x'}] as any],
+    ['a string', 'true' as any],
+    ['undefined', undefined as any],
+    ['null', null as any],
+    ['a number', 1 as any],
+  ])('askQuery resolving %s REJECTS rather than coercing', async (_label, value) => {
+    const store = {
+      askQuery: async () => value,
+      selectQuery: async () => [] as any,
+    };
+    await expect(Person.exists(entity('p1'), store as any)).rejects.toThrow(
+      /must resolve to a boolean/,
+    );
+  });
+
+  test('both real booleans pass the contract unchanged', async () => {
+    for (const answer of [true, false]) {
+      const store = {askQuery: async () => answer, selectQuery: async () => [] as any};
+      await expect(Person.exists(entity('p1'), store as any)).resolves.toBe(answer);
+    }
+  });
+});
+
+describe('existence checks — pagination is refused on BOTH paths', () => {
+  // askToAlgebra refuses OFFSET / LIMIT<1 because ASK cannot express them. The
+  // SELECT degradation *could* honour them — and would then answer a different
+  // question than a store that can ASK. The guard therefore sits in
+  // resolveExistence, in front of both, so which store a query is pointed at can
+  // never change the answer.
+  const asking = {askQuery: async () => true, selectQuery: async () => [] as any};
+  const selectOnly = {selectQuery: async () => [{id: entity('p1').id}] as any};
+
+  test.each([
+    ['a store that can ASK', asking],
+    ['a store that can only SELECT', selectOnly],
+  ])('%s refuses a query carrying OFFSET', async (_label, store) => {
+    await expect(
+      resolveExistence(store as any, Person.select().for(entity('p1')).offset(5) as any),
+    ).rejects.toThrow(/OFFSET/);
+  });
+
+  test.each([
+    ['a store that can ASK', asking],
+    ['a store that can only SELECT', selectOnly],
+  ])('%s refuses LIMIT 0', async (_label, store) => {
+    await expect(
+      resolveExistence(store as any, Person.select().limit(0) as any),
+    ).rejects.toThrow(/LIMIT 0/);
+  });
+
+  test('a limit of 1 or more is a harmless bound and is answered normally', async () => {
+    await expect(
+      resolveExistence(selectOnly as any, Person.select().limit(1) as any),
+    ).resolves.toBe(true);
+  });
+
+  test('.exists() is never affected — it normalises pagination away first', async () => {
+    // The guard exists for direct LinkedStorage.askQuery / IDataset.askQuery
+    // callers. Through the builder, offset(…) and limit(0) are dropped before
+    // dispatch, so the chain that would trip the guard still answers.
+    await expect(
+      Person.select().for(entity('p1')).offset(5).limit(0).exists(selectOnly as any),
+    ).resolves.toBe(true);
   });
 });

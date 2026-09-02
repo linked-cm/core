@@ -34,5 +34,5 @@ Kept: filters, `minus` entries and the subject. `LIMIT 1` is then applied. So
 `Person.select(p => p.name).orderBy(…).offset(10).exists()` emits the same minimal
 `SELECT DISTINCT ?a0 … LIMIT 1` as a bare `Person.exists({id})`.
 
-Purely additive. No IR, algebra, wire-format or `IDataset` change — it lowers to an
+Purely additive. On its own it needs no IR, algebra, wire-format or `IDataset` change — it lowers to an
 ordinary SELECT, so every store implementation supports it as-is.
