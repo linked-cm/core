@@ -8,7 +8,12 @@
  * Coverage: all 75 query factories from query-fixtures.ts
  */
 import {describe, expect, test, beforeAll, afterAll} from '@jest/globals';
-import {queryFactories, Person, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {queryFactories, Person, tmpEntityBase,
+  personClass,
+  dogClass,
+  petClass,
+  employeeClass,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {lower} from '../queries/lower';
 import {
@@ -56,6 +61,14 @@ const D = 'https://linked.cm/shape/core/Dog';
 const PET = 'https://linked.cm/shape/core/Pet';
 const E = 'https://linked.cm/shape/core/Employee';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+// Class IRIs — the separate node each shape declares as its `targetClass`.
+// Only these appear as an rdf:type; the shape IRIs above identify the
+// SHACL descriptions and are what property predicates derive from.
+const PT = personClass.id;
+const DT = dogClass.id;
+const PETT = petClass.id;
+const ET = employeeClass.id;
+
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const ENT = tmpEntityBase; // linked://tmp/entities/
 
@@ -67,7 +80,7 @@ const ENT = tmpEntityBase; // linked://tmp/entities/
 // ---------------------------------------------------------------------------
 
 const TEST_DATA = `
-<${ENT}p1> <${RDF_TYPE}> <${P}> .
+<${ENT}p1> <${RDF_TYPE}> <${PT}> .
 <${ENT}p1> <${P}/name> "Semmy" .
 <${ENT}p1> <${P}/hobby> "Reading" .
 <${ENT}p1> <${P}/birthDate> "1990-01-01T00:00:00.000Z"^^<${XSD}dateTime> .
@@ -82,7 +95,7 @@ const TEST_DATA = `
 <${ENT}p1> <${P}/pluralTestProp> <${ENT}p2> .
 <${ENT}p1> <${P}/pluralTestProp> <${ENT}p3> .
 <${ENT}p1> <${P}/pluralTestProp> <${ENT}p4> .
-<${ENT}p2> <${RDF_TYPE}> <${P}> .
+<${ENT}p2> <${RDF_TYPE}> <${PT}> .
 <${ENT}p2> <${P}/name> "Moa" .
 <${ENT}p2> <${P}/hobby> "Jogging" .
 <${ENT}p2> <${P}/isRealPerson> "false"^^<${XSD}boolean> .
@@ -91,22 +104,22 @@ const TEST_DATA = `
 <${ENT}p2> <${P}/friends> <${ENT}p4> .
 <${ENT}p2> <${P}/pets> <${ENT}dog2> .
 <${ENT}p2> <${P}/firstPet> <${ENT}dog2> .
-<${ENT}p3> <${RDF_TYPE}> <${P}> .
+<${ENT}p3> <${RDF_TYPE}> <${PT}> .
 <${ENT}p3> <${P}/name> "Jinx" .
 <${ENT}p3> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
-<${ENT}p4> <${RDF_TYPE}> <${P}> .
+<${ENT}p4> <${RDF_TYPE}> <${PT}> .
 <${ENT}p4> <${P}/name> "Quinn" .
-<${ENT}dog1> <${RDF_TYPE}> <${D}> .
-<${ENT}dog1> <${RDF_TYPE}> <${PET}> .
+<${ENT}dog1> <${RDF_TYPE}> <${DT}> .
+<${ENT}dog1> <${RDF_TYPE}> <${PETT}> .
 <${ENT}dog1> <${D}/guardDogLevel> "2"^^<${XSD}integer> .
 <${ENT}dog1> <${PET}/bestFriend> <${ENT}dog2> .
-<${ENT}dog2> <${RDF_TYPE}> <${D}> .
-<${ENT}dog2> <${RDF_TYPE}> <${PET}> .
-<${ENT}e1> <${RDF_TYPE}> <${E}> .
+<${ENT}dog2> <${RDF_TYPE}> <${DT}> .
+<${ENT}dog2> <${RDF_TYPE}> <${PETT}> .
+<${ENT}e1> <${RDF_TYPE}> <${ET}> .
 <${ENT}e1> <${E}/name> "Alice" .
 <${ENT}e1> <${E}/department> "Engineering" .
 <${ENT}e1> <${E}/bestFriend> <${ENT}e2> .
-<${ENT}e2> <${RDF_TYPE}> <${E}> .
+<${ENT}e2> <${RDF_TYPE}> <${ET}> .
 <${ENT}e2> <${E}/name> "Bob" .
 <${ENT}e2> <${E}/department> "Sales" .
 `.trim();
@@ -1835,7 +1848,7 @@ describe('Fuseki mutations — DELETE', () => {
     const toDeleteUri = `${ENT}to-delete`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${toDeleteUri}> <${RDF_TYPE}> <${P}> .
+        <${toDeleteUri}> <${RDF_TYPE}> <${PT}> .
         <${toDeleteUri}> <${P}/name> "ToBeDeleted" .
         <${ENT}p1> <${P}/bestFriend> <${toDeleteUri}> .
       }
@@ -1865,7 +1878,7 @@ describe('Fuseki mutations — DELETE', () => {
     const toDeleteUri = `${ENT}to-delete`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${toDeleteUri}> <${RDF_TYPE}> <${P}> .
+        <${toDeleteUri}> <${RDF_TYPE}> <${PT}> .
         <${toDeleteUri}> <${P}/name> "ToBeDeleted" .
         <${ENT}p1> <${P}/bestFriend> <${toDeleteUri}> .
       }
@@ -1890,9 +1903,9 @@ describe('Fuseki mutations — DELETE', () => {
     const del2 = `${ENT}to-delete-2`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${del1}> <${RDF_TYPE}> <${P}> .
+        <${del1}> <${RDF_TYPE}> <${PT}> .
         <${del1}> <${P}/name> "Del1" .
-        <${del2}> <${RDF_TYPE}> <${P}> .
+        <${del2}> <${RDF_TYPE}> <${PT}> .
         <${del2}> <${P}/name> "Del2" .
         <${del1}> <${P}/bestFriend> <${del2}> .
       }
@@ -1919,9 +1932,9 @@ describe('Fuseki mutations — DELETE', () => {
     const del2 = `${ENT}to-delete-2`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${del1}> <${RDF_TYPE}> <${P}> .
+        <${del1}> <${RDF_TYPE}> <${PT}> .
         <${del1}> <${P}/name> "Del1" .
-        <${del2}> <${RDF_TYPE}> <${P}> .
+        <${del2}> <${RDF_TYPE}> <${PT}> .
         <${del2}> <${P}/name> "Del2" .
         <${del1}> <${P}/bestFriend> <${del2}> .
       }
@@ -2092,7 +2105,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
     const toDeleteUri = `${ENT}store-delete-test`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${toDeleteUri}> <${RDF_TYPE}> <${P}> .
+        <${toDeleteUri}> <${RDF_TYPE}> <${PT}> .
         <${toDeleteUri}> <${P}/name> "StoreDeleteTest" .
       }
     `);

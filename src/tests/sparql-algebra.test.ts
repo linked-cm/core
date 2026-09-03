@@ -167,7 +167,9 @@ describe('selectToAlgebra — basic selection', () => {
     const typeTriple = findTripleByPredicate(allTriples, RDF_TYPE);
     expect(typeTriple).toBeDefined();
     expect(typeTriple!.subject).toEqual({kind: 'variable', name: 'a0'});
-    expect(typeTriple!.object).toEqual({kind: 'iri', value: Person.shape.id});
+    // The type triple carries the shape's declared targetClass — the class node
+    // instances are typed with — not the shape's own IRI.
+    expect(typeTriple!.object).toEqual({kind: 'iri', value: Person.targetClass.id});
 
     // Property triple should be in OPTIONAL (LeftJoin)
     const optionalTriples = collectOptionalTriples(plan.algebra);
@@ -808,7 +810,7 @@ describe('EXISTS pattern conversion', () => {
           kind: 'join',
           patterns: [
             {kind: 'traverse', from: 'a0', to: 'a1', property: `${P}/friends`},
-            {kind: 'shape_scan', shape: `${P}Employee`, alias: 'a1'},
+            {kind: 'shape_scan', shape: Employee.shape.id, alias: 'a1'},
           ],
         },
       },

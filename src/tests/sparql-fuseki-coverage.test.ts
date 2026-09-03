@@ -15,6 +15,11 @@ import {
   Metric,
   PathNode,
   tmpEntityBase,
+  personClass,
+  dogClass,
+  petClass,
+  employeeClass,
+  metricClass,
 } from '../test-helpers/query-fixtures';
 import {FusekiStore} from '../test-helpers/FusekiStore';
 import {
@@ -44,13 +49,22 @@ const E = 'https://linked.cm/shape/core/Employee';
 const M = 'https://linked.cm/shape/core/Metric';
 const PP = 'linked://pp/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+// Class IRIs — the separate node each shape declares as its `targetClass`.
+// Only these appear as an rdf:type; the shape IRIs above identify the
+// SHACL descriptions and are what property predicates derive from.
+const PT = personClass.id;
+const DT = dogClass.id;
+const PETT = petClass.id;
+const ET = employeeClass.id;
+const MT = metricClass.id;
+
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const ENT = tmpEntityBase;
 
 // Base graph: identical to sparql-fuseki.test.ts so expectations are well
 // understood, plus a Dog `d1` (guardDogLevel) for updateExprCallback.
 const BASE_DATA = `
-<${ENT}p1> <${RDF_TYPE}> <${P}> .
+<${ENT}p1> <${RDF_TYPE}> <${PT}> .
 <${ENT}p1> <${P}/name> "Semmy" .
 <${ENT}p1> <${P}/hobby> "Reading" .
 <${ENT}p1> <${P}/birthDate> "1990-01-01T13:45:30.000Z"^^<${XSD}dateTime> .
@@ -65,7 +79,7 @@ const BASE_DATA = `
 <${ENT}p1> <${P}/pluralTestProp> <${ENT}p2> .
 <${ENT}p1> <${P}/pluralTestProp> <${ENT}p3> .
 <${ENT}p1> <${P}/pluralTestProp> <${ENT}p4> .
-<${ENT}p2> <${RDF_TYPE}> <${P}> .
+<${ENT}p2> <${RDF_TYPE}> <${PT}> .
 <${ENT}p2> <${P}/name> "Moa" .
 <${ENT}p2> <${P}/hobby> "Jogging" .
 <${ENT}p2> <${P}/isRealPerson> "false"^^<${XSD}boolean> .
@@ -74,30 +88,30 @@ const BASE_DATA = `
 <${ENT}p2> <${P}/friends> <${ENT}p4> .
 <${ENT}p2> <${P}/pets> <${ENT}dog2> .
 <${ENT}p2> <${P}/firstPet> <${ENT}dog2> .
-<${ENT}p3> <${RDF_TYPE}> <${P}> .
+<${ENT}p3> <${RDF_TYPE}> <${PT}> .
 <${ENT}p3> <${P}/name> "Jinx" .
 <${ENT}p3> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
-<${ENT}p4> <${RDF_TYPE}> <${P}> .
+<${ENT}p4> <${RDF_TYPE}> <${PT}> .
 <${ENT}p4> <${P}/name> "Quinn" .
-<${ENT}p5> <${RDF_TYPE}> <${P}> .
+<${ENT}p5> <${RDF_TYPE}> <${PT}> .
 <${ENT}p5> <${P}/name> "Maximilian" .
-<${ENT}dog1> <${RDF_TYPE}> <${D}> .
-<${ENT}dog1> <${RDF_TYPE}> <${PET}> .
+<${ENT}dog1> <${RDF_TYPE}> <${DT}> .
+<${ENT}dog1> <${RDF_TYPE}> <${PETT}> .
 <${ENT}dog1> <${D}/guardDogLevel> "2"^^<${XSD}integer> .
 <${ENT}dog1> <${PET}/bestFriend> <${ENT}dog2> .
-<${ENT}dog2> <${RDF_TYPE}> <${D}> .
-<${ENT}dog2> <${RDF_TYPE}> <${PET}> .
-<${ENT}d1> <${RDF_TYPE}> <${D}> .
-<${ENT}d1> <${RDF_TYPE}> <${PET}> .
+<${ENT}dog2> <${RDF_TYPE}> <${DT}> .
+<${ENT}dog2> <${RDF_TYPE}> <${PETT}> .
+<${ENT}d1> <${RDF_TYPE}> <${DT}> .
+<${ENT}d1> <${RDF_TYPE}> <${PETT}> .
 <${ENT}d1> <${D}/guardDogLevel> "5"^^<${XSD}integer> .
-<${ENT}e1> <${RDF_TYPE}> <${E}> .
+<${ENT}e1> <${RDF_TYPE}> <${ET}> .
 <${ENT}e1> <${E}/name> "Alice" .
 <${ENT}e1> <${E}/department> "Engineering" .
 <${ENT}e1> <${E}/bestFriend> <${ENT}e2> .
-<${ENT}e2> <${RDF_TYPE}> <${E}> .
+<${ENT}e2> <${RDF_TYPE}> <${ET}> .
 <${ENT}e2> <${E}/name> "Bob" .
 <${ENT}e2> <${E}/department> "Sales" .
-<${ENT}m1> <${RDF_TYPE}> <${M}> .
+<${ENT}m1> <${RDF_TYPE}> <${MT}> .
 <${ENT}m1> <${M}/score> "3.14"^^<${XSD}decimal> .
 <${ENT}m1> <${M}/rating> "2.5"^^<${XSD}double> .
 <${ENT}m1> <${M}/views> "1000000"^^<${XSD}long> .
@@ -107,7 +121,7 @@ const BASE_DATA = `
 <${ENT}m1> <${M}/scores> "2.5"^^<${XSD}decimal> .
 <${ENT}m1> <${M}/scores> "2.5"^^<${XSD}decimal> .
 <${ENT}m1> <${M}/scores> "3.5"^^<${XSD}decimal> .
-<${ENT}m2> <${RDF_TYPE}> <${M}> .
+<${ENT}m2> <${RDF_TYPE}> <${MT}> .
 <${ENT}m2> <${M}/score> "-7.25"^^<${XSD}decimal> .
 <${ENT}m2> <${M}/count> "-3"^^<${XSD}integer> .
 <${ENT}pna> <${RDF_TYPE}> <${PP}Node> .
@@ -895,7 +909,7 @@ describe('coverage §1 — bulk/conditional mutations', () => {
 
   const personCount = async () =>
     Number((await executeSparqlQuery(
-      `SELECT (COUNT(?s) AS ?c) WHERE { ?s <${RDF_TYPE}> <${P}> }`,
+      `SELECT (COUNT(?s) AS ?c) WHERE { ?s <${RDF_TYPE}> <${PT}> }`,
     )).results.bindings[0].c.value);
   const hobbies = async () =>
     (await executeSparqlQuery(`SELECT ?s ?h WHERE { ?s <${P}/hobby> ?h }`)).results.bindings

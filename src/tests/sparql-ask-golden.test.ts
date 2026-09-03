@@ -8,7 +8,11 @@
  * forms are the same WHERE body, and that is asserted directly below.
  */
 import {describe, expect, test} from '@jest/globals';
-import {existsFactories, queryFactories} from '../test-helpers/query-fixtures';
+import {
+  existsFactories,
+  queryFactories,
+  personClass,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {askToAlgebra, askToSparql, selectToSparql} from '../sparql/irToAlgebra';
 import {askPlanToSparql} from '../sparql/algebraToString';
@@ -20,7 +24,10 @@ import '../ontologies/xsd';
 
 setQueryContext('user', {id: 'user-1'}, Person);
 
+// Shape IRI (property predicates derive from it) and the separate class node it
+// declares as targetClass, which is what appears as rdf:type.
 const P = 'https://linked.cm/shape/core/Person';
+const PT = personClass.id;
 
 const goldenAsk = async (factory: () => Promise<unknown>): Promise<string> => {
   const ir = await captureQuery(factory);
@@ -37,7 +44,7 @@ describe('SPARQL golden — ASK', () => {
     expect(sparql).toBe(
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 ASK WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   FILTER(?a0 = <linked://tmp/entities/p1>)
 }`);
   });
@@ -47,7 +54,7 @@ ASK WHERE {
     expect(sparql).toBe(
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 ASK WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   FILTER(?a0_name = "Semmy")
 }`);

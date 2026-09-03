@@ -19,6 +19,8 @@ const B = 'https://example.org/ps';
 // Holder with a polymorphic (no valueShape) object property so any path node-data fits.
 @linkedShape
 class PHolder extends Shape {
+  static targetClass = {id: 'https://example.org/p#PHolder'} as any;
+
   @objectProperty({path: {id: 'https://example.org/p#path'}, maxCount: 1})
   get p(): unknown {
     return null;

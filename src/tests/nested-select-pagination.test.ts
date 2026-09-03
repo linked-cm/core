@@ -15,7 +15,9 @@
  *   4. Regression: no inner limit lowers to the existing OPTIONAL left-join
  */
 import {describe, expect, test, beforeAll, afterAll} from '@jest/globals';
-import {Person, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {Person, tmpEntityBase,
+  personClass,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {selectToSparql} from '../sparql/irToAlgebra';
 import {mapSparqlSelectResult} from '../sparql/resultMapping';
@@ -39,6 +41,9 @@ setQueryContext('user', {id: `${tmpEntityBase}pp1`}, Person);
 // ---------------------------------------------------------------------------
 
 const P = 'https://linked.cm/shape/core/Person';
+// The separate class node Person declares as targetClass — the only thing that
+// appears as an rdf:type. (Temporary IRI in these fixtures.)
+const PT = personClass.id;
 const ENT = tmpEntityBase;
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
@@ -51,33 +56,33 @@ const ref = (suffix: string) => ({id: `${ENT}${suffix}`});
 // ---------------------------------------------------------------------------
 
 const TEST_DATA = `
-<${ENT}pp1> <${RDF_TYPE}> <${P}> .
+<${ENT}pp1> <${RDF_TYPE}> <${PT}> .
 <${ENT}pp1> <${P}/name> "Parent1" .
 <${ENT}pp1> <${P}/friends> <${ENT}f1> .
 <${ENT}pp1> <${P}/friends> <${ENT}f2> .
 <${ENT}pp1> <${P}/friends> <${ENT}f3> .
 <${ENT}pp1> <${P}/friends> <${ENT}f4> .
 
-<${ENT}f1> <${RDF_TYPE}> <${P}> .
+<${ENT}f1> <${RDF_TYPE}> <${PT}> .
 <${ENT}f1> <${P}/name> "A" .
-<${ENT}f2> <${RDF_TYPE}> <${P}> .
+<${ENT}f2> <${RDF_TYPE}> <${PT}> .
 <${ENT}f2> <${P}/name> "B" .
-<${ENT}f3> <${RDF_TYPE}> <${P}> .
+<${ENT}f3> <${RDF_TYPE}> <${PT}> .
 <${ENT}f3> <${P}/name> "C" .
-<${ENT}f4> <${RDF_TYPE}> <${P}> .
+<${ENT}f4> <${RDF_TYPE}> <${PT}> .
 <${ENT}f4> <${P}/name> "D" .
 
-<${ENT}pp2> <${RDF_TYPE}> <${P}> .
+<${ENT}pp2> <${RDF_TYPE}> <${PT}> .
 <${ENT}pp2> <${P}/name> "Parent2" .
 <${ENT}pp2> <${P}/friends> <${ENT}g1> .
 <${ENT}pp2> <${P}/friends> <${ENT}g2> .
 
-<${ENT}g1> <${RDF_TYPE}> <${P}> .
+<${ENT}g1> <${RDF_TYPE}> <${PT}> .
 <${ENT}g1> <${P}/name> "G1" .
-<${ENT}g2> <${RDF_TYPE}> <${P}> .
+<${ENT}g2> <${RDF_TYPE}> <${PT}> .
 <${ENT}g2> <${P}/name> "G2" .
 
-<${ENT}lonely> <${RDF_TYPE}> <${P}> .
+<${ENT}lonely> <${RDF_TYPE}> <${PT}> .
 <${ENT}lonely> <${P}/name> "Lonely" .
 `.trim();
 
@@ -130,7 +135,7 @@ describe('nested-select pagination — IR → SPARQL golden', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     {
       SELECT ?a1 WHERE {
@@ -155,7 +160,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     {
       SELECT ?a1 WHERE {
@@ -179,7 +184,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     {
       SELECT ?a1 WHERE {
@@ -248,7 +253,7 @@ describe('nested-select pagination — regression (no inner limit)', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {

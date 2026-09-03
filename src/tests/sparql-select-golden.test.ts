@@ -7,7 +7,12 @@
  * exact SPARQL string output.
  */
 import {describe, expect, test} from '@jest/globals';
-import {queryFactories, existsFactories} from '../test-helpers/query-fixtures';
+import {
+  queryFactories,
+  existsFactories,
+  personClass,
+  employeeClass,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {selectToSparql} from '../sparql/irToAlgebra';
 import {setQueryContext} from '../queries/QueryContext';
@@ -22,10 +27,18 @@ setQueryContext('user', {id: 'user-1'}, Person);
 // URI shorthands for readability
 // ---------------------------------------------------------------------------
 
+// Shape IRIs — these identify the SHACL *descriptions*, and are what property
+// predicates are derived from.
 const P = 'https://linked.cm/shape/core/Person';
 const E = 'https://linked.cm/shape/core/Employee';
 const D = 'https://linked.cm/shape/core/Dog';
 const S = 'https://linked.cm/shape/core/Shape';
+
+// Class IRIs — the separate nodes each shape declares as its `targetClass`, and
+// the only thing that appears as an `rdf:type`. Temporary IRIs in these fixtures;
+// in a real dataset the same node would carry `rdf:type rdfs:Class`.
+const PT = personClass.id;
+const ET = employeeClass.id;
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -49,7 +62,7 @@ describe('SPARQL golden — basic selection', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -62,7 +75,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_friends
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a0_friends .
   }
@@ -75,7 +88,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_birthDate
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/birthDate> ?a0_birthDate .
   }
@@ -88,7 +101,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_isRealPerson
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/isRealPerson> ?a0_isRealPerson .
   }
@@ -101,7 +114,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
 }`);
   });
 
@@ -114,7 +127,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   FILTER(?a0 = <linked://tmp/entities/p1>)
 }
 LIMIT 1`);
@@ -126,7 +139,7 @@ LIMIT 1`);
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   FILTER(?a0_name = "Semmy")
 }
@@ -154,7 +167,7 @@ LIMIT 1`);
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT DISTINCT ?a0 ?a0_name ?a0_hobby ?a0_nickNames ?a0_birthDate ?a0_isRealPerson ?a0_bestFriend ?a0_friends ?a0_pets ?a0_firstPet ?a0_pluralTestProp ?a0_label ?a0_type
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -200,7 +213,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_bestFriend ?a0_friends
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a0_bestFriend .
   }
@@ -222,7 +235,7 @@ describe('SPARQL golden — subjectId', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -236,7 +249,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -250,7 +263,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -264,7 +277,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_hobby ?a0_bestFriend
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/hobby> ?a0_hobby .
   }
@@ -281,7 +294,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -302,7 +315,7 @@ describe('SPARQL golden — nested traversals', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -318,7 +331,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a2_name ?a1 ?a2
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -337,7 +350,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name ?a0_friends ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a1 .
     OPTIONAL {
@@ -359,7 +372,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a1 .
     OPTIONAL {
@@ -375,7 +388,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a3_name ?a1 ?a2 ?a3
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -397,7 +410,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1_isRealPerson ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a1 .
     OPTIONAL {
@@ -419,7 +432,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_bestFriend ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -441,7 +454,7 @@ describe('SPARQL golden — inline where (lowered to projection)', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -458,7 +471,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/hobby> ?a1 .
     FILTER(?a1 = "Jogging")
@@ -472,7 +485,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -492,7 +505,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -512,7 +525,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -532,7 +545,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -558,7 +571,7 @@ describe('SPARQL golden — outer where', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/bestFriend> ?a0_bestFriend .
   FILTER(?a0_bestFriend = <linked://tmp/entities/p3>)
 }`);
@@ -570,7 +583,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   FILTER(?a0_name = "Semmy")
 }`);
@@ -582,7 +595,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_friends
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   OPTIONAL {
     ?a0 <${P}/friends> ?a0_friends .
@@ -597,7 +610,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   FILTER(?a0_name = "Semmy" || ?a0_name = "Moa")
 }
@@ -610,7 +623,7 @@ LIMIT 1`);
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name ?a0_hobby
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -627,7 +640,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/friends> ?a1 .
   ?a1 <${P}/name> ?a1_name .
   FILTER(?a1_name = "Moa")
@@ -640,7 +653,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   FILTER(EXISTS {
     ?a0 <${P}/friends> ?a1 .
     ?a1 <${P}/name> ?a1_name .
@@ -655,7 +668,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   FILTER(!(EXISTS {
     ?a0 <${P}/friends> ?a1 .
     ?a1 <${P}/name> ?a1_name .
@@ -670,7 +683,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -688,7 +701,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -706,7 +719,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   FILTER(!(?a0_name = "Alice"))
 }`);
@@ -718,7 +731,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   FILTER(!(EXISTS {
     ?a0 <${P}/friends> ?a1 .
@@ -734,7 +747,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   FILTER(?a0_name != "Alice")
 }`);
@@ -746,7 +759,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   ?a0 <${P}/hobby> ?a0_hobby .
   FILTER(!(?a0_name = "Alice" && ?a0_hobby = "Chess"))
@@ -759,7 +772,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/name> ?a0_name .
   FILTER(EXISTS {
     ?a0 <${P}/friends> ?a1 .
@@ -775,7 +788,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/bestFriend> ?a0_bestFriend .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
@@ -790,7 +803,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -815,7 +828,7 @@ describe('SPARQL golden — aggregates', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT ?a0 (count(?a0_friends) AS ?a1)
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a0_friends .
   }
@@ -829,7 +842,7 @@ GROUP BY ?a0`);
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT ?a0 (count(?a1_friends) AS ?a1_agg)
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
     ?a1 <${P}/friends> ?a1_friends .
@@ -844,7 +857,7 @@ GROUP BY ?a0`);
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT ?a0 (count(?a1_friends) AS ?a1_agg)
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   ?a0 <${P}/friends> ?a1 .
   OPTIONAL {
     ?a1 <${P}/friends> ?a1_friends .
@@ -859,7 +872,7 @@ GROUP BY ?a0`);
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT ?a0 (count(?a0_friends) AS ?a1)
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a0_friends .
   }
@@ -874,7 +887,7 @@ GROUP BY ?a0`);
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 SELECT ?a0
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a0_friends .
   }
@@ -889,7 +902,7 @@ HAVING(count(?a0_friends) = "2"^^xsd:integer)`);
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 (?a0_bestFriend = <linked://tmp/entities/p3> AS ?a1)
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a0_bestFriend .
   }
@@ -908,7 +921,7 @@ describe('SPARQL golden — ordering', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -922,7 +935,7 @@ ORDER BY ASC(?a0_name)`);
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -942,7 +955,7 @@ describe('SPARQL golden — sub-selects', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a1 .
     OPTIONAL {
@@ -958,7 +971,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -978,7 +991,7 @@ WHERE {
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1_nickNames ?a1_birthDate ?a1_isRealPerson ?a1_bestFriend ?a1_friends ?a1_pets ?a1_firstPet ?a1_pluralTestProp ?a1_label ?a1_type ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -1028,7 +1041,7 @@ WHERE {
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1_nickNames ?a1_birthDate ?a1_isRealPerson ?a1_bestFriend ?a1_friends ?a1_pets ?a1_firstPet ?a1_pluralTestProp ?a1_label ?a1_type ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a1 .
     OPTIONAL {
@@ -1077,7 +1090,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1_birthDate ?a1_isRealPerson ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a1 .
     OPTIONAL {
@@ -1099,7 +1112,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -1118,7 +1131,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a2_name ?a1 ?a2
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -1137,7 +1150,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_firstPet ?a2_name ?a1 ?a2
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/friends> ?a1 .
     OPTIONAL {
@@ -1165,7 +1178,7 @@ describe('SPARQL golden — shape casting', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_guardDogLevel ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/pets> ?a1 .
     OPTIONAL {
@@ -1181,7 +1194,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_guardDogLevel ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/firstPet> ?a1 .
     OPTIONAL {
@@ -1204,7 +1217,7 @@ describe('SPARQL golden — employee', () => {
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT DISTINCT ?a0 ?a0_name ?a0_bestFriend ?a0_department ?a0_hobby ?a0_nickNames ?a0_birthDate ?a0_isRealPerson ?a0_friends ?a0_pets ?a0_firstPet ?a0_pluralTestProp ?a0_label ?a0_type
 WHERE {
-  ?a0 rdf:type <${E}> .
+  ?a0 rdf:type <${ET}> .
   OPTIONAL {
     ?a0 <${E}/name> ?a0_name .
   }
@@ -1259,7 +1272,7 @@ describe('SPARQL golden — preload', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/bestFriend> ?a1 .
     OPTIONAL {
@@ -1286,7 +1299,7 @@ describe('SPARQL golden — MINUS patterns', () => {
   test('minusShape — exclude by shape type', async () => {
     const sparql = await goldenSelect(queryFactories.minusShape);
     expect(sparql).toContain('MINUS {');
-    expect(sparql).toContain(`rdf:type <${E}>`);
+    expect(sparql).toContain(`rdf:type <${ET}>`);
     expect(sparql).toContain(`<${P}/name>`);
   });
 
@@ -1302,7 +1315,7 @@ describe('SPARQL golden — MINUS patterns', () => {
     const sparql = await goldenSelect(queryFactories.minusChained);
     const minusCount = (sparql.match(/MINUS \{/g) || []).length;
     expect(minusCount).toBe(2);
-    expect(sparql).toContain(`rdf:type <${E}>`);
+    expect(sparql).toContain(`rdf:type <${ET}>`);
     expect(sparql).toContain('"Chess"');
   });
 
@@ -1312,7 +1325,7 @@ describe('SPARQL golden — MINUS patterns', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -1329,7 +1342,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -1346,7 +1359,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }
@@ -1364,7 +1377,7 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     ?a0 <${P}/name> ?a0_name .
   }

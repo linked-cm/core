@@ -90,10 +90,36 @@ function shouldResolveShapeOrPropertyId(resolvedId: string | null | undefined): 
   return !!resolvedId && !resolvedId.startsWith('linked://tmp/');
 }
 
+/**
+ * Resolve the shape a query scans to the IRI written and matched as its `rdf:type`.
+ *
+ * That IRI is the shape's declared `targetClass` — a node in its own right, which in
+ * a real dataset carries `rdf:type rdfs:Class`. `targetClass` is read off the shape
+ * *class*, so JavaScript static inheritance already walks the superclass chain: a
+ * subclass that declares none inherits its parent's.
+ *
+ * A temporary (`linked://tmp/`) targetClass is honoured like any other. It is a real,
+ * separate node — just one whose IRI has not been finalised — and it round-trips
+ * consistently through both the scan and the create side.
+ *
+ * **A shape with no targetClass anywhere in its chain throws.** It used to fall back
+ * to the shape's *own* IRI, which typed instances as the shape that describes them —
+ * conflating a class with its description, and silently disagreeing with the declared
+ * `targetClass` whenever that was still temporary.
+ */
 function resolveShapeScanIri(shapeId: string): string {
   const shapeClass = getShapeClass(shapeId);
   const targetClassId = shapeClass?.targetClass?.id;
-  return shouldResolveShapeOrPropertyId(targetClassId) ? targetClassId! : shapeId;
+  if (!targetClassId) {
+    throw new Error(
+      `Cannot resolve an rdf:type for shape "${shapeId}": no targetClass is declared ` +
+      'on it or on any shape it extends. Declare one — `static targetClass = ' +
+      "{id: 'https://example.org/Person'}` — pointing at the class node instances are " +
+      'typed with. The shape\'s own IRI is not a substitute: it identifies the ' +
+      'description, not the class being described.',
+    );
+  }
+  return targetClassId;
 }
 
 /**

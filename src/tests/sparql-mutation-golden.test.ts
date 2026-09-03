@@ -9,7 +9,9 @@
  * use exact toBe assertions.
  */
 import {describe, expect, test} from '@jest/globals';
-import {queryFactories, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {queryFactories, tmpEntityBase,
+  personClass,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {
   createToSparql,
@@ -36,6 +38,9 @@ import '../ontologies/xsd';
 // ---------------------------------------------------------------------------
 
 const P = 'https://linked.cm/shape/core/Person';
+// The separate class node Person declares as targetClass — the only thing that
+// appears as an rdf:type. (Temporary IRI in these fixtures.)
+const PT = personClass.id;
 const ENT = tmpEntityBase; // linked://tmp/entities/
 
 // ---------------------------------------------------------------------------
@@ -50,7 +55,7 @@ describe('SPARQL golden — create mutations', () => {
     // Structure checks — URI is non-deterministic (ULID)
     expect(sparql).toContain('PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>');
     expect(sparql).toContain('INSERT DATA {');
-    expect(sparql).toContain(`rdf:type <${P}>`);
+    expect(sparql).toContain(`rdf:type <${PT}>`);
     expect(sparql).toContain(`<${P}/name> "Test Create"`);
     expect(sparql).toContain(`<${P}/hobby> "Chess"`);
 
@@ -68,7 +73,7 @@ describe('SPARQL golden — create mutations', () => {
     const sparql = createToSparql(ir);
 
     expect(sparql).toContain('INSERT DATA {');
-    expect(sparql).toContain(`rdf:type <${P}>`);
+    expect(sparql).toContain(`rdf:type <${PT}>`);
     expect(sparql).toContain(`<${P}/name> "Test Create"`);
     // Reference to existing entity p2
     expect(sparql).toContain(`<${P}/friends> <${ENT}p2>`);
@@ -88,7 +93,7 @@ describe('SPARQL golden — create mutations', () => {
     expect(sparql).toBe(
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 INSERT DATA {
-  <${ENT}fixed-id> rdf:type <${P}> .
+  <${ENT}fixed-id> rdf:type <${PT}> .
   <${ENT}fixed-id> <${P}/name> "Fixed" .
   <${ENT}fixed-id> <${P}/bestFriend> <${ENT}fixed-id-2> .
 }`);
@@ -172,7 +177,7 @@ WHERE {
     expect(sparql).toContain(`<${ENT}p1> <${P}/bestFriend> ?old_bestFriend .`);
     expect(sparql).toContain('INSERT {');
     expect(sparql).toContain(`<${ENT}p1> <${P}/bestFriend>`);
-    expect(sparql).toContain(`rdf:type <${P}>`);
+    expect(sparql).toContain(`rdf:type <${PT}>`);
     expect(sparql).toContain(`<${P}/name> "Bestie"`);
     expect(sparql).toContain('WHERE {');
     expect(sparql).toContain(`<${ENT}p1> <${P}/bestFriend> ?old_bestFriend .`);
@@ -267,7 +272,7 @@ DELETE {
 }
 INSERT {
   <${ENT}p1> <${P}/bestFriend> <${ENT}p3-best-friend> .
-  <${ENT}p3-best-friend> rdf:type <${P}> .
+  <${ENT}p3-best-friend> rdf:type <${PT}> .
   <${ENT}p3-best-friend> <${P}/name> "Bestie" .
 }
 WHERE {
@@ -309,11 +314,11 @@ describe('SPARQL golden — delete mutations', () => {
 DELETE {
   <${ENT}to-delete> ?p ?o .
   ?s ?p2 <${ENT}to-delete> .
-  <${ENT}to-delete> rdf:type <${P}> .
+  <${ENT}to-delete> rdf:type <${PT}> .
 }
 WHERE {
   <${ENT}to-delete> ?p ?o .
-  <${ENT}to-delete> rdf:type <${P}> .
+  <${ENT}to-delete> rdf:type <${PT}> .
   OPTIONAL {
     ?s ?p2 <${ENT}to-delete> .
   }
@@ -328,11 +333,11 @@ WHERE {
 DELETE {
   <${ENT}to-delete> ?p ?o .
   ?s ?p2 <${ENT}to-delete> .
-  <${ENT}to-delete> rdf:type <${P}> .
+  <${ENT}to-delete> rdf:type <${PT}> .
 }
 WHERE {
   <${ENT}to-delete> ?p ?o .
-  <${ENT}to-delete> rdf:type <${P}> .
+  <${ENT}to-delete> rdf:type <${PT}> .
   OPTIONAL {
     ?s ?p2 <${ENT}to-delete> .
   }
@@ -347,16 +352,16 @@ WHERE {
 DELETE {
   <${ENT}to-delete-1> ?p_0 ?o_0 .
   ?s_0 ?p2_0 <${ENT}to-delete-1> .
-  <${ENT}to-delete-1> rdf:type <${P}> .
+  <${ENT}to-delete-1> rdf:type <${PT}> .
   <${ENT}to-delete-2> ?p_1 ?o_1 .
   ?s_1 ?p2_1 <${ENT}to-delete-2> .
-  <${ENT}to-delete-2> rdf:type <${P}> .
+  <${ENT}to-delete-2> rdf:type <${PT}> .
 }
 WHERE {
   <${ENT}to-delete-1> ?p_0 ?o_0 .
-  <${ENT}to-delete-1> rdf:type <${P}> .
+  <${ENT}to-delete-1> rdf:type <${PT}> .
   <${ENT}to-delete-2> ?p_1 ?o_1 .
-  <${ENT}to-delete-2> rdf:type <${P}> .
+  <${ENT}to-delete-2> rdf:type <${PT}> .
   OPTIONAL {
     ?s_0 ?p2_0 <${ENT}to-delete-1> .
   }
@@ -374,16 +379,16 @@ WHERE {
 DELETE {
   <${ENT}to-delete-1> ?p_0 ?o_0 .
   ?s_0 ?p2_0 <${ENT}to-delete-1> .
-  <${ENT}to-delete-1> rdf:type <${P}> .
+  <${ENT}to-delete-1> rdf:type <${PT}> .
   <${ENT}to-delete-2> ?p_1 ?o_1 .
   ?s_1 ?p2_1 <${ENT}to-delete-2> .
-  <${ENT}to-delete-2> rdf:type <${P}> .
+  <${ENT}to-delete-2> rdf:type <${PT}> .
 }
 WHERE {
   <${ENT}to-delete-1> ?p_0 ?o_0 .
-  <${ENT}to-delete-1> rdf:type <${P}> .
+  <${ENT}to-delete-1> rdf:type <${PT}> .
   <${ENT}to-delete-2> ?p_1 ?o_1 .
-  <${ENT}to-delete-2> rdf:type <${P}> .
+  <${ENT}to-delete-2> rdf:type <${PT}> .
   OPTIONAL {
     ?s_0 ?p2_0 <${ENT}to-delete-1> .
   }
@@ -404,7 +409,7 @@ describe('SPARQL golden — bulk delete mutations', () => {
     expect(ir.kind).toBe('delete_all');
     const sparql = deleteAllToSparql(ir);
     expect(sparql).toContain('DELETE');
-    expect(sparql).toContain(`rdf:type <${P}>`);
+    expect(sparql).toContain(`rdf:type <${PT}>`);
     expect(sparql).toContain('?a0 ?p ?o');
   });
 
@@ -413,7 +418,7 @@ describe('SPARQL golden — bulk delete mutations', () => {
     expect(ir.kind).toBe('delete_where');
     const sparql = deleteWhereToSparql(ir);
     expect(sparql).toContain('DELETE');
-    expect(sparql).toContain(`rdf:type <${P}>`);
+    expect(sparql).toContain(`rdf:type <${PT}>`);
     expect(sparql).toContain('?a0 ?p ?o');
     expect(sparql).toContain('FILTER');
   });
@@ -430,7 +435,7 @@ describe('SPARQL golden — conditional update mutations', () => {
     const sparql = updateWhereToSparql(ir);
     expect(sparql).toContain('DELETE');
     expect(sparql).toContain('INSERT');
-    expect(sparql).toContain(`rdf:type <${P}>`);
+    expect(sparql).toContain(`rdf:type <${PT}>`);
     expect(sparql).toContain('?a0');
     // Should NOT have FILTER (no where condition)
     expect(sparql).not.toContain('FILTER');
@@ -442,7 +447,7 @@ describe('SPARQL golden — conditional update mutations', () => {
     const sparql = updateWhereToSparql(ir);
     expect(sparql).toContain('DELETE');
     expect(sparql).toContain('INSERT');
-    expect(sparql).toContain(`rdf:type <${P}>`);
+    expect(sparql).toContain(`rdf:type <${PT}>`);
     expect(sparql).toContain('?a0');
     expect(sparql).toContain('FILTER');
   });
