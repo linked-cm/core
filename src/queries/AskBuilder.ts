@@ -84,8 +84,14 @@ export class AskBuilder implements PromiseLike<boolean>, Promise<boolean> {
   }
 
   toRawInput(): RawAskInput {
-    const {shapeClass, subject, subjects, where, minusEntries} = this._spec;
+    const {shapeClass, subject, subjects, where, minusEntries, nullSubject} =
+      this._spec;
     const input: RawAskInput = {};
+    // Carried so lowering can reject it. `exec()` answers `false` before
+    // dispatching, but a store handed the builder directly (e.g. after
+    // `fromJSON`) would otherwise lower a subject-less query that matches every
+    // instance of the shape and answer `true`.
+    if (nullSubject) input.nullSubject = true;
     if (shapeClass) input.shape = shapeClass as any;
     if (subject) input.subject = subject;
     if (subjects && subjects.length > 0) input.subjects = subjects;

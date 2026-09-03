@@ -30,9 +30,10 @@ It also normalises the query to its cheapest correct form first. Dropped: the pr
 preloads, sorting and pagination — none of them can change whether a *match* exists, and
 honouring `offset` while dropping the projection could actively flip the answer, since
 `OFFSET` skips rows of a solution sequence whose cardinality depends on the projection.
-Kept: filters, `minus` entries and the subject. `LIMIT 1` is then applied. So
-`Person.select(p => p.name).orderBy(…).offset(10).exists()` emits the same minimal
-`SELECT DISTINCT ?a0 … LIMIT 1` as a bare `Person.exists({id})`.
+Kept: filters, `minus` entries and the subject. So
+`Person.select(p => p.name).orderBy(…).offset(10).exists()` costs and answers exactly the same
+as a bare `Person.exists({id})`.
 
-Purely additive. On its own it needs no IR, algebra, wire-format or `IDataset` change — it lowers to an
-ordinary SELECT, so every store implementation supports it as-is.
+See the ask-query entry in this release for what that normalised query becomes on the wire and in
+SPARQL: `.exists()` is a shortcut for an ask query, which is its own query kind with its own
+`IDataset.askQuery` method.

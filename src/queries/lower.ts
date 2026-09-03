@@ -156,6 +156,16 @@ function lowerDelete(spec: DeleteLowerSpec): IRDeleteQuery {
  * build: it is a bare subject.
  */
 function lowerAsk(input: RawAskInput): IRAskQuery {
+  if (input.nullSubject) {
+    // "Does the node with no id exist?" is answered `false` without querying —
+    // `AskBuilder.exec` does that before dispatching. Reaching lowering means a
+    // store took the builder off the normal path; a subject-less pattern would
+    // match every instance of the shape and answer `true`, so refuse it loudly.
+    throw new Error(
+      'Cannot lower an ask query with no subject (`.for(null)`). It resolves to ' +
+      '`false` without querying — execute it through `exec()` rather than lowering it.',
+    );
+  }
   const subject = input.subject;
   if (!input.shape) {
     // Shapeless: no rdf:type constraint, so no shape scan and no property refs.

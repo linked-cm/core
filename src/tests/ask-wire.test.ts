@@ -14,7 +14,7 @@ import {fromJSON} from '../queries/fromJSON';
 import {Shape} from '../shapes/Shape';
 import {lower} from '../queries/lower';
 import {askToSparql} from '../sparql/irToAlgebra';
-import {setQueryContext} from '../queries/QueryContext';
+import {setQueryContext, PendingQueryContext} from '../queries/QueryContext';
 import {WIRE_VERSION} from '../queries/wireVersion';
 
 import '../ontologies/rdf';
@@ -149,5 +149,68 @@ describe('ask envelope — Shape.exists on the base class', () => {
       op: 'ask',
       nullSubject: true,
     });
+  });
+});
+
+describe('ask envelope — context references and null subjects', () => {
+  test('a pending context travels as {@ctx}, exactly as the select does', () => {
+    // It must NOT be resolved against this process's context map on the way out:
+    // a forwarding store resolves it against its own (e.g. server-side auth).
+    const select = SelectBuilder.from(Person).for(new PendingQueryContext('user'));
+    const ask = askFor(select);
+    expect(select.toJSON().subject).toEqual({'@ctx': 'user'});
+    expect(ask.toJSON().subject).toEqual({'@ctx': 'user'});
+  });
+
+  test('…and still resolves locally when executed here', async () => {
+    // setQueryContext('user', …) ran in beforeAll, so exec sees a concrete id.
+    const seen: any[] = [];
+    const store: any = {
+      selectQuery: async () => {
+        throw new Error('not reached');
+      },
+      askQuery: async (q: any) => {
+        seen.push(lower(q));
+        return true;
+      },
+    };
+    await SelectBuilder.from(Person).for(new PendingQueryContext('user')).exists(store);
+    expect(seen[0].subjectId).toBe('user-1');
+  });
+
+  test('an unresolved pending context answers false without querying', async () => {
+    const store: any = {
+      selectQuery: async () => {
+        throw new Error('not reached');
+      },
+      askQuery: async () => {
+        throw new Error('askQuery must not be reached');
+      },
+    };
+    await expect(
+      SelectBuilder.from(Person)
+        .for(new PendingQueryContext('never-set'))
+        .exists(store),
+    ).resolves.toBe(false);
+  });
+
+  test('a null subject is carried to lowering, and lowering refuses it', async () => {
+    const builder = askFor(SelectBuilder.from(Person).for(null));
+    expect(builder.toJSON().nullSubject).toBe(true);
+    expect(builder.toRawInput().nullSubject).toBe(true);
+    // Without this, a store lowering the envelope directly would emit
+    // `ASK WHERE { ?a0 rdf:type <Person> }` and answer true.
+    expect(() => lower(builder)).toThrow(/no subject/);
+    // The normal path still answers false without ever reaching a store.
+    await expect(
+      builder.exec({
+        selectQuery: async () => {
+          throw new Error('not reached');
+        },
+        askQuery: async () => {
+          throw new Error('not reached');
+        },
+      } as any),
+    ).resolves.toBe(false);
   });
 });

@@ -388,21 +388,26 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
       minusEntries = this._rawMinusEntries;
     }
 
-    const subjectRef =
-      this._subject && typeof this._subject === 'object' && 'id' in this._subject
-        ? {id: (this._subject as NodeReferenceValue).id}
-        : undefined;
+    // A PendingQueryContext must survive as itself. It has an `id` *getter*, so
+    // narrowing it to `{id}` here would silently resolve it against THIS process's
+    // context map — and the ask would then travel as a concrete IRI where the
+    // equivalent select travels as `{"@ctx": name}` for the receiver to resolve.
+    const subject =
+      this._subject instanceof PendingQueryContext
+        ? this._subject
+        : this._subject && typeof this._subject === 'object' && 'id' in this._subject
+          ? {id: (this._subject as NodeReferenceValue).id}
+          : undefined;
 
     return AskBuilder.of({
       shapeClass: this._shape,
-      subject: subjectRef,
+      subject,
       subjects: this._subjects,
       where,
       minusEntries,
-      // `.for(null)`, or a pending context subject that has not landed: there is
-      // no subject to ask about, so the answer is `false` without querying.
-      nullSubject:
-        this._nullSubject || (!!this._pendingContextName && !subjectRef?.id),
+      // `.for(null)`. An unresolved pending context is handled by AskBuilder.exec,
+      // which sees the live context and answers `false` without querying.
+      nullSubject: this._nullSubject,
     });
   }
 

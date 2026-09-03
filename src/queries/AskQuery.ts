@@ -43,6 +43,8 @@ export interface AskQuery {
 
 /** Pre-lowering input, as the builder hands it to `lower()`. */
 export type RawAskInput = {
+  /** `.for(null)` — no subject to ask about. Lowering rejects it; see `lowerAsk`. */
+  nullSubject?: boolean;
   shape?: {shape?: {id?: string}; id?: string};
   subject?: NodeReferenceValue | PendingQueryContext;
   subjects?: NodeReferenceValue[];
