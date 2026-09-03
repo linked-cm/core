@@ -14,7 +14,8 @@ import {
 import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
-import {getQueryDispatch, resolveExistence} from './queryDispatch.js';
+import {getQueryDispatch} from './queryDispatch.js';
+import {AskBuilder} from './AskBuilder.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {NodeShapeData} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
@@ -367,26 +368,49 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * @param target Optional explicit dataset, as for {@link exec}.
    */
   async exists(target?: IDataset): Promise<boolean> {
-    const result = await this.clone({
-      // Drop everything that cannot change whether a match exists, plus pagination.
-      selectFn: undefined,
-      fieldSet: undefined,
-      selectAllLabels: undefined,
-      preloads: undefined,
-      sortByFn: undefined,
-      sortDirection: undefined,
-      _sortBy: undefined,
-      offset: undefined,
-      // The cheapest correct bound. Replaces any limit set earlier in the chain.
-      // Kept even on the ASK path: it is what the SELECT degradation needs, and
-      // `askToAlgebra` ignores a limit of 1 or more.
-      limit: 1,
-    })._run(target, false, 'exists');
-    // `_run` in 'exists' mode resolves to a real boolean, or to `null` from the
-    // no-subject short-circuit. `result != null` alone would read a `false` from
-    // a store's `askQuery` as "present" — hence the explicit boolean arm.
-    if (typeof result === 'boolean') return result;
-    return Array.isArray(result) ? result.length > 0 : result != null;
+    return this._toAsk().exec(target);
+  }
+
+  /**
+   * Reduce this select to the ask query that answers the same existence question.
+   *
+   * Only the pattern survives — shape, subject(s), filters, `minus`. The
+   * projection, preloads, sorting and pagination are not "dropped" so much as
+   * unrepresentable: {@link AskBuilder} has nowhere to put them. That is the point
+   * of it being a separate builder rather than a mode of this one — the
+   * normalisation cannot be forgotten or half-applied.
+   */
+  private _toAsk(): AskBuilder {
+    let where: WherePath | undefined;
+    if (this._whereFn) {
+      where = processWhereClause(this._whereFn, this._shape);
+    } else if (this._where) {
+      where = this._where;
+    }
+
+    let minusEntries: RawMinusEntry[] | undefined;
+    if (this._minusEntries && this._minusEntries.length > 0) {
+      minusEntries = this._evaluateMinusEntries();
+    } else if (this._rawMinusEntries && this._rawMinusEntries.length > 0) {
+      minusEntries = this._rawMinusEntries;
+    }
+
+    const subjectRef =
+      this._subject && typeof this._subject === 'object' && 'id' in this._subject
+        ? {id: (this._subject as NodeReferenceValue).id}
+        : undefined;
+
+    return AskBuilder.of({
+      shapeClass: this._shape,
+      subject: subjectRef,
+      subjects: this._subjects,
+      where,
+      minusEntries,
+      // `.for(null)`, or a pending context subject that has not landed: there is
+      // no subject to ask about, so the answer is `false` without querying.
+      nullSubject:
+        this._nullSubject || (!!this._pendingContextName && !subjectRef?.id),
+    });
   }
 
   /**
@@ -736,17 +760,10 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    *   context reference that has not resolved yet surfaces as `null` — "not ready",
    *   which a reactive layer re-runs once the context lands. `exists()` passes
    *   false: it must not turn "could not ask" into a boolean.
-   * @param mode `'select'` returns the store's result set. `'exists'` hands the
-   *   query to {@link resolveExistence}, which picks the target's `askQuery` (a
-   *   SPARQL store answers `ASK WHERE { … }`) or the shared SELECT degradation and
-   *   enforces the boolean contract on both. Either way the guards and error
-   *   handling below still apply, which is why `exists()` runs through here rather
-   *   than down a path of its own.
    */
   private async _run(
     target: IDataset | undefined,
     swallowUnresolvedContext: boolean,
-    mode: 'select' | 'exists' = 'select',
   ): Promise<unknown> {
     if (this._nullSubject) {
       // .for(null/undefined) was called — return null instead of executing a broken query.
@@ -760,9 +777,6 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
     // `async` ensures a missing global dispatch surfaces as a rejected promise, not a sync throw.
     const dispatch = target ?? getQueryDispatch();
     try {
-      if (mode === 'exists') {
-        return await resolveExistence(dispatch, this);
-      }
       return await dispatch.selectQuery(this);
     } catch (err) {
       // A where-clause context reference that hasn't resolved yet surfaces as

@@ -3,6 +3,7 @@ import type {CreateQuery} from './CreateQuery.js';
 import type {UpdateQuery} from './UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from './DeleteQuery.js';
 import type {IDataset} from '../interfaces/IDataset.js';
+import type {AskQuery} from './AskQuery.js';
 
 /**
  * Abstraction boundary between the DSL layer (Shape) and the storage layer
@@ -14,111 +15,48 @@ import type {IDataset} from '../interfaces/IDataset.js';
  */
 export interface QueryDispatch {
   selectQuery<R = any>(query: SelectQuery): Promise<R>;
-  /** Whether any solution exists — a boolean, not a result set. */
-  askQuery(query: SelectQuery): Promise<boolean>;
+  /** Answer an ask query — a boolean, not a result set. */
+  askQuery(query: AskQuery): Promise<boolean>;
   createQuery<R = any>(query: CreateQuery): Promise<R>;
   updateQuery<R = any>(query: UpdateQuery): Promise<R>;
   deleteQuery(query: DeleteQuery): Promise<DeleteResponse>;
 }
 
-/** The minimum a target needs to answer an existence check the slow way. */
-type SelectCapable = {selectQuery(query: SelectQuery): Promise<any>};
-
-/** A target that can answer an existence check. */
-type ExistenceTarget = SelectCapable & {
-  askQuery?(query: SelectQuery): Promise<boolean>;
-};
+/** A target that can answer an ask query. */
+type ExistenceTarget = {askQuery(query: AskQuery): Promise<boolean>};
 
 /**
- * Rejects a query whose pagination would make the two existence paths disagree.
- *
- * `ASK` has no pagination, so `askToAlgebra` refuses `OFFSET` and `LIMIT < 1`
- * rather than dropping them. The SELECT degradation *would* honour both — and
- * would then answer a different question than the store that can do `ASK`. The
- * same guard therefore runs in front of both paths, so which store you are
- * pointed at can never change the answer.
- *
- * `.exists()` normalises pagination away before dispatching, so this only fires
- * for a direct `LinkedStorage.askQuery` / `IDataset.askQuery` caller.
- */
-function assertAnswerableWithoutPagination(query: SelectQuery): void {
-  const raw = query?.toRawInput?.();
-  if (!raw) return;
-  if (raw.offset !== undefined) {
-    throw new Error(
-      'An existence check cannot honour OFFSET: it skips solutions, so the answer ' +
-      'would depend on the page rather than on whether a match exists. Drop the ' +
-      'offset before asking.',
-    );
-  }
-  if (raw.limit !== undefined && raw.limit < 1) {
-    throw new Error(
-      `An existence check cannot honour LIMIT ${raw.limit}: it returns no rows where ` +
-      'the same pattern does have a match. Drop the limit before asking.',
-    );
-  }
-}
-
-/**
- * The shared default implementation of {@link IDataset.askQuery}, for a backend
- * with no boolean primitive of its own:
- *
- * ```ts
- * askQuery(query: SelectQuery) {
- *   return askViaSelect(this, query);
- * }
- * ```
- *
- * Runs the already-normalised query as `SELECT … LIMIT 1` and converts. A slower
- * answer, never a different one — it is exactly what `.exists()` shipped on.
- * Failures propagate; an unreachable store rejects rather than answering `false`.
- *
- * Exported so that every store taking this route shares one implementation
- * instead of writing its own conversion.
- */
-export async function askViaSelect(
-  target: SelectCapable,
-  query: SelectQuery,
-): Promise<boolean> {
-  const result = await target.selectQuery(query);
-  return Array.isArray(result) ? result.length > 0 : result != null;
-}
-
-/**
- * Answer "does any solution exist?" against `target` — the single entry point for
- * every existence check in the library. `SelectBuilder.exists()` and
+ * Answer an ask query against `target` — the single entry point for every
+ * boolean-answered query in the library. `AskBuilder.exec()` and
  * `LinkedStorage.askQuery` both come here rather than calling `askQuery`
  * directly, so the contract below is enforced once for every store.
  *
- * The caller must have normalised the query first (drop the projection, preloads,
- * sorting and pagination; `LIMIT 1`) — `.exists()` does.
+ * There is deliberately **no translation to a select query anywhere in this
+ * package.** An ask goes to `IDataset.askQuery` and a SPARQL-backed store turns
+ * it into `ASK`. A store that lacks a boolean primitive implements `askQuery`
+ * itself, in whatever way its backend allows — that decision belongs to the
+ * store, and making it here would hide it.
  *
- * `askQuery` is **required** on `IDataset`; a target without it is a store that
- * has not implemented the interface, which is reported as such rather than
- * quietly worked around. (TypeScript catches this at compile time; the runtime
- * check is for JavaScript consumers.) It must resolve to a real boolean —
- * anything else rejects rather than being coerced, since a truthy non-boolean
- * would read as "exists". Errors propagate for the same reason: "could not ask"
- * is never `false`.
+ * `askQuery` must resolve to a real boolean: anything else rejects rather than
+ * being coerced, since a truthy non-boolean would read as "exists". Errors
+ * propagate for the same reason — "could not ask" is never `false`.
  */
 export async function resolveExistence(
   target: ExistenceTarget,
-  query: SelectQuery,
+  query: AskQuery,
 ): Promise<boolean> {
-  assertAnswerableWithoutPagination(query);
-  if (typeof target.askQuery !== 'function') {
+  if (typeof target?.askQuery !== 'function') {
     throw new Error(
       'This dataset does not implement the required IDataset.askQuery(query). ' +
-      'Implement it using the backend\'s boolean primitive (a SPARQL store answers ' +
-      'ASK), or delegate to the shared default: ' +
-      '`askQuery(query) { return askViaSelect(this, query); }`.',
+      'An ask query is answered with a boolean — a SPARQL store emits ASK — and is ' +
+      'never rewritten as a select on its behalf.',
     );
   }
   const answer = await target.askQuery(query);
   if (typeof answer !== 'boolean') {
     throw new Error(
       `askQuery must resolve to a boolean; got ${answer === null ? 'null' : typeof answer}. ` +
-      'An existence check will not coerce a non-boolean into an answer — a truthy ' +
+      'An ask query will not coerce a non-boolean into an answer — a truthy ' +
       'value would silently read as "exists".',
     );
   }

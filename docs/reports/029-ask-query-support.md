@@ -1,191 +1,162 @@
 ---
-summary: Existence checks now emit SPARQL `ASK`. Adds `SparqlAskPlan`/`askPlanToSparql`/`askToAlgebra`/`mapSparqlAskResult` and an optional `IDataset.askQuery`, with the choice-and-degradation collapsed into one `resolveExistence` function that also enforces the boolean contract — so a store without a boolean primitive answers the same normalised `SELECT … LIMIT 1` as before, and no store can answer the question differently.
+summary: Ask queries as a first-class kind — `AskBuilder`, `IRAskQuery`, an `op:'ask'` DSL-JSON envelope and `ASK WHERE { … }` — with `IDataset.askQuery` required and no path anywhere that rewrites an ask as a select. Adds shapeless existence (`Shape.exists(uri)` → `ASK { <uri> ?p ?o }`) and the router fan-out it requires. Ships alongside the `targetClass` fix (report section below), which changed every golden's `rdf:type`.
 source_plan: docs/plans/002-ask-query-support.md (converted; plan removed)
 packages: [core]
 ---
 
-# 029 — `ASK` query support
+# 029 — Ask queries
 
-Status: **done**. Suite **68 suites / 1700 passed / 120 skipped**, typecheck green (baseline before
-this work: 1654 passed). `minor`, with one **breaking** interface change: `IDataset.askQuery` is
-required (one-line migration, below).
+Status: **done**. Suite **69 suites / 1708 passed / 120 skipped**, typecheck green (baseline before
+this work: 1654 passed). `minor`, with two **breaking** changes: `IDataset.askQuery` is required and
+takes an `AskQuery`, and a shape must declare a `targetClass`.
 
-Stacked on PR #206 (`feat/shape-exists`, report 028) — `.exists()` is the consumer and is not yet
-merged. Merges after it.
+Stacked on PR #206 (`feat/shape-exists`, report 028) — `.exists()` is the consumer. Merges after it.
 
-## Why, given 028 rejected `ASK`
+## What shipped
 
-Report 028 deferred `ASK` to backlog 036 on two claims. Both survive scrutiny; neither is a reason
-not to do the work, and the case for doing it is a different one from the case that was rejected.
+`.exists()` is a **shortcut for an ask query**, not a special case of select. Nothing in the stack
+models it as a select with fields switched off:
 
-1. **`ASK` is not faster.** True, and this change does not claim otherwise. Against a triple store
-   both forms are one indexed lookup bounded at a single solution. `ASK` saves a small JSON payload
-   and the engine's `DISTINCT` bookkeeping. Anyone reading this expecting a latency win should stop
-   here — there isn't one.
-2. **An optional `IDataset` method means non-implementing stores silently fall back.** True as
-   stated, and the right call at the time. It is answerable by *placement* — see "The degradation"
-   below.
-
-What makes it worth doing is that `ASK` is the only top-level query kind whose result is a **fixed
-scalar**. Every other kind travels through `mapSparqlSelectResult` (~320 lines), `FieldSet`,
-`resultMap` and the DSL result-type generics. `ASK` needs `json.boolean`. So it exercises the entire
-"new top-level query kind" seam — a plan type in the algebra union, a serializer, an `IDataset`
-method, a dispatch route — while touching **zero** result-shape machinery. It is the cheapest
-available rehearsal for `CONSTRUCT` (backlog 004), which walks the same seam carrying a far heavier
-result mapping. Secondary benefit: the emitted query now reads as the question the caller asked.
-
-## What it does
-
-```sparql
-ASK WHERE {
-  ?a0 rdf:type <https://linked.cm/shape/core/Person> .
-  FILTER(?a0 = <linked://tmp/entities/p1>)
-}
-```
-
-`.exists()`'s normalisation is **unchanged** from 028 — drop the projection, preloads, sorting and
-pagination; keep filters, `minus` and the subject; `LIMIT 1`. `ASK` is a substitution at the *store*
-boundary, not a change to what the builder asks for. Two payoffs: the existing SELECT goldens pass
-untouched, so the degradation is provably identical to what shipped; and the `ASK` goldens derive
-from the same captured IR, which makes "the two forms ask the same thing" a tested claim rather than
-an assertion (`sparql-ask-golden.test.ts` strips both envelopes and compares the WHERE bodies).
-
-## Why a required method, and why a *method*
-
-Shipped first as an optional `askQuery`, then revised. Two questions, decided separately.
-
-**Why a separate method rather than `selectQuery` returning a boolean.** The query genuinely *is* an
-ordinary select query — same `SelectQuery` object, same normalisation; only the answer differs. But
-that is an argument about the *input*, not the return type. Folding it into `selectQuery` means
-widening its return to `SelectResult | boolean`, so every caller narrows, and — the real cost — a
-store that ignores the "I want a boolean" signal returns **rows where a boolean was expected**,
-silently, at runtime. With a separate method, not implementing it is a compile error. Same
-information, moved from runtime to the type system.
-
-**Why required rather than optional.** Optional never produces a wrong answer — the fallback is the
-golden-tested `SELECT … LIMIT 1`. What it produces is an *invisible* one: nothing in the types or at
-the call site tells you whether your store does one round-trip with a tiny payload or fetches a row
-and counts it. Required puts that choice in every store's source, where it is reviewable. The cost
-is one line per store:
+| Layer | Type | What it cannot express |
+|---|---|---|
+| DSL | `AskBuilder` | no `select`, `orderBy`, `limit`, `offset`, `preload` |
+| Wire | `{op: 'ask', …}` | no `fields`, `sortBy`, `limit`, `offset`, `one` |
+| IR | `IRAskQuery` | no `projection`, `orderBy`, `limit`, `offset` |
+| SPARQL | `SparqlAskPlan` | pattern only |
 
 ```ts
-askQuery(query: SelectQuery) {
-  return askViaSelect(this, query);
-}
+await Person.exists({id});                                           // ASK { ?a0 a <PersonClass> . FILTER(?a0 = <id>) }
+await Person.select().where((p) => p.name.equals('Semmy')).exists();  // ASK with the filter
+await Shape.exists(uri);                                             // ASK { <uri> ?p ?o }
 ```
 
-`askViaSelect` stays exported, so every store taking that route still shares one implementation —
-the difference is that it is now opted into rather than defaulted into. In-repo that was seven call
-sites (five test doubles, two dispatch objects); `SparqlDataset` already had a real one.
+`SelectBuilder.exists()` reduces itself to an `AskBuilder` (`_toAsk()`), keeping shape, subject(s),
+filters and `minus`. Report 028 cloned a select and cleared eight fields; the normalisation is now a
+property of the type it lands in, so it cannot be forgotten or half-applied.
 
-This is a **breaking** interface change, taken deliberately while the set of `IDataset`
-implementations is still small. Labelled `minor` per the repo's precedent for scoped breaks
-(`xsd:time`, changeset `fe7ed7d`).
-
-## The degradation — the 028 objection, answered by placement
-
-`IDataset.askQuery` is optional. Adding it as required would break every external store
-implementation to buy a JSON payload. Two things defuse the silent-fallback objection:
-
-- **The SELECT route is not a wrong answer.** It is the golden-tested `SELECT … LIMIT 1` that ships
-  today. A store taking it still *rejects* on transport failure exactly as it does now. The failure
-  mode 028 removed was `.catch(() => null)` turning an unreachable store into `false`; nothing here
-  reintroduces it.
-- **One function owns the whole contract.** `resolveExistence(target, query)` in `queryDispatch.ts`
-  enforces the pagination guard and the boolean contract for every store. Both entry points go
-  through it — `SelectBuilder._run` in exists mode, and `LinkedStorage.askQuery` — rather than
-  calling `askQuery` directly, so neither re-implements any part of it. A target that does not
-  implement `askQuery` at all (a JavaScript consumer; TypeScript catches it at compile time) is
-  reported with an error naming the contract and the one-line default, not quietly worked around.
+The pattern is still built by `selectToAlgebra` — one implementation of shape scans, traversals,
+filters and `MINUS`. `askToAlgebra` keeps the pattern and discards the plan's projection.
+Duplicating 2,000 lines of pattern building to avoid that reuse would be the worse trade.
 
 ## Decisions
 
-| # | Decision | Alternative rejected |
-|---|---|---|
-| 1 | Stack on PR #206 | Branch from `dev` — would re-implement 861 lines and guarantee a conflict |
-| 2 | Scope to the SPARQL layer + dispatch seam | Backlog 036's full survey; type-free existence and the wire op stay backlogged (below) |
-| 3 | `askQuery` **required**, one shared `resolveExistence` | Optional `askQuery` (shipped first, then revised — see below); per-store fallbacks (N implementations to get wrong); a boolean-returning `selectQuery` (see below) |
-| 4 | `_run` gains a `mode` | A parallel execution path — would duplicate the null-subject guard, the pending-context guard, the error wrapping and the non-swallowing of `UnresolvedContextError` |
-| 5 | No wire change | `op:'ask'` — unnecessary, since a remote store degrades and forwards the same select envelope it always did |
-| 6 | `askToAlgebra` **rejects** `OFFSET`/`LIMIT < 1` | Dropping them silently — `SELECT … LIMIT 0` answers "no rows" where `ASK` answers `true` |
-| 7 | `.exists()` normalisation unchanged | Normalising differently per path — would make the two forms untestable against each other |
+### No fallback anywhere — the big one
 
-### Out of scope, deliberately
+Earlier iterations had an optional `askQuery` with a shared `askViaSelect` degradation. Both are
+gone. A store with no boolean primitive decides for itself how to answer; that decision belongs to
+the store, and defaulting it in this package hid it.
 
-**Type-free existence** (`ASK { <uri> ?p ?o }`) is the more valuable feature and is *not* here.
-Every select scan emits `?a0 rdf:type <ShapeClass>`, so `Person.exists(id)` means "exists as a
-Person" — correct, but there is still no way to ask whether an IRI exists at all. That needs a new
-non-shape-scoped entry point, which is a new public capability nobody has asked for; adding it here
-would be widening the API on my own initiative. Rewritten as backlog 036 with the ~20-line sketch.
+Removing the fallback also removed a whole class of guard. While two paths existed they had to be
+kept in agreement about pagination — `askToAlgebra` rejected `OFFSET` and `LIMIT < 1`, and the same
+guard had to run in front of the SELECT path, which *would* have honoured them and answered a
+different question. With one path there is nothing to keep in agreement, and `IRAskQuery` cannot
+carry pagination at all. Both guards and their tests were deleted rather than maintained. That is
+the clearest evidence the fallback was load-bearing complexity rather than a safety net.
 
-## The result-type ripple
+### A method, not a boolean-returning `selectQuery`
 
-`SparqlJsonResults` has no `boolean` field, and an `ASK` response carries no `results` key at all.
-Adding `boolean?` to the existing type would have made it describe a shape no endpoint returns.
-Instead: a sibling `SparqlAskResults`, a `SparqlQueryResults` union, and
-`SparqlDataset.executeSparqlSelect` widened to the union — its docstring has always advertised
-`SELECT/ASK/CONSTRUCT`. Return-position widening leaves every existing implementation assignable, so
-no store breaks; one narrowing guard in `selectQuery` pays for it. `rawQuery` widens with it, which
-is the one caller-visible type change (narrow with the exported `isSparqlSelectResults`).
+The query genuinely *is* an ordinary select query — same pattern, same shape scan; only the answer
+differs. But that is an argument about the *input*, not the return type. Folding it into
+`selectQuery` widens its return to `SelectResult | boolean`, so every caller narrows, and — the real
+cost — a store that ignores the "boolean please" signal returns **rows where a boolean was
+expected**, silently, at runtime. With a separate method, not implementing it is a compile error.
 
-Verified against the real endpoint rather than assumed — a live-Fuseki test asserts
-`{head: {}, boolean: true|false}` exactly.
+### `op: 'ask'`, not a flag on the select envelope
 
-## Iteration pass — two gaps found reviewing the diff
+An `exists: true` flag was considered and rejected. Two reasons, the second decisive:
 
-Both were the same class of defect this API family exists to eliminate: an answer that is quietly
-wrong rather than loudly absent.
+- Ask questions extend by *pattern*, so a flag-per-question does not scale. The pattern **is** the
+  question.
+- `QueryBuilderJSON.shape` is a required `string`. A flag literally **cannot express a shapeless
+  ask** without also loosening the select envelope.
 
-**1. A non-boolean from `askQuery` was coerced into `true`.** `.exists()`'s conversion was
-`result != null`. Once a store could return a boolean, a store returning anything *else* truthy —
-`{}`, a row array, `'true'` — read as "exists". `resolveExistence` now rejects a non-boolean instead
-of coercing it, and `_run` handles a genuine `false` explicitly (`result != null` would have read
-`false` as present — the sharpest single bug risk in the change, flagged during ideation and now
-covered directly).
+```json
+{"v": "1.1", "op": "ask", "shape": "…/Person", "subject": "…/p1"}
+{"v": "1.1", "op": "ask", "subject": "https://example.org/thing"}
+```
 
-**2. The two paths disagreed on pagination.** `askToAlgebra` refuses `OFFSET` and `LIMIT < 1`. The
-SELECT degradation would happily *honour* both — so the same query put to two different stores could
-answer differently. The guard moved in front of both, into `resolveExistence`. Unreachable through
-`.exists()` (which normalises pagination away first), but `LinkedStorage.askQuery` and
-`IDataset.askQuery` are public.
+Omitting `shape` *is* the shapeless discriminator, mirroring `IRAskQuery.root?`. `fromJSON` already
+switched on `op` and still throws `Unknown query op` on anything unrecognised, so an older peer
+fails loud rather than reinterpreting the envelope as a select. Deploy receivers first.
 
-Also in the pass: `Shape.exists` and `SelectBuilder.exists` docstrings still showed the `SELECT`
-form as the emitted query; backlog 036 rewritten to cover only what remains; and one clause in
-`.changeset/shape-exists.md` scoped ("on its own it needs no … `IDataset` change") so the published
-changelog does not contradict itself when both changesets release together.
+There is deliberately **no `question` discriminator**. Every ask question I could construct — does
+this node exist, as this shape, matching this filter, related by this path — is the same envelope
+with a different pattern. The one genuinely different case is SHACL conformance, which is not
+pattern-shaped and should get its own `op`.
+
+### Shapeless existence, and the routing problem it creates
+
+`Shape.exists(uri)` on the **base class** asks whether a node exists at all. `IRAskQuery.root` is
+optional, so this is the same type with the shape scan absent, not a separate path. `Shape` is free
+to mean "anything" because the shapes themselves are described by `NodeShape` and `PropertyShape`.
+
+A shapeless ask has **no routing key**. Asking only the default dataset would answer `false` for a
+node living in a pinned one — a wrong answer, quietly, which is the failure class this work exists
+to remove. So `LinkedStorage.askQuery` fans out across `getDatasets()` and ORs, short-circuiting on
+the first `true` and propagating any failure (an unreachable store makes the answer unknown, and
+unknown is not `false`). It is cheap *because* the answers are booleans; the same sweep for rows
+would not be. Any other router implementing `IDataset` inherits the obligation.
+
+A shapeless ask cannot carry `where` or `minusEntries` — both name properties, and a property is
+only resolvable through a shape. An envelope that carries them without a `shape` is rejected as
+malformed rather than guessed at.
+
+### Contract, enforced once
+
+`resolveExistence` is the single entry point (`AskBuilder.exec` and `LinkedStorage.askQuery` both
+go through it). It rejects a non-boolean answer rather than coercing it — a truthy value would read
+as "exists" — and lets errors propagate, because "could not ask" is never `false`.
+
+## Shipped alongside: `rdf:type` resolves to `targetClass`, or throws
+
+`resolveShapeScanIri` used to fall back to the shape's own IRI when no `targetClass` resolved, and
+to *discard* a `targetClass` whose IRI was still temporary (`linked://tmp/`). `rdf:type` names the
+class a node **is**; the shape IRI identifies the SHACL description **of** that class. The fallback
+conflated them, and did so invisibly — `selectToAlgebra` and `createToAlgebra` resolve through the
+same function, so data round-tripped and nothing surfaced the mistake.
+
+Now: a temporary `targetClass` is honoured like any other (it is a real node whose IRI is not final),
+and a shape with none anywhere in its chain throws. No explicit chain walk was needed — `targetClass`
+is read off the shape class, so JavaScript static inheritance already does it.
+
+Every fixture declared a temporary `targetClass`, so **every golden was asserting the fallback**.
+Type triples now carry the class node while property predicates still derive from the shape IRI, and
+Fuseki seed data is typed to match.
+
+**Open, deliberately out of scope:** `resolvePropertyPredicate` has the identical fallback for
+`sh:path` — a temporary path IRI is discarded in favour of the property shape's own IRI. Same
+function, same reasoning, not asked for here.
 
 ## Tests
 
-45 new (1654 → 1699), across five files:
+Suite 1654 → 1708. Deleted along with the designs they described: the ASK ≡ SELECT equivalence
+block, and the `OFFSET` / `LIMIT 0` modifier guards.
 
-- `sparql-ask-golden.test.ts` (new, 12) — literal `ASK` output; every `existsFactories` fixture's
-  ASK body compared against its SELECT body; the `OFFSET` / `LIMIT 0` guards, including a direct
-  demonstration that `selectToSparql` really does emit `LIMIT 0` where `ASK` would answer `true`.
-- `query-builder.test.ts` (+17) — `askQuery` preferred and `selectQuery` not also called; the
-  normalised query is what `askQuery` receives; `false` resolves `false`; six non-boolean answers
-  each reject; failures and `UnresolvedContextError` still reject; null id short-circuits without
-  dispatch; `exec()` never takes the ASK path; both guards refuse on both kinds of store.
-- `store-routing.test.ts` (+4) — `LinkedStorage.askQuery` routes to the pinned dataset, degrades for
-  a dataset without `askQuery`, propagates failures, rejects a shapeless query.
-- `sparql-result-mapping.test.ts` (+8) — the boolean maps through; a SELECT result set **throws**
-  rather than being coerced; malformed responses throw.
-- `sparql-fuseki-coverage.test.ts` (+4) — against live Fuseki: the wire really carries `ASK` and no
-  `SELECT`/`LIMIT`; the response shape matches `SparqlAskResults`; ASK and the SELECT degradation
-  agree on eight fixtures against the same data; the type triple survives.
+- `ask-wire.test.ts` (new, 14) — envelope shape for every pattern form; round trip compared down to
+  the emitted SPARQL; `fromJSON` routes `op:'ask'` to an `AskBuilder` and still fails loud on an
+  unknown op; a shapeless envelope carrying `where` is rejected; `Shape.exists` reaches a shapeless
+  ask where `Person.exists` reaches a shaped one.
+- `sparql-ask-golden.test.ts` — literal `ASK` output, plus shapeless goldens asserting no `rdf:type`
+  triple, no shape IRI, `root` undefined, and that a subjectless shapeless ask is rejected.
+- `query-builder.test.ts` — the store's boolean is returned without `selectQuery` ever being
+  reached; non-boolean answers reject; failures and `UnresolvedContextError` reject; pagination is
+  unrepresentable rather than guarded.
+- `store-routing.test.ts` — shaped asks route to the pinned dataset and never touch `selectQuery`;
+  shapeless asks fan out, OR, short-circuit, and propagate failures.
+- `sparql-negative.test.ts` — the `targetClass` throw, its message, and temporary-IRI-is-honoured.
+- `sparql-fuseki-coverage.test.ts` — against live Fuseki: the wire carries `ASK`; eight patterns
+  answer correctly; `Shape.exists` returns `true` for a Dog IRI where `Person.exists` returns
+  `false`, with no `rdf:type` in the emitted query.
 
-028's eleven live-Fuseki `.exists()` tests now run *through* `ASK` (a `FusekiStore` inherits
-`askQuery`) and pass unmodified — the strongest single piece of evidence that the substitution is
-behaviour-preserving.
-
-**Environment note.** Docker is unavailable in this container, so the suite's usual Fuseki
-auto-start could not run. Fuseki 5.5.0 was instead run directly on the JVM
+**Environment note.** Docker is unavailable in this container, so the suite's Fuseki auto-start
+could not run. Fuseki 5.5.0 was run directly on the JVM
 (`java -jar jena-fuseki-server-5.5.0.jar --mem --port=3939 /nashville-test`), which serves the same
-admin API the test helper uses. All three `sparql-fuseki*` suites (188 tests) executed and passed
-against it; nothing was skipped that CI would run.
+admin API the test helper uses. All `sparql-fuseki*` suites executed and passed against it; nothing
+was skipped that CI would run.
 
 ## Follow-ups
 
-- Backlog **036** (rewritten) — type-free existence, and `op:'ask'` if a remote peer should ever
-  answer the boolean itself.
-- Backlog **004** (`CONSTRUCT`) — the seam this change rehearsed. `resolveExistence`'s shape is the
-  pattern to copy; the result-mapping cost is where the two diverge.
+- `resolvePropertyPredicate`'s `sh:path` fallback (above) — same bug, unfixed.
+- Backlog **036** — rewritten again: only the gateway/server side of `op:'ask'` remains.
+- Backlog **004** (`CONSTRUCT`) — the seam this rehearsed. `AskBuilder`/`IRAskQuery` is the pattern
+  to copy; the result mapping is where the two diverge.

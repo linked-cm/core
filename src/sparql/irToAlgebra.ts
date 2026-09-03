@@ -1,5 +1,6 @@
 import type {
   IRSelectQuery,
+  IRAskQuery,
   IRCreateMutation,
   IRUpdateMutation,
   IRDeleteMutation,
@@ -2681,48 +2682,52 @@ export function updateWhereToAlgebra(
 // ---------------------------------------------------------------------------
 
 /**
- * Converts an IRSelectQuery to a SparqlAskPlan — the same WHERE body the SELECT
- * would produce, with the projection and every solution modifier dropped.
+ * Converts an {@link IRAskQuery} to a {@link SparqlAskPlan}.
  *
- * `ASK` answers a question about the **match set**, so anything that only shapes
- * or windows the *solution sequence* is irrelevant to it: `projection`,
- * `orderBy` and a `limit` of 1 or more are ignored.
+ * Two cases:
  *
- * Two modifiers are **rejected rather than ignored**, because dropping them could
- * change the answer:
+ * - **Rootless** (no shape scan) — a bare subject, emitted as `<iri> ?p ?o`. This
+ *   is "does a node with this IRI exist at all", with no `rdf:type` constraint.
+ * - **Shaped** — the pattern is built by {@link selectToAlgebra}, so shape scans,
+ *   traversals, filters and `MINUS` have exactly one implementation. Only the
+ *   pattern is kept; the select plan's projection is discarded.
  *
- * - `offset` — skips solutions, so `OFFSET n` over a single-solution pattern is
- *   the difference between "no rows" and "a match exists".
- * - `limit < 1` — `SELECT … LIMIT 0` returns no rows where `ASK` over the same
- *   pattern answers `true`.
- *
- * Neither can reach here through the DSL: `SelectBuilder.exists()` drops `offset`
- * and replaces any earlier limit with `1`. The guards are for direct callers.
- *
- * Note: the pattern is built by {@link selectToAlgebra}, which walks the
- * projection to discover the property triples it references. Those are emitted as
- * `OPTIONAL` blocks, so on an un-normalised IR they cost a little and cannot change
- * the boolean. `exists()` normalises the projection away before this is reached.
+ * There is nothing here to guard against. `IRAskQuery` has no projection,
+ * `orderBy`, `limit` or `offset` to ignore or reject — an `ASK` cannot express
+ * them, so the IR cannot carry them.
  */
 export function askToAlgebra(
-  query: IRSelectQuery,
+  query: IRAskQuery,
   options?: SparqlOptions,
 ): SparqlAskPlan {
-  if (query.offset !== undefined) {
-    throw new Error(
-      'askToAlgebra: ASK cannot honour OFFSET — it skips solutions, so dropping it ' +
-      'could change the answer. Remove `offset` from the query before asking whether ' +
-      'a match exists.',
-    );
+  if (!query.root) {
+    if (!query.subjectId) {
+      throw new Error(
+        'askToAlgebra: a shapeless ask needs a subject — there is no shape to scan ' +
+        'and no subject to test, so the query matches every node in the store.',
+      );
+    }
+    // ASK { <iri> ?p ?o } — existence of the node itself, under any type or none.
+    const bgp: SparqlBGP = {
+      type: 'bgp',
+      triples: [
+        tripleOf(iriTerm(query.subjectId), varTerm('p'), varTerm('o')),
+      ],
+    };
+    return {type: 'ask', algebra: bgp};
   }
-  if (query.limit !== undefined && query.limit < 1) {
-    throw new Error(
-      `askToAlgebra: ASK cannot honour LIMIT ${query.limit} — a limit below 1 returns ` +
-      'no rows where ASK over the same pattern answers true. Remove the limit before ' +
-      'asking whether a match exists.',
-    );
-  }
-  const {algebra} = selectToAlgebra(query, options);
+  const {algebra} = selectToAlgebra(
+    {
+      kind: 'select',
+      root: query.root,
+      patterns: query.patterns,
+      projection: [],
+      where: query.where,
+      subjectId: query.subjectId,
+      subjectIds: query.subjectIds,
+    },
+    options,
+  );
   return {type: 'ask', algebra};
 }
 
@@ -2742,10 +2747,10 @@ export function selectToSparql(
 }
 
 /**
- * Converts an IRSelectQuery to a SPARQL `ASK` string.
+ * Converts an {@link IRAskQuery} to a SPARQL `ASK` string.
  */
 export function askToSparql(
-  query: IRSelectQuery,
+  query: IRAskQuery,
   options?: SparqlOptions,
 ): string {
   const plan = askToAlgebra(query, options);

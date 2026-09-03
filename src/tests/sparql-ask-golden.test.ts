@@ -10,12 +10,12 @@
 import {describe, expect, test} from '@jest/globals';
 import {
   existsFactories,
-  queryFactories,
   personClass,
+  tmpEntityBase,
 } from '../test-helpers/query-fixtures';
+import {Shape} from '../shapes/Shape';
 import {captureQuery} from '../test-helpers/query-capture-store';
-import {askToAlgebra, askToSparql, selectToSparql} from '../sparql/irToAlgebra';
-import {askPlanToSparql} from '../sparql/algebraToString';
+import {askToAlgebra, askToSparql} from '../sparql/irToAlgebra';
 import {setQueryContext} from '../queries/QueryContext';
 import {Person} from '../test-helpers/query-fixtures';
 
@@ -28,6 +28,7 @@ setQueryContext('user', {id: 'user-1'}, Person);
 // declares as targetClass, which is what appears as rdf:type.
 const P = 'https://linked.cm/shape/core/Person';
 const PT = personClass.id;
+const entity = (suffix: string) => ({id: `${tmpEntityBase}${suffix}`});
 
 const goldenAsk = async (factory: () => Promise<unknown>): Promise<string> => {
   const ir = await captureQuery(factory);
@@ -80,64 +81,34 @@ ASK WHERE {
 });
 
 // ---------------------------------------------------------------------------
-// ASK and the SELECT degradation ask the same question
+// Shapeless ask — no rdf:type constraint at all
 // ---------------------------------------------------------------------------
 
-describe('ASK ≡ SELECT … LIMIT 1 (same WHERE body)', () => {
-  // The degradation in `askViaSelect` is only sound if both forms carry the
-  // identical pattern. Strip each form's envelope and compare the bodies.
-  const body = (sparql: string): string =>
-    sparql
-      .replace(/^ASK WHERE \{\n/m, '')
-      .replace(/^SELECT[^\n]*\nWHERE \{\n/m, '')
-      .replace(/\n\}(\nLIMIT 1)?$/m, '');
-
-  test.each(Object.keys(existsFactories))(
-    '%s — ASK body matches the SELECT body',
-    async (name) => {
-      const factory = (existsFactories as Record<string, () => Promise<unknown>>)[name];
-      const ask = await goldenAsk(factory);
-      const select = selectToSparql(await captureQuery(factory));
-      expect(body(ask)).toBe(body(select));
-      expect(select).toContain('LIMIT 1');
-    },
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Modifiers that could change the answer are rejected, not dropped
-// ---------------------------------------------------------------------------
-
-describe('askToAlgebra — modifier guards', () => {
-  const irFor = async (factory: () => Promise<unknown>) =>
-    (await captureQuery(factory)) as any;
-
-  test('OFFSET is rejected rather than silently dropped', async () => {
-    const ir = await irFor(existsFactories.existsById);
-    expect(() => askToAlgebra({...ir, offset: 5})).toThrow(/OFFSET/);
+describe('SPARQL golden — shapeless ASK', () => {
+  test('Shape.exists(uri) asks about the node itself, under any type or none', async () => {
+    const ir = await captureQuery(() => Shape.exists('https://example.org/thing'));
+    expect(askToSparql(ir)).toBe(
+`ASK WHERE {
+  <https://example.org/thing> ?p ?o .
+}`);
   });
 
-  test('LIMIT 0 is rejected — SELECT LIMIT 0 and ASK disagree', async () => {
-    const ir = await irFor(existsFactories.existsById);
-    expect(() => askToAlgebra({...ir, limit: 0})).toThrow(/LIMIT 0/);
-    // The guard exists because these two genuinely differ:
-    expect(selectToSparql({...ir, limit: 0})).toContain('LIMIT 0');
+  test('no rdf:type triple is emitted, and no shape IRI appears', async () => {
+    const ir = await captureQuery(() => Shape.exists('https://example.org/thing'));
+    const sparql = askToSparql(ir);
+    expect(sparql).not.toContain('rdf:type');
+    expect(sparql).not.toContain('linked.cm/shape');
+    expect(ir.root).toBeUndefined();
   });
 
-  test('a limit of 1 or more is a harmless bound and is ignored', async () => {
-    const ir = await irFor(existsFactories.existsById);
-    expect(askPlanToSparql(askToAlgebra({...ir, limit: 1}))).toBe(
-      askPlanToSparql(askToAlgebra({...ir, limit: 50})),
-    );
+  test('a shaped ask still constrains by rdf:type — the two are different questions', async () => {
+    const shapeless = askToSparql(await captureQuery(() => Shape.exists(entity('p1'))));
+    const shaped = askToSparql(await captureQuery(() => Person.exists(entity('p1'))));
+    expect(shapeless).not.toContain('rdf:type');
+    expect(shaped).toContain(`rdf:type <${personClass.id}>`);
   });
 
-  test('ORDER BY and the projection cannot change a boolean and are ignored', async () => {
-    const decorated = await irFor(queryFactories.selectName);
-    // An un-normalised IR still produces a valid ASK — the projection's OPTIONAL
-    // triples come along (documented on askToAlgebra) but no modifiers do.
-    const sparql = askToSparql(decorated);
-    expect(sparql).toContain('ASK WHERE {');
-    expect(sparql).not.toContain('ORDER BY');
-    expect(sparql).not.toContain('SELECT');
+  test('a shapeless ask with no subject is rejected — it would match everything', () => {
+    expect(() => askToAlgebra({kind: 'ask', patterns: []})).toThrow(/needs a subject/);
   });
 });

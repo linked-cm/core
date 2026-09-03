@@ -32,7 +32,8 @@ import {
 import {toWhere} from './IRDesugar.js';
 import {lowerWhereToIR} from './IRLower.js';
 import type {WherePath} from './SelectQuery.js';
-import type {IRSelectQuery} from './IntermediateRepresentation.js';
+import type {IRAskQuery, IRSelectQuery} from './IntermediateRepresentation.js';
+import type {RawAskInput} from './AskQuery.js';
 import type {IRCreateQuery} from './CreateQuery.js';
 import type {IRUpdateQuery} from './UpdateQuery.js';
 import type {IRDeleteQuery} from './DeleteQuery.js';
@@ -44,12 +45,15 @@ import type {
 
 /** A select query that can be lowered (the select builder). */
 export type LowerableSelect = {readonly __queryKind: 'select'; toRawInput(): any};
+/** An ask query that can be lowered (the ask builder). */
+export type LowerableAsk = {readonly __queryKind: 'ask'; toRawInput(): RawAskInput};
 /** A mutation query that can be lowered (the mutation builders). */
 export type LowerableCreate = {readonly __queryKind: 'create'; _lowerSpec(): CreateLowerSpec};
 export type LowerableUpdate = {readonly __queryKind: 'update'; _lowerSpec(): UpdateLowerSpec};
 export type LowerableDelete = {readonly __queryKind: 'delete'; _lowerSpec(): DeleteLowerSpec};
 export type LowerableQuery =
   | LowerableSelect
+  | LowerableAsk
   | LowerableCreate
   | LowerableUpdate
   | LowerableDelete;
@@ -143,16 +147,55 @@ function lowerDelete(spec: DeleteLowerSpec): IRDeleteQuery {
   return buildCanonicalDeleteMutationIR({shape, ids});
 }
 
+/**
+ * Lower an ask to its canonical IR.
+ *
+ * The shaped case reuses the select pipeline to build the pattern — one
+ * implementation of shape scans, traversals, filters and minus — and then keeps
+ * only the pattern-bearing part. The rootless (shapeless) case has no pattern to
+ * build: it is a bare subject.
+ */
+function lowerAsk(input: RawAskInput): IRAskQuery {
+  const subject = input.subject;
+  if (!input.shape) {
+    // Shapeless: no rdf:type constraint, so no shape scan and no property refs.
+    const id =
+      subject instanceof PendingQueryContext
+        ? resolveContextId(subject.contextName, true)!
+        : (subject as {id?: string} | undefined)?.id;
+    return {kind: 'ask', patterns: [], subjectId: id};
+  }
+  const selected = buildSelectQuery({
+    entries: [],
+    shape: input.shape,
+    subject,
+    subjects: input.subjects,
+    where: input.where,
+    minusEntries: input.minusEntries,
+  });
+  return {
+    kind: 'ask',
+    root: selected.root,
+    patterns: selected.patterns,
+    where: selected.where,
+    subjectId: selected.subjectId,
+    subjectIds: selected.subjectIds,
+  };
+}
+
 export function lower(query: LowerableSelect): IRSelectQuery;
+export function lower(query: LowerableAsk): IRAskQuery;
 export function lower(query: LowerableCreate): IRCreateQuery;
 export function lower(query: LowerableUpdate): IRUpdateQuery;
 export function lower(query: LowerableDelete): IRDeleteQuery;
 export function lower(
   query: LowerableQuery,
-): IRSelectQuery | IRCreateQuery | IRUpdateQuery | IRDeleteQuery {
+): IRSelectQuery | IRAskQuery | IRCreateQuery | IRUpdateQuery | IRDeleteQuery {
   switch (query.__queryKind) {
     case 'select':
       return buildSelectQuery(query.toRawInput());
+    case 'ask':
+      return lowerAsk(query.toRawInput());
     case 'create':
       return lowerCreate(query._lowerSpec());
     case 'update':

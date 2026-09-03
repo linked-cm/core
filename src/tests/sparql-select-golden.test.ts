@@ -9,7 +9,6 @@
 import {describe, expect, test} from '@jest/globals';
 import {
   queryFactories,
-  existsFactories,
   personClass,
   employeeClass,
 } from '../test-helpers/query-fixtures';
@@ -116,48 +115,6 @@ SELECT DISTINCT ?a0
 WHERE {
   ?a0 rdf:type <${PT}> .
 }`);
-  });
-
-  // .exists() normalises the query down to this shape whatever was chained
-  // before it: one projected variable, the type triple, LIMIT 1. No OPTIONAL,
-  // no property predicates, no ORDER BY.
-  test('existsById', async () => {
-    const sparql = await goldenSelect(existsFactories.existsById);
-    expect(sparql).toBe(
-`PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-SELECT DISTINCT ?a0
-WHERE {
-  ?a0 rdf:type <${PT}> .
-  FILTER(?a0 = <linked://tmp/entities/p1>)
-}
-LIMIT 1`);
-  });
-
-  test('existsWhere', async () => {
-    const sparql = await goldenSelect(existsFactories.existsWhere);
-    expect(sparql).toBe(
-`PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-SELECT DISTINCT ?a0
-WHERE {
-  ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
-  FILTER(?a0_name = "Semmy")
-}
-LIMIT 1`);
-  });
-
-  test('existsNormalised — a chained select/orderBy costs the same as a bare exists', async () => {
-    const decorated = await goldenSelect(existsFactories.existsNormalised);
-    const bare = await goldenSelect(existsFactories.existsById);
-    expect(decorated).toBe(bare);
-  });
-
-  test('existsPaginated — offset/limit are dropped, not honoured', async () => {
-    const paginated = await goldenSelect(existsFactories.existsPaginated);
-    const bare = await goldenSelect(existsFactories.existsById);
-    expect(paginated).toBe(bare);
-    expect(paginated).not.toContain('OFFSET');
-    expect(paginated).toContain('LIMIT 1');
   });
 
   test('selectAllProperties', async () => {

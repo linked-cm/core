@@ -31,9 +31,10 @@ import {
   clearAllData,
 } from '../test-helpers/fuseki-test-store';
 import {setQueryContext, getQueryContext} from '../queries/QueryContext';
+import {Shape} from '../shapes/Shape';
 import {Expr} from '../expressions/Expr';
 import {fromJSON} from '../queries/fromJSON';
-import {askViaSelect} from '../queries/queryDispatch';
+import {WIRE_VERSION} from '../queries/wireVersion';
 import {createHash} from 'node:crypto';
 
 import '../ontologies/rdf';
@@ -278,11 +279,11 @@ describe('coverage §5 — builder features', () => {
 describe('coverage §6 — DSL-JSON round-trip', () => {
   beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
 
-  test('select round-trips losslessly (v:1.0) and yields identical results', async () => {
+  test('select round-trips losslessly (versioned) and yields identical results', async () => {
     if (!fusekiAvailable) return;
     const q = Person.select((p: any) => [p.name, p.friends.name]);
     const json = (q as any).toJSON();
-    expect(json.v).toBe('1.0');
+    expect(json.v).toBe(WIRE_VERSION);
     const direct = await store.selectQuery(q);
     const viaJson = await store.selectQuery(fromJSON(json) as any);
     expect(viaJson).toEqual(direct);
@@ -1118,34 +1119,39 @@ describe('coverage — .exists() emits ASK against Fuseki', () => {
     expect(absent).toEqual({head: {}, boolean: false});
   });
 
-  test('ASK and the SELECT degradation agree on every exists fixture', async () => {
+  test('ASK answers correctly across every pattern the builder can express', async () => {
     if (!fusekiAvailable) return;
-    // askViaSelect is only sound if it answers identically. Run each case both
-    // ways against the same live data and compare.
-    // A store with no boolean primitive: askQuery is required, so it implements
-    // it the one-line way, delegating to the shared SELECT default.
-    const selectOnly: any = {
-      selectQuery: (q: any) => (store as any).selectQuery(q),
-      askQuery(q: any) {
-        return askViaSelect(this, q);
-      },
-    };
-    const cases: Array<[string, () => any]> = [
-      ['present', () => Person.select().for(`${ENT}p1`)],
-      ['absent', () => Person.select().for(`${ENT}nobody`)],
-      ['where match', () => Person.select().where((p: any) => p.name.equals('Semmy'))],
-      ['where miss', () => Person.select().where((p: any) => p.name.equals('Nobody'))],
-      ['wrong shape', () => Person.select().for(`${ENT}dog1`)],
-      ['any at all', () => Person.select()],
-      ['forAll partial', () => Person.selectAll().forAll([`${ENT}nobody`, `${ENT}p2`])],
+    const cases: Array<[string, () => Promise<boolean>, boolean]> = [
+      ['present', () => Person.select().for(`${ENT}p1`).exists(store), true],
+      ['absent', () => Person.select().for(`${ENT}nobody`).exists(store), false],
+      ['where match', () =>
+        Person.select().where((p: any) => p.name.equals('Semmy')).exists(store), true],
+      ['where miss', () =>
+        Person.select().where((p: any) => p.name.equals('Nobody')).exists(store), false],
+      ['wrong shape', () => Person.select().for(`${ENT}dog1`).exists(store), false],
+      ['any at all', () => Person.select().exists(store), true],
+      ['forAll partial', () =>
+        Person.selectAll().forAll([`${ENT}nobody`, `${ENT}p2`]).exists(store), true],
       ['projected + sorted', () =>
-        Person.select((p: any) => p.hobby).orderBy((p: any) => p.name).for(`${ENT}p3`)],
+        Person.select((p: any) => p.hobby)
+          .orderBy((p: any) => p.name)
+          .for(`${ENT}p3`)
+          .exists(store), true],
     ];
-    for (const [label, build] of cases) {
-      const viaAsk = await build().exists(store);
-      const viaSelect = await build().exists(selectOnly);
-      expect(`${label}=${viaAsk}`).toBe(`${label}=${viaSelect}`);
+    for (const [label, run, expected] of cases) {
+      expect(`${label}=${await run()}`).toBe(`${label}=${expected}`);
     }
+  });
+
+  test('a shapeless Shape.exists(uri) ignores type entirely', async () => {
+    if (!fusekiAvailable) return;
+    const {spy, sent} = spyStore();
+    // dog1 is a Dog, not a Person: shape-scoped asks say false, shapeless says true.
+    expect(await Person.exists({id: `${ENT}dog1`}, spy)).toBe(false);
+    expect(await Shape.exists(`${ENT}dog1`, spy)).toBe(true);
+    expect(await Shape.exists(`${ENT}nobody`, spy)).toBe(false);
+    expect(sent[1]).toContain('ASK WHERE {');
+    expect(sent[1]).not.toContain('rdf:type');
   });
 
   test('a shape-scoped ASK still excludes a node of another type', async () => {

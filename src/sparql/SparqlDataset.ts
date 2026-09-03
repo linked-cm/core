@@ -1,5 +1,6 @@
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
+import type {AskQuery} from '../queries/AskQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
@@ -95,13 +96,13 @@ export abstract class SparqlDataset implements IDataset {
   }
 
   /**
-   * Whether any solution exists for `query` — emitted as `ASK WHERE { … }`.
+   * Answer an ask query — emitted as `ASK WHERE { … }`.
    *
-   * Reached through `SelectBuilder.exists()`, which normalises the query to its
-   * cheapest correct form (no projection, no preloads, no sorting, no pagination)
-   * before dispatching. Errors reject; they are never reported as `false`.
+   * An {@link AskQuery} carries only a pattern, so there is nothing to normalise
+   * away here. A query with no shape lowers to `ASK { <iri> ?p ?o }` — existence
+   * of the node under any type or none. Errors reject; never reported as `false`.
    */
-  async askQuery(query: SelectQuery): Promise<boolean> {
+  async askQuery(query: AskQuery): Promise<boolean> {
     const ir = lower(query);
     const sparql = askToSparql(ir, this.options);
     const json = await this.executeSparqlSelect(sparql);

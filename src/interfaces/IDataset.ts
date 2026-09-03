@@ -1,4 +1,5 @@
 import type {SelectQuery} from '../queries/SelectQuery.js';
+import type {AskQuery} from '../queries/AskQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
@@ -27,32 +28,26 @@ export interface IDataset {
 
   selectQuery(query: SelectQuery): Promise<SelectResult>;
   /**
-   * Whether any solution exists for `query` — a boolean, not a result set.
+   * Answer an ask query — a boolean, not a result set.
    *
-   * **Required.** The query is an ordinary `SelectQuery`, already normalised to
-   * its cheapest correct form (no projection, no preloads, no sorting, no
-   * pagination, `LIMIT 1`); only the answer differs. A backend with a boolean
-   * primitive should use it — a SPARQL store answers `ASK WHERE { … }`.
+   * **Required.** An {@link AskQuery} carries a pattern and nothing else: no
+   * projection, no sorting, no pagination. A SPARQL-backed store emits
+   * `ASK WHERE { … }`; another backend answers it however it can.
    *
-   * A backend without one delegates to the shared default in a single line, and
-   * says so by writing it:
+   * It is required rather than optional, and this package contains **no path that
+   * rewrites an ask as a select**. A store that has no boolean primitive decides
+   * for itself how to answer — that decision belongs to the store, and defaulting
+   * it here would hide it.
    *
-   * ```ts
-   * askQuery(query: SelectQuery) {
-   *   return askViaSelect(this, query);
-   * }
-   * ```
-   *
-   * It is required rather than optional so that the choice is visible in every
-   * store. An optional method would let a store silently take the slower path
-   * with nothing at the call site or in the types to say so.
+   * `query.shape` is optional: absent means no `rdf:type` constraint at all
+   * ("does a node with this IRI exist"), which lowers to `ASK { <iri> ?p ?o }`.
    *
    * Must resolve to a real boolean — a non-boolean is rejected, not coerced,
    * since a truthy value would silently read as "exists". Must reject on
-   * failure: reporting an unreachable store as `false` is the failure mode
-   * `.exists()` was built to remove.
+   * failure: reporting an unreachable store as `false` is the failure mode this
+   * API was built to remove.
    */
-  askQuery(query: SelectQuery): Promise<boolean>;
+  askQuery(query: AskQuery): Promise<boolean>;
   updateQuery?(query: UpdateQuery): Promise<UpdateResult>;
   createQuery?(query: CreateQuery): Promise<CreateResult>;
   deleteQuery?(query: DeleteQuery): Promise<DeleteResponse>;
