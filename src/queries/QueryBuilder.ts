@@ -332,24 +332,17 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * **Kept** — filters, `minus` entries and the subject: those decide whether a match
    * exists. `LIMIT 1` is then applied.
    *
-   * So `.select(…).orderBy(…).offset(10).exists()` costs, and answers, exactly the same
-   * as a bare `.exists()`. Against a store that implements `askQuery` (any
-   * `SparqlDataset`) that normalised query goes out as:
+   * So `.select(…).orderBy(…).offset(10).exists()` costs, and answers, exactly the
+   * same as a bare `.exists()`. Against a SPARQL store that goes out as:
    *
    * ```sparql
    * ASK WHERE { ?a0 rdf:type <…> . FILTER(?a0 = <…>) }
    * ```
    *
-   * A store without a boolean primitive answers the identical pattern as
-   * `SELECT DISTINCT ?a0 … LIMIT 1` and converts. Which of the two runs cannot
-   * change the answer — only how much comes back over the wire.
-   *
-   * Pagination is dropped rather than honoured on purpose. `OFFSET` skips rows of the
-   * *solution sequence*, whose cardinality depends on the projection — a multi-valued
-   * projected property yields several rows per subject. Keeping `offset` while dropping
-   * the projection would let the same chain answer `true` before normalisation and
-   * `false` after. `exists()` therefore answers a question about the **match set**,
-   * not about a page of it.
+   * Pagination does not survive, and cannot: `OFFSET` skips rows of a *solution
+   * sequence*, and an ask has none. (Nor is it merely dropped — an
+   * {@link AskBuilder} has nowhere to hold it.) `exists()` answers a question about
+   * the **match set**, not about a page of it.
    *
    * ### Errors are not swallowed
    *

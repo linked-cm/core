@@ -203,8 +203,7 @@ export abstract class Shape {
    * to a row or `null` and leaves the conversion (and the failure modes) to the
    * caller. Runs the cheapest correct query: against a SPARQL store, an
    * `ASK WHERE { ?a0 rdf:type <ShapeClass> . FILTER(?a0 = <id>) }` — the shape's
-   * type triple and an equality filter on the subject, nothing else. A store with
-   * no boolean primitive answers the same pattern as `SELECT … LIMIT 1`.
+   * type triple and an equality filter on the subject, nothing else.
    *
    * Note the type triple: this asks whether the node exists **as an instance of
    * this shape**. A node with that IRI and a different type answers `false`.
