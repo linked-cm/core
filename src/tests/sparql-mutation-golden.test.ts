@@ -11,6 +11,7 @@
 import {describe, expect, test} from '@jest/globals';
 import {queryFactories, tmpEntityBase,
   personClass,
+  propBase,
 } from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {
@@ -38,6 +39,8 @@ import '../ontologies/xsd';
 // ---------------------------------------------------------------------------
 
 const P = 'https://linked.cm/shape/core/Person';
+// Property predicates are the declared `sh:path`, not derived from the shape IRI.
+const PROP = propBase;
 // The separate class node Person declares as targetClass — the only thing that
 // appears as an rdf:type. (Temporary IRI in these fixtures.)
 const PT = personClass.id;
@@ -56,8 +59,8 @@ describe('SPARQL golden — create mutations', () => {
     expect(sparql).toContain('PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>');
     expect(sparql).toContain('INSERT DATA {');
     expect(sparql).toContain(`rdf:type <${PT}>`);
-    expect(sparql).toContain(`<${P}/name> "Test Create"`);
-    expect(sparql).toContain(`<${P}/hobby> "Chess"`);
+    expect(sparql).toContain(`<${PROP}name> "Test Create"`);
+    expect(sparql).toContain(`<${PROP}hobby> "Chess"`);
 
     // The generated URI should match the ULID pattern
     expect(sparql).toMatch(
@@ -74,11 +77,11 @@ describe('SPARQL golden — create mutations', () => {
 
     expect(sparql).toContain('INSERT DATA {');
     expect(sparql).toContain(`rdf:type <${PT}>`);
-    expect(sparql).toContain(`<${P}/name> "Test Create"`);
+    expect(sparql).toContain(`<${PROP}name> "Test Create"`);
     // Reference to existing entity p2
-    expect(sparql).toContain(`<${P}/friends> <${ENT}p2>`);
+    expect(sparql).toContain(`<${PROP}hasFriend> <${ENT}p2>`);
     // Nested friend create
-    expect(sparql).toContain(`<${P}/name> "New Friend"`);
+    expect(sparql).toContain(`<${PROP}name> "New Friend"`);
 
     // Should have two rdf:type triples (root + nested)
     const typeMatches = sparql.match(/rdf:type/g);
@@ -94,8 +97,8 @@ describe('SPARQL golden — create mutations', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 INSERT DATA {
   <${ENT}fixed-id> rdf:type <${PT}> .
-  <${ENT}fixed-id> <${P}/name> "Fixed" .
-  <${ENT}fixed-id> <${P}/bestFriend> <${ENT}fixed-id-2> .
+  <${ENT}fixed-id> <${PROP}name> "Fixed" .
+  <${ENT}fixed-id> <${PROP}bestFriend> <${ENT}fixed-id-2> .
 }`);
   });
 });
@@ -110,14 +113,14 @@ describe('SPARQL golden — update mutations', () => {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/hobby> ?old_hobby .
+  <${ENT}p1> <${PROP}hobby> ?old_hobby .
 }
 INSERT {
-  <${ENT}p1> <${P}/hobby> "Chess" .
+  <${ENT}p1> <${PROP}hobby> "Chess" .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/hobby> ?old_hobby .
+    <${ENT}p1> <${PROP}hobby> ?old_hobby .
   }
 }`);
   });
@@ -127,14 +130,14 @@ WHERE {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/friends> ?old_friends .
+  <${ENT}p1> <${PROP}hasFriend> ?old_friends .
 }
 INSERT {
-  <${ENT}p1> <${P}/friends> <${ENT}p2> .
+  <${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/friends> ?old_friends .
+    <${ENT}p1> <${PROP}hasFriend> ?old_friends .
   }
 }`);
   });
@@ -144,11 +147,11 @@ WHERE {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/hobby> ?old_hobby .
+  <${ENT}p1> <${PROP}hobby> ?old_hobby .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/hobby> ?old_hobby .
+    <${ENT}p1> <${PROP}hobby> ?old_hobby .
   }
 }`);
   });
@@ -158,11 +161,11 @@ WHERE {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/hobby> ?old_hobby .
+  <${ENT}p1> <${PROP}hobby> ?old_hobby .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/hobby> ?old_hobby .
+    <${ENT}p1> <${PROP}hobby> ?old_hobby .
   }
 }`);
   });
@@ -174,13 +177,13 @@ WHERE {
     // The nested create generates a ULID, so check structure
     expect(sparql).toContain('PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>');
     expect(sparql).toContain('DELETE {');
-    expect(sparql).toContain(`<${ENT}p1> <${P}/bestFriend> ?old_bestFriend .`);
+    expect(sparql).toContain(`<${ENT}p1> <${PROP}bestFriend> ?old_bestFriend .`);
     expect(sparql).toContain('INSERT {');
-    expect(sparql).toContain(`<${ENT}p1> <${P}/bestFriend>`);
+    expect(sparql).toContain(`<${ENT}p1> <${PROP}bestFriend>`);
     expect(sparql).toContain(`rdf:type <${PT}>`);
-    expect(sparql).toContain(`<${P}/name> "Bestie"`);
+    expect(sparql).toContain(`<${PROP}name> "Bestie"`);
     expect(sparql).toContain('WHERE {');
-    expect(sparql).toContain(`<${ENT}p1> <${P}/bestFriend> ?old_bestFriend .`);
+    expect(sparql).toContain(`<${ENT}p1> <${PROP}bestFriend> ?old_bestFriend .`);
   });
 
   test('updatePassIdReferences', async () => {
@@ -188,14 +191,14 @@ WHERE {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/bestFriend> ?old_bestFriend .
+  <${ENT}p1> <${PROP}bestFriend> ?old_bestFriend .
 }
 INSERT {
-  <${ENT}p1> <${P}/bestFriend> <${ENT}p2> .
+  <${ENT}p1> <${PROP}bestFriend> <${ENT}p2> .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/bestFriend> ?old_bestFriend .
+    <${ENT}p1> <${PROP}bestFriend> ?old_bestFriend .
   }
 }`);
   });
@@ -205,14 +208,14 @@ WHERE {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/friends> <${ENT}p3> .
+  <${ENT}p1> <${PROP}hasFriend> <${ENT}p3> .
 }
 INSERT {
-  <${ENT}p1> <${P}/friends> <${ENT}p2> .
+  <${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/friends> <${ENT}p3> .
+    <${ENT}p1> <${PROP}hasFriend> <${ENT}p3> .
   }
 }`);
   });
@@ -222,11 +225,11 @@ WHERE {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/friends> <${ENT}p2> .
+  <${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/friends> <${ENT}p2> .
+    <${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
   }
 }`);
   });
@@ -236,14 +239,14 @@ WHERE {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/friends> <${ENT}p3> .
+  <${ENT}p1> <${PROP}hasFriend> <${ENT}p3> .
 }
 INSERT {
-  <${ENT}p1> <${P}/friends> <${ENT}p2> .
+  <${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/friends> <${ENT}p3> .
+    <${ENT}p1> <${PROP}hasFriend> <${ENT}p3> .
   }
 }`);
   });
@@ -253,11 +256,11 @@ WHERE {
     const sparql = updateToSparql(ir);
     expect(sparql).toBe(
 `DELETE {
-  <${ENT}p1> <${P}/friends> ?old_friends .
+  <${ENT}p1> <${PROP}hasFriend> ?old_friends .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/friends> ?old_friends .
+    <${ENT}p1> <${PROP}hasFriend> ?old_friends .
   }
 }`);
   });
@@ -268,16 +271,16 @@ WHERE {
     expect(sparql).toBe(
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 DELETE {
-  <${ENT}p1> <${P}/bestFriend> ?old_bestFriend .
+  <${ENT}p1> <${PROP}bestFriend> ?old_bestFriend .
 }
 INSERT {
-  <${ENT}p1> <${P}/bestFriend> <${ENT}p3-best-friend> .
+  <${ENT}p1> <${PROP}bestFriend> <${ENT}p3-best-friend> .
   <${ENT}p3-best-friend> rdf:type <${PT}> .
-  <${ENT}p3-best-friend> <${P}/name> "Bestie" .
+  <${ENT}p3-best-friend> <${PROP}name> "Bestie" .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/bestFriend> ?old_bestFriend .
+    <${ENT}p1> <${PROP}bestFriend> ?old_bestFriend .
   }
 }`);
   });
@@ -288,14 +291,14 @@ WHERE {
     expect(sparql).toBe(
 `PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 DELETE {
-  <${ENT}p1> <${P}/birthDate> ?old_birthDate .
+  <${ENT}p1> <${PROP}birthDate> ?old_birthDate .
 }
 INSERT {
-  <${ENT}p1> <${P}/birthDate> "2020-01-01T00:00:00.000Z"^^xsd:dateTime .
+  <${ENT}p1> <${PROP}birthDate> "2020-01-01T00:00:00.000Z"^^xsd:dateTime .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/birthDate> ?old_birthDate .
+    <${ENT}p1> <${PROP}birthDate> ?old_birthDate .
   }
 }`);
   });
@@ -511,7 +514,7 @@ describe('SPARQL golden — expression mutations', () => {
 
     // SPARQL should contain OPTIONAL for the traversal
     expect(sparql).toContain('OPTIONAL');
-    expect(sparql).toContain(`<${P}/bestFriend>`);
+    expect(sparql).toContain(`<${PROP}bestFriend>`);
     // Should have BIND for computed value
     expect(sparql).toContain('BIND');
     expect(sparql).toContain('UCASE');
@@ -531,7 +534,7 @@ describe('SPARQL golden — expression mutations', () => {
 
     // SPARQL should contain OPTIONAL for traversal + BIND for both fields
     expect(sparql).toContain('OPTIONAL');
-    expect(sparql).toContain(`<${P}/bestFriend>`);
+    expect(sparql).toContain(`<${PROP}bestFriend>`);
     expect(sparql).toContain('UCASE');
     expect(sparql).toContain('LCASE');
     // Both BINDs should reference the same traversal variable

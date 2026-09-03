@@ -11,6 +11,7 @@ import {
   queryFactories,
   personClass,
   employeeClass,
+  propBase,
 } from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {selectToSparql} from '../sparql/irToAlgebra';
@@ -29,6 +30,8 @@ setQueryContext('user', {id: 'user-1'}, Person);
 // Shape IRIs — these identify the SHACL *descriptions*, and are what property
 // predicates are derived from.
 const P = 'https://linked.cm/shape/core/Person';
+// Property predicates are the declared `sh:path`, not derived from the shape IRI.
+const PROP = propBase;
 const E = 'https://linked.cm/shape/core/Employee';
 const D = 'https://linked.cm/shape/core/Dog';
 const S = 'https://linked.cm/shape/core/Shape';
@@ -63,7 +66,7 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
 }`);
   });
@@ -76,7 +79,7 @@ SELECT DISTINCT ?a0 ?a0_friends
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
 }`);
   });
@@ -89,7 +92,7 @@ SELECT DISTINCT ?a0 ?a0_birthDate
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/birthDate> ?a0_birthDate .
+    ?a0 <${PROP}birthDate> ?a0_birthDate .
   }
 }`);
   });
@@ -102,7 +105,7 @@ SELECT DISTINCT ?a0 ?a0_isRealPerson
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/isRealPerson> ?a0_isRealPerson .
+    ?a0 <${PROP}isRealPerson> ?a0_isRealPerson .
   }
 }`);
   });
@@ -126,34 +129,34 @@ SELECT DISTINCT ?a0 ?a0_name ?a0_hobby ?a0_nickNames ?a0_birthDate ?a0_isRealPer
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   OPTIONAL {
-    ?a0 <${P}/hobby> ?a0_hobby .
+    ?a0 <${PROP}hobby> ?a0_hobby .
   }
   OPTIONAL {
-    ?a0 <${P}/nickNames> ?a0_nickNames .
+    ?a0 <${PROP}nickName> ?a0_nickNames .
   }
   OPTIONAL {
-    ?a0 <${P}/birthDate> ?a0_birthDate .
+    ?a0 <${PROP}birthDate> ?a0_birthDate .
   }
   OPTIONAL {
-    ?a0 <${P}/isRealPerson> ?a0_isRealPerson .
+    ?a0 <${PROP}isRealPerson> ?a0_isRealPerson .
   }
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a0_bestFriend .
+    ?a0 <${PROP}bestFriend> ?a0_bestFriend .
   }
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
   OPTIONAL {
-    ?a0 <${P}/pets> ?a0_pets .
+    ?a0 <${PROP}hasPet> ?a0_pets .
   }
   OPTIONAL {
-    ?a0 <${P}/firstPet> ?a0_firstPet .
+    ?a0 <${PROP}hasPet> ?a0_firstPet .
   }
   OPTIONAL {
-    ?a0 <${P}/pluralTestProp> ?a0_pluralTestProp .
+    ?a0 <${PROP}pluralTestProp> ?a0_pluralTestProp .
   }
   OPTIONAL {
     ?a0 rdfs:label ?a0_label .
@@ -172,10 +175,10 @@ SELECT DISTINCT ?a0 ?a0_bestFriend ?a0_friends
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a0_bestFriend .
+    ?a0 <${PROP}bestFriend> ?a0_bestFriend .
   }
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
 }`);
   });
@@ -194,7 +197,7 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   FILTER(?a0 = <linked://tmp/entities/p1>)
 }`);
@@ -208,7 +211,7 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   FILTER(?a0 = <linked://tmp/entities/p1>)
 }`);
@@ -222,7 +225,7 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   FILTER(?a0 = <https://does.not/exist>)
 }`);
@@ -236,10 +239,10 @@ SELECT DISTINCT ?a0 ?a0_hobby ?a0_bestFriend
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/hobby> ?a0_hobby .
+    ?a0 <${PROP}hobby> ?a0_hobby .
   }
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a0_bestFriend .
+    ?a0 <${PROP}bestFriend> ?a0_bestFriend .
   }
   FILTER(?a0 = <linked://tmp/entities/p3>)
 }`);
@@ -253,7 +256,7 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   FILTER(?a0 = <linked://tmp/entities/p1>)
 }
@@ -274,9 +277,9 @@ SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
 }`);
@@ -290,11 +293,11 @@ SELECT DISTINCT ?a0 ?a2_name ?a1 ?a2
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/friends> ?a2 .
+      ?a1 <${PROP}hasFriend> ?a2 .
       OPTIONAL {
-        ?a2 <${P}/name> ?a2_name .
+        ?a2 <${PROP}name> ?a2_name .
       }
     }
   }
@@ -309,16 +312,16 @@ SELECT DISTINCT ?a0 ?a0_name ?a0_friends ?a1_name ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a1 .
+    ?a0 <${PROP}bestFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
 }`);
   });
@@ -331,9 +334,9 @@ SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a1 .
+    ?a0 <${PROP}bestFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
 }`);
@@ -347,13 +350,13 @@ SELECT DISTINCT ?a0 ?a3_name ?a1 ?a2 ?a3
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/bestFriend> ?a2 .
+      ?a1 <${PROP}bestFriend> ?a2 .
       OPTIONAL {
-        ?a2 <${P}/bestFriend> ?a3 .
+        ?a2 <${PROP}bestFriend> ?a3 .
         OPTIONAL {
-          ?a3 <${P}/name> ?a3_name .
+          ?a3 <${PROP}name> ?a3_name .
         }
       }
     }
@@ -369,15 +372,15 @@ SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1_isRealPerson ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a1 .
+    ?a0 <${PROP}bestFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
     OPTIONAL {
-      ?a1 <${P}/isRealPerson> ?a1_isRealPerson .
+      ?a1 <${PROP}isRealPerson> ?a1_isRealPerson .
     }
   }
 }`);
@@ -391,9 +394,9 @@ SELECT DISTINCT ?a0 ?a1_bestFriend ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/bestFriend> ?a1_bestFriend .
+      ?a1 <${PROP}bestFriend> ?a1_bestFriend .
     }
   }
 }`);
@@ -413,9 +416,9 @@ SELECT DISTINCT ?a0 ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     FILTER(?a1_name = "Moa")
   }
@@ -430,7 +433,7 @@ SELECT DISTINCT ?a0 ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/hobby> ?a1 .
+    ?a0 <${PROP}hobby> ?a1 .
     FILTER(?a1 = "Jogging")
   }
 }`);
@@ -444,12 +447,12 @@ SELECT DISTINCT ?a0 ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
     FILTER(?a1_name = "Moa" && ?a1_hobby = "Jogging")
   }
@@ -464,12 +467,12 @@ SELECT DISTINCT ?a0 ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
     FILTER(?a1_name = "Jinx" || ?a1_hobby = "Jogging")
   }
@@ -484,12 +487,12 @@ SELECT DISTINCT ?a0 ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
     FILTER((?a1_name = "Jinx" || ?a1_hobby = "Jogging") && ?a1_name = "Moa")
   }
@@ -504,12 +507,12 @@ SELECT DISTINCT ?a0 ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
     FILTER(?a1_name = "Jinx" || ?a1_hobby = "Jogging" && ?a1_name = "Moa")
   }
@@ -529,7 +532,7 @@ describe('SPARQL golden — outer where', () => {
 SELECT DISTINCT ?a0
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/bestFriend> ?a0_bestFriend .
+  ?a0 <${PROP}bestFriend> ?a0_bestFriend .
   FILTER(?a0_bestFriend = <linked://tmp/entities/p3>)
 }`);
   });
@@ -541,7 +544,7 @@ WHERE {
 SELECT DISTINCT ?a0
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
+  ?a0 <${PROP}name> ?a0_name .
   FILTER(?a0_name = "Semmy")
 }`);
   });
@@ -553,9 +556,9 @@ WHERE {
 SELECT DISTINCT ?a0 ?a0_friends
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
+  ?a0 <${PROP}name> ?a0_name .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
   FILTER(?a0_name = "Semmy")
 }`);
@@ -568,7 +571,7 @@ WHERE {
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
+  ?a0 <${PROP}name> ?a0_name .
   FILTER(?a0_name = "Semmy" || ?a0_name = "Moa")
 }
 LIMIT 1`);
@@ -582,10 +585,10 @@ SELECT DISTINCT ?a0 ?a0_name ?a0_hobby
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   OPTIONAL {
-    ?a0 <${P}/hobby> ?a0_hobby .
+    ?a0 <${PROP}hobby> ?a0_hobby .
   }
   FILTER(?a0_name = "Jinx" || ?a0_hobby = "Jogging")
 }`);
@@ -598,8 +601,8 @@ WHERE {
 SELECT DISTINCT ?a0 ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/friends> ?a1 .
-  ?a1 <${P}/name> ?a1_name .
+  ?a0 <${PROP}hasFriend> ?a1 .
+  ?a1 <${PROP}name> ?a1_name .
   FILTER(?a1_name = "Moa")
 }`);
   });
@@ -612,8 +615,8 @@ SELECT DISTINCT ?a0
 WHERE {
   ?a0 rdf:type <${PT}> .
   FILTER(EXISTS {
-    ?a0 <${P}/friends> ?a1 .
-    ?a1 <${P}/name> ?a1_name .
+    ?a0 <${PROP}hasFriend> ?a1 .
+    ?a1 <${PROP}name> ?a1_name .
     FILTER(?a1_name = "Moa")
   })
 }`);
@@ -627,8 +630,8 @@ SELECT DISTINCT ?a0
 WHERE {
   ?a0 rdf:type <${PT}> .
   FILTER(!(EXISTS {
-    ?a0 <${P}/friends> ?a1 .
-    ?a1 <${P}/name> ?a1_name .
+    ?a0 <${PROP}hasFriend> ?a1 .
+    ?a1 <${PROP}name> ?a1_name .
     FILTER(!(?a1_name = "Moa" || ?a1_name = "Jinx"))
   }))
 }`);
@@ -642,11 +645,11 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   FILTER(!(EXISTS {
-    ?a0 <${P}/friends> ?a1 .
-    ?a1 <${P}/hobby> ?a1_hobby .
+    ?a0 <${PROP}hasFriend> ?a1 .
+    ?a1 <${PROP}hobby> ?a1_hobby .
     FILTER(?a1_hobby = "Chess")
   }))
 }`);
@@ -660,11 +663,11 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   FILTER(!(EXISTS {
-    ?a0 <${P}/friends> ?a1 .
-    ?a1 <${P}/hobby> ?a1_hobby .
+    ?a0 <${PROP}hasFriend> ?a1 .
+    ?a1 <${PROP}hobby> ?a1_hobby .
     FILTER(?a1_hobby = "Chess")
   }))
 }`);
@@ -677,7 +680,7 @@ WHERE {
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
+  ?a0 <${PROP}name> ?a0_name .
   FILTER(!(?a0_name = "Alice"))
 }`);
   });
@@ -689,10 +692,10 @@ WHERE {
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
+  ?a0 <${PROP}name> ?a0_name .
   FILTER(!(EXISTS {
-    ?a0 <${P}/friends> ?a1 .
-    ?a1 <${P}/hobby> ?a1_hobby .
+    ?a0 <${PROP}hasFriend> ?a1 .
+    ?a1 <${PROP}hobby> ?a1_hobby .
     FILTER(?a1_hobby = "Chess")
   }) && ?a0_name = "Bob")
 }`);
@@ -705,7 +708,7 @@ WHERE {
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
+  ?a0 <${PROP}name> ?a0_name .
   FILTER(?a0_name != "Alice")
 }`);
   });
@@ -717,8 +720,8 @@ WHERE {
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
-  ?a0 <${P}/hobby> ?a0_hobby .
+  ?a0 <${PROP}name> ?a0_name .
+  ?a0 <${PROP}hobby> ?a0_hobby .
   FILTER(!(?a0_name = "Alice" && ?a0_hobby = "Chess"))
 }`);
   });
@@ -730,10 +733,10 @@ WHERE {
 SELECT DISTINCT ?a0
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
+  ?a0 <${PROP}name> ?a0_name .
   FILTER(EXISTS {
-    ?a0 <${P}/friends> ?a1 .
-    ?a1 <${P}/name> ?a1_name .
+    ?a0 <${PROP}hasFriend> ?a1 .
+    ?a1 <${PROP}name> ?a1_name .
     FILTER(?a1_name = "Jinx")
   } && ?a0_name = "Semmy")
 }`);
@@ -746,9 +749,9 @@ WHERE {
 SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/bestFriend> ?a0_bestFriend .
+  ?a0 <${PROP}bestFriend> ?a0_bestFriend .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   FILTER(?a0_bestFriend = <user-1>)
 }`);
@@ -762,12 +765,12 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   FILTER(EXISTS {
-    ?a0 <${P}/friends> ?a1 .
-    ?a1 <${P}/name> ?a1_name .
-    <user-1> <${P}/name> ?__ctx__user_1_name .
+    ?a0 <${PROP}hasFriend> ?a1 .
+    ?a1 <${PROP}name> ?a1_name .
+    <user-1> <${PROP}name> ?__ctx__user_1_name .
     FILTER(?a1_name = ?__ctx__user_1_name)
   })
 }`);
@@ -787,7 +790,7 @@ SELECT ?a0 (count(?a0_friends) AS ?a1)
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
 }
 GROUP BY ?a0`);
@@ -800,9 +803,9 @@ GROUP BY ?a0`);
 SELECT ?a0 (count(?a1_friends) AS ?a1_agg)
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/friends> ?a1 .
+  ?a0 <${PROP}hasFriend> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/friends> ?a1_friends .
+    ?a1 <${PROP}hasFriend> ?a1_friends .
   }
 }
 GROUP BY ?a0`);
@@ -815,9 +818,9 @@ GROUP BY ?a0`);
 SELECT ?a0 (count(?a1_friends) AS ?a1_agg)
 WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/friends> ?a1 .
+  ?a0 <${PROP}hasFriend> ?a1 .
   OPTIONAL {
-    ?a1 <${P}/friends> ?a1_friends .
+    ?a1 <${PROP}hasFriend> ?a1_friends .
   }
 }
 GROUP BY ?a0`);
@@ -831,7 +834,7 @@ SELECT ?a0 (count(?a0_friends) AS ?a1)
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
 }
 GROUP BY ?a0`);
@@ -846,7 +849,7 @@ SELECT ?a0
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
 }
 GROUP BY ?a0
@@ -861,7 +864,7 @@ SELECT DISTINCT ?a0 (?a0_bestFriend = <linked://tmp/entities/p3> AS ?a1)
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a0_bestFriend .
+    ?a0 <${PROP}bestFriend> ?a0_bestFriend .
   }
 }`);
   });
@@ -880,7 +883,7 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
 }
 ORDER BY ASC(?a0_name)`);
@@ -894,7 +897,7 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
 }
 ORDER BY DESC(?a0_name)`);
@@ -914,9 +917,9 @@ SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a1 .
+    ?a0 <${PROP}bestFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
 }`);
@@ -930,12 +933,12 @@ SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
   }
 }`);
@@ -950,36 +953,36 @@ SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1_nickNames ?a1_birthDate ?a1_isRealPer
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
     OPTIONAL {
-      ?a1 <${P}/nickNames> ?a1_nickNames .
+      ?a1 <${PROP}nickName> ?a1_nickNames .
     }
     OPTIONAL {
-      ?a1 <${P}/birthDate> ?a1_birthDate .
+      ?a1 <${PROP}birthDate> ?a1_birthDate .
     }
     OPTIONAL {
-      ?a1 <${P}/isRealPerson> ?a1_isRealPerson .
+      ?a1 <${PROP}isRealPerson> ?a1_isRealPerson .
     }
     OPTIONAL {
-      ?a1 <${P}/bestFriend> ?a1_bestFriend .
+      ?a1 <${PROP}bestFriend> ?a1_bestFriend .
     }
     OPTIONAL {
-      ?a1 <${P}/friends> ?a1_friends .
+      ?a1 <${PROP}hasFriend> ?a1_friends .
     }
     OPTIONAL {
-      ?a1 <${P}/pets> ?a1_pets .
+      ?a1 <${PROP}hasPet> ?a1_pets .
     }
     OPTIONAL {
-      ?a1 <${P}/firstPet> ?a1_firstPet .
+      ?a1 <${PROP}hasPet> ?a1_firstPet .
     }
     OPTIONAL {
-      ?a1 <${P}/pluralTestProp> ?a1_pluralTestProp .
+      ?a1 <${PROP}pluralTestProp> ?a1_pluralTestProp .
     }
     OPTIONAL {
       ?a1 rdfs:label ?a1_label .
@@ -1000,36 +1003,36 @@ SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1_nickNames ?a1_birthDate ?a1_isRealPer
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a1 .
+    ?a0 <${PROP}bestFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
     OPTIONAL {
-      ?a1 <${P}/nickNames> ?a1_nickNames .
+      ?a1 <${PROP}nickName> ?a1_nickNames .
     }
     OPTIONAL {
-      ?a1 <${P}/birthDate> ?a1_birthDate .
+      ?a1 <${PROP}birthDate> ?a1_birthDate .
     }
     OPTIONAL {
-      ?a1 <${P}/isRealPerson> ?a1_isRealPerson .
+      ?a1 <${PROP}isRealPerson> ?a1_isRealPerson .
     }
     OPTIONAL {
-      ?a1 <${P}/bestFriend> ?a1_bestFriend .
+      ?a1 <${PROP}bestFriend> ?a1_bestFriend .
     }
     OPTIONAL {
-      ?a1 <${P}/friends> ?a1_friends .
+      ?a1 <${PROP}hasFriend> ?a1_friends .
     }
     OPTIONAL {
-      ?a1 <${P}/pets> ?a1_pets .
+      ?a1 <${PROP}hasPet> ?a1_pets .
     }
     OPTIONAL {
-      ?a1 <${P}/firstPet> ?a1_firstPet .
+      ?a1 <${PROP}hasPet> ?a1_firstPet .
     }
     OPTIONAL {
-      ?a1 <${P}/pluralTestProp> ?a1_pluralTestProp .
+      ?a1 <${PROP}pluralTestProp> ?a1_pluralTestProp .
     }
     OPTIONAL {
       ?a1 rdfs:label ?a1_label .
@@ -1049,15 +1052,15 @@ SELECT DISTINCT ?a0 ?a1_name ?a1_birthDate ?a1_isRealPerson ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a1 .
+    ?a0 <${PROP}bestFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/birthDate> ?a1_birthDate .
+      ?a1 <${PROP}birthDate> ?a1_birthDate .
     }
     OPTIONAL {
-      ?a1 <${P}/isRealPerson> ?a1_isRealPerson .
+      ?a1 <${PROP}isRealPerson> ?a1_isRealPerson .
     }
   }
 }`);
@@ -1071,12 +1074,12 @@ SELECT DISTINCT ?a0 ?a1_name ?a1_hobby ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
     OPTIONAL {
-      ?a1 <${P}/hobby> ?a1_hobby .
+      ?a1 <${PROP}hobby> ?a1_hobby .
     }
   }
 }`);
@@ -1090,11 +1093,11 @@ SELECT DISTINCT ?a0 ?a2_name ?a1 ?a2
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/bestFriend> ?a2 .
+      ?a1 <${PROP}bestFriend> ?a2 .
       OPTIONAL {
-        ?a2 <${P}/name> ?a2_name .
+        ?a2 <${PROP}name> ?a2_name .
       }
     }
   }
@@ -1109,14 +1112,14 @@ SELECT DISTINCT ?a0 ?a1_firstPet ?a2_name ?a1 ?a2
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/firstPet> ?a1_firstPet .
+      ?a1 <${PROP}hasPet> ?a1_firstPet .
     }
     OPTIONAL {
-      ?a1 <${P}/bestFriend> ?a2 .
+      ?a1 <${PROP}bestFriend> ?a2 .
       OPTIONAL {
-        ?a2 <${P}/name> ?a2_name .
+        ?a2 <${PROP}name> ?a2_name .
       }
     }
   }
@@ -1137,9 +1140,9 @@ SELECT DISTINCT ?a0 ?a1_guardDogLevel ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/pets> ?a1 .
+    ?a0 <${PROP}hasPet> ?a1 .
     OPTIONAL {
-      ?a1 <${D}/guardDogLevel> ?a1_guardDogLevel .
+      ?a1 <${PROP}guardDogLevel> ?a1_guardDogLevel .
     }
   }
 }`);
@@ -1153,9 +1156,9 @@ SELECT DISTINCT ?a0 ?a1_guardDogLevel ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/firstPet> ?a1 .
+    ?a0 <${PROP}hasPet> ?a1 .
     OPTIONAL {
-      ?a1 <${D}/guardDogLevel> ?a1_guardDogLevel .
+      ?a1 <${PROP}guardDogLevel> ?a1_guardDogLevel .
     }
   }
 }`);
@@ -1176,37 +1179,37 @@ SELECT DISTINCT ?a0 ?a0_name ?a0_bestFriend ?a0_department ?a0_hobby ?a0_nickNam
 WHERE {
   ?a0 rdf:type <${ET}> .
   OPTIONAL {
-    ?a0 <${E}/name> ?a0_name .
+    ?a0 <${PROP}employeeName> ?a0_name .
   }
   OPTIONAL {
-    ?a0 <${E}/bestFriend> ?a0_bestFriend .
+    ?a0 <${PROP}bestFriend> ?a0_bestFriend .
   }
   OPTIONAL {
-    ?a0 <${E}/department> ?a0_department .
+    ?a0 <${PROP}employeeDepartment> ?a0_department .
   }
   OPTIONAL {
-    ?a0 <${P}/hobby> ?a0_hobby .
+    ?a0 <${PROP}hobby> ?a0_hobby .
   }
   OPTIONAL {
-    ?a0 <${P}/nickNames> ?a0_nickNames .
+    ?a0 <${PROP}nickName> ?a0_nickNames .
   }
   OPTIONAL {
-    ?a0 <${P}/birthDate> ?a0_birthDate .
+    ?a0 <${PROP}birthDate> ?a0_birthDate .
   }
   OPTIONAL {
-    ?a0 <${P}/isRealPerson> ?a0_isRealPerson .
+    ?a0 <${PROP}isRealPerson> ?a0_isRealPerson .
   }
   OPTIONAL {
-    ?a0 <${P}/friends> ?a0_friends .
+    ?a0 <${PROP}hasFriend> ?a0_friends .
   }
   OPTIONAL {
-    ?a0 <${P}/pets> ?a0_pets .
+    ?a0 <${PROP}hasPet> ?a0_pets .
   }
   OPTIONAL {
-    ?a0 <${P}/firstPet> ?a0_firstPet .
+    ?a0 <${PROP}hasPet> ?a0_firstPet .
   }
   OPTIONAL {
-    ?a0 <${P}/pluralTestProp> ?a0_pluralTestProp .
+    ?a0 <${PROP}pluralTestProp> ?a0_pluralTestProp .
   }
   OPTIONAL {
     ?a0 rdfs:label ?a0_label .
@@ -1231,9 +1234,9 @@ SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/bestFriend> ?a1 .
+    ?a0 <${PROP}bestFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
 }`);
@@ -1243,8 +1246,8 @@ WHERE {
     const sparql = await goldenSelect(queryFactories.queryBuilderPreload);
     // QueryBuilder.preload adds name selection + bestFriend preload
     expect(sparql).toContain('OPTIONAL');
-    expect(sparql).toContain(`<${P}/bestFriend>`);
-    expect(sparql).toContain(`<${P}/name>`);
+    expect(sparql).toContain(`<${PROP}bestFriend>`);
+    expect(sparql).toContain(`<${PROP}name>`);
   });
 });
 
@@ -1257,13 +1260,13 @@ describe('SPARQL golden — MINUS patterns', () => {
     const sparql = await goldenSelect(queryFactories.minusShape);
     expect(sparql).toContain('MINUS {');
     expect(sparql).toContain(`rdf:type <${ET}>`);
-    expect(sparql).toContain(`<${P}/name>`);
+    expect(sparql).toContain(`<${PROP}name>`);
   });
 
   test('minusCondition — exclude by property condition', async () => {
     const sparql = await goldenSelect(queryFactories.minusCondition);
     expect(sparql).toContain('MINUS {');
-    expect(sparql).toContain(`<${P}/hobby>`);
+    expect(sparql).toContain(`<${PROP}hobby>`);
     expect(sparql).toContain('FILTER');
     expect(sparql).toContain('"Chess"');
   });
@@ -1284,11 +1287,11 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   MINUS {
-    ?a0 <${P}/hobby> ?a1 .
-    ?a0 <${P}/nickNames> ?a2 .
+    ?a0 <${PROP}hobby> ?a1 .
+    ?a0 <${PROP}nickName> ?a2 .
   }
 }`);
   });
@@ -1301,11 +1304,11 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   MINUS {
-    ?a0 <${P}/bestFriend> ?a1 .
-    ?a1 <${P}/name> ?a2 .
+    ?a0 <${PROP}bestFriend> ?a1 .
+    ?a1 <${PROP}name> ?a2 .
   }
 }`);
   });
@@ -1318,12 +1321,12 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   MINUS {
-    ?a0 <${P}/hobby> ?a1 .
-    ?a0 <${P}/bestFriend> ?a2 .
-    ?a2 <${P}/name> ?a3 .
+    ?a0 <${PROP}hobby> ?a1 .
+    ?a0 <${PROP}bestFriend> ?a2 .
+    ?a2 <${PROP}name> ?a3 .
   }
 }`);
   });
@@ -1336,10 +1339,10 @@ SELECT DISTINCT ?a0 ?a0_name
 WHERE {
   ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/name> ?a0_name .
+    ?a0 <${PROP}name> ?a0_name .
   }
   MINUS {
-    ?a0 <${P}/hobby> ?a1 .
+    ?a0 <${PROP}hobby> ?a1 .
   }
 }`);
   });
@@ -1353,7 +1356,7 @@ describe('SPARQL golden — computed expressions', () => {
   test('exprStrlen', async () => {
     const sparql = await goldenSelect(queryFactories.exprStrlen);
     expect(sparql).toContain('STRLEN');
-    expect(sparql).toContain(`<${P}/name>`);
+    expect(sparql).toContain(`<${PROP}name>`);
   });
 
   test('exprCustomKey', async () => {
@@ -1364,14 +1367,14 @@ describe('SPARQL golden — computed expressions', () => {
   test('exprNestedPath', async () => {
     const sparql = await goldenSelect(queryFactories.exprNestedPath);
     expect(sparql).toContain('UCASE');
-    expect(sparql).toContain(`<${P}/bestFriend>`);
-    expect(sparql).toContain(`<${P}/name>`);
+    expect(sparql).toContain(`<${PROP}bestFriend>`);
+    expect(sparql).toContain(`<${PROP}name>`);
   });
 
   test('exprMultiple', async () => {
     const sparql = await goldenSelect(queryFactories.exprMultiple);
     expect(sparql).toContain('STRLEN');
-    expect(sparql).toContain(`<${P}/name>`);
+    expect(sparql).toContain(`<${PROP}name>`);
   });
 });
 
@@ -1412,7 +1415,7 @@ describe('SPARQL golden — expression WHERE filters', () => {
     const sparql = await goldenSelect(queryFactories.whereExprNestedPath);
     expect(sparql).toContain('FILTER');
     expect(sparql).toContain('STRLEN');
-    expect(sparql).toContain(`<${P}/bestFriend>`);
+    expect(sparql).toContain(`<${PROP}bestFriend>`);
   });
 
   test('whereExprWithProjection — expression in both SELECT and WHERE', async () => {
@@ -1431,7 +1434,7 @@ describe('SPARQL golden — computed expressions', () => {
   test('exprStrlen', async () => {
     const sparql = await goldenSelect(queryFactories.exprStrlen);
     expect(sparql).toContain('STRLEN');
-    expect(sparql).toContain(`<${P}/name>`);
+    expect(sparql).toContain(`<${PROP}name>`);
   });
 
   test('exprCustomKey', async () => {
@@ -1442,14 +1445,14 @@ describe('SPARQL golden — computed expressions', () => {
   test('exprNestedPath', async () => {
     const sparql = await goldenSelect(queryFactories.exprNestedPath);
     expect(sparql).toContain('UCASE');
-    expect(sparql).toContain(`<${P}/bestFriend>`);
-    expect(sparql).toContain(`<${P}/name>`);
+    expect(sparql).toContain(`<${PROP}bestFriend>`);
+    expect(sparql).toContain(`<${PROP}name>`);
   });
 
   test('exprMultiple', async () => {
     const sparql = await goldenSelect(queryFactories.exprMultiple);
     expect(sparql).toContain('STRLEN');
-    expect(sparql).toContain(`<${P}/name>`);
+    expect(sparql).toContain(`<${PROP}name>`);
   });
 });
 
@@ -1490,7 +1493,7 @@ describe('SPARQL golden — expression WHERE filters', () => {
     const sparql = await goldenSelect(queryFactories.whereExprNestedPath);
     expect(sparql).toContain('FILTER');
     expect(sparql).toContain('STRLEN');
-    expect(sparql).toContain(`<${P}/bestFriend>`);
+    expect(sparql).toContain(`<${PROP}bestFriend>`);
   });
 
   test('whereExprWithProjection — expression in both SELECT and WHERE', async () => {

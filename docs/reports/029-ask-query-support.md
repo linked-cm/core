@@ -123,9 +123,32 @@ Every fixture declared a temporary `targetClass`, so **every golden was assertin
 Type triples now carry the class node while property predicates still derive from the shape IRI, and
 Fuseki seed data is typed to match.
 
-**Open, deliberately out of scope:** `resolvePropertyPredicate` has the identical fallback for
-`sh:path` — a temporary path IRI is discarded in favour of the property shape's own IRI. Same
-function, same reasoning, not asked for here.
+### The `linked://tmp/` skip was a test-fixture workaround, and it is gone
+
+`shouldResolveShapeOrPropertyId` skipped any shape or property IRI beginning `linked://tmp/`. No
+production code ever minted such an IRI — `generateEntityUri` uses `dataRoot ?? DATA_ROOT ??
+'http://example.org/data'`. The bases were declared in `query-fixtures.ts` and nowhere else, and
+`mutation-uri-fidelity.test.ts` said so outright: *"the shared query-fixtures shape uses
+`linked://tmp/` which is intentionally skipped by the resolver (existing golden-SELECT tests rely on
+raw shape ids)"* — a whole parallel fixture shape existed to work around it.
+
+The fixtures now declare ordinary IRIs (`https://example.org/{types,props}/`) and the skip is
+deleted. Consequences, all of them corrections:
+
+- **A declared `sh:path` is now always the predicate.** The fixtures deliberately declare paths that
+  differ from accessor labels — `friends` → `hasFriend`, `pets`/`firstPet` → `hasPet`, `nickNames` →
+  `nickName`, `Employee.name` → `employeeName`. The skip hid every one of those: predicates came out
+  label-derived, so `pets` and `firstPet` emitted *different* predicates where they share one, and
+  `Person.name` and `Employee.name` emitted the *same* one where they differ. The goldens now prove
+  label and predicate are decoupled.
+- **A real bug fell out.** Two mutation sites built traversal predicates as `iriTerm(trav.property)`,
+  bypassing the resolver entirely (`irToAlgebra.ts`, update and update-where). It was invisible while
+  the resolver's fallback returned that same id; with the skip gone,
+  `Person.update({...}).for(id)` using `p.bestFriend.name` emitted
+  `<…/shape/core/Person/bestFriend>` as a predicate. Both sites now go through
+  `resolvePropertyPredicateTerm`.
+- Subject IRIs keep `linked://tmp/entities/` — they are plain data and were never resolved through
+  the skip.
 
 ## Tests
 

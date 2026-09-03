@@ -13,9 +13,11 @@
  * the decorator's `path` is authoritative for the predicate written, and
  * `targetClass` is authoritative for `rdf:type`.
  *
- * Uses its own fixture shape with a non-`linked://tmp/` URI base, because the
- * shared query-fixtures shape uses `linked://tmp/` which is intentionally
- * skipped by the resolver (existing golden-SELECT tests rely on raw shape ids).
+ * Keeps its own fixture shape. That shape originally existed because the shared
+ * query-fixtures used `linked://tmp/` paths, which the resolver deliberately
+ * skipped so the golden-SELECT tests could assert shape-derived ids. That skip is
+ * gone and the shared fixtures now declare ordinary IRIs, so this shape is no
+ * longer a workaround — it is just an independent second witness.
  */
 import {describe, expect, test} from '@jest/globals';
 import {linkedShape} from '../package';
@@ -35,7 +37,6 @@ import {NodeReferenceValue} from '../queries/QueryFactory';
 
 import '../ontologies/rdf';
 
-// Use a non-`linked://tmp/` base so the resolver actually resolves URIs.
 const ONT_BASE = 'linked://mutation-fidelity/';
 const ontProp = (s: string): NodeReferenceValue => ({id: `${ONT_BASE}props/${s}`});
 const ontCls = (s: string): NodeReferenceValue => ({id: `${ONT_BASE}types/${s}`});

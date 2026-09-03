@@ -4,6 +4,7 @@ import {
   Person,
   queryFactories,
   tmpEntityBase,
+  propBase,
 } from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {selectToAlgebra} from '../sparql/irToAlgebra';
@@ -26,6 +27,8 @@ import '../ontologies/rdf';
 import '../ontologies/xsd';
 
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+// Property predicates are the declared `sh:path`, not derived from the shape IRI.
+const PROP = propBase;
 
 setQueryContext('user', {id: 'user-1'}, Person);
 
@@ -294,7 +297,7 @@ describe('selectToAlgebra — nested traversals', () => {
         t.subject.kind === 'variable' &&
         t.subject.name === 'a0' &&
         t.predicate.kind === 'iri' &&
-        t.predicate.value === `${Person.shape.id}/bestFriend` &&
+        t.predicate.value === `${PROP}bestFriend` &&
         t.object.kind === 'variable' &&
         t.object.name === 'a1',
     );
@@ -327,7 +330,7 @@ describe('selectToAlgebra — nested traversals', () => {
         t.subject.kind === 'variable' &&
         t.subject.name === 'a0' &&
         t.predicate.kind === 'iri' &&
-        t.predicate.value === `${Person.shape.id}/bestFriend` &&
+        t.predicate.value === `${PROP}bestFriend` &&
         t.object.kind === 'variable' &&
         t.object.name === 'a1',
     );
@@ -348,7 +351,7 @@ describe('selectToAlgebra — nested traversals', () => {
       rootBgp!.triples.some(
         (t) =>
           t.predicate.kind === 'iri' &&
-          t.predicate.value === `${Person.shape.id}/bestFriend`,
+          t.predicate.value === `${PROP}bestFriend`,
       ),
     ).toBe(false);
 
@@ -359,7 +362,7 @@ describe('selectToAlgebra — nested traversals', () => {
           t.subject.kind === 'variable' &&
           t.subject.name === 'a0' &&
           t.predicate.kind === 'iri' &&
-          t.predicate.value === `${Person.shape.id}/bestFriend`,
+          t.predicate.value === `${PROP}bestFriend`,
       ),
     ).toBe(true);
     expect(
@@ -368,7 +371,7 @@ describe('selectToAlgebra — nested traversals', () => {
           t.subject.kind === 'variable' &&
           t.subject.name === 'a1' &&
           t.predicate.kind === 'iri' &&
-          t.predicate.value === `${Person.shape.id}/name`,
+          t.predicate.value === `${PROP}name`,
       ),
     ).toBe(true);
   });
@@ -395,7 +398,7 @@ describe('selectToAlgebra — nested traversals', () => {
       rootBgp!.triples.some(
         (t) =>
           t.predicate.kind === 'iri' &&
-          t.predicate.value === `${Person.shape.id}/friends`,
+          t.predicate.value === `${PROP}hasFriend`,
       ),
     ).toBe(false);
 
@@ -407,7 +410,7 @@ describe('selectToAlgebra — nested traversals', () => {
           t.subject.kind === 'variable' &&
           t.subject.name === 'a0' &&
           t.predicate.kind === 'iri' &&
-          t.predicate.value === `${Person.shape.id}/friends` &&
+          t.predicate.value === `${PROP}hasFriend` &&
           t.object.kind === 'variable' &&
           t.object.name === 'a1',
       ),
@@ -418,7 +421,7 @@ describe('selectToAlgebra — nested traversals', () => {
           t.subject.kind === 'variable' &&
           t.subject.name === 'a1' &&
           t.predicate.kind === 'iri' &&
-          t.predicate.value === `${Person.shape.id}/name`,
+          t.predicate.value === `${PROP}name`,
       ),
     ).toBe(true);
   });
@@ -534,8 +537,8 @@ describe('selectToAlgebra — where clauses', () => {
 
     const allTriples = collectAllTriples(plan.algebra);
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(countTriplesByPredicate(allTriples, `${Person.shape.id}/name`)).toBe(1);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/name`)).toBe(0);
+    expect(countTriplesByPredicate(allTriples, `${PROP}name`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}name`)).toBe(0);
   });
 
   test('outerWhere has Filter wrapping the entire pattern', async () => {
@@ -558,9 +561,9 @@ describe('selectToAlgebra — where clauses', () => {
 
     const allTriples = collectAllTriples(plan.algebra);
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(countTriplesByPredicate(allTriples, `${Person.shape.id}/name`)).toBe(1);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/name`)).toBe(0);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/friends`)).toBe(1);
+    expect(countTriplesByPredicate(allTriples, `${PROP}name`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}name`)).toBe(0);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}hasFriend`)).toBe(1);
   });
 
   test('outerWhereLimit promotes same-property OR to a required triple', async () => {
@@ -568,16 +571,16 @@ describe('selectToAlgebra — where clauses', () => {
 
     const allTriples = collectAllTriples(plan.algebra);
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(countTriplesByPredicate(allTriples, `${Person.shape.id}/name`)).toBe(1);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/name`)).toBe(0);
+    expect(countTriplesByPredicate(allTriples, `${PROP}name`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}name`)).toBe(0);
   });
 
   test('outerWhereDifferentPropsOr keeps both properties optional', async () => {
     const plan = await capturePlan(() => queryFactories.outerWhereDifferentPropsOr());
 
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/name`)).toBe(1);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/hobby`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}name`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}hobby`)).toBe(1);
   });
 
   test('whereWithContext keeps projection optional but promotes filter binding', async () => {
@@ -585,9 +588,9 @@ describe('selectToAlgebra — where clauses', () => {
 
     const allTriples = collectAllTriples(plan.algebra);
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(countTriplesByPredicate(allTriples, `${Person.shape.id}/bestFriend`)).toBe(1);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/bestFriend`)).toBe(0);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/name`)).toBe(1);
+    expect(countTriplesByPredicate(allTriples, `${PROP}bestFriend`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}bestFriend`)).toBe(0);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}name`)).toBe(1);
   });
 
   test('whereSomeImplicit promotes the traversed filter property to required', async () => {
@@ -595,9 +598,9 @@ describe('selectToAlgebra — where clauses', () => {
 
     const allTriples = collectAllTriples(plan.algebra);
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(countTriplesByPredicate(allTriples, `${Person.shape.id}/friends`)).toBe(1);
-    expect(countTriplesByPredicate(allTriples, `${Person.shape.id}/name`)).toBe(1);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/name`)).toBe(0);
+    expect(countTriplesByPredicate(allTriples, `${PROP}hasFriend`)).toBe(1);
+    expect(countTriplesByPredicate(allTriples, `${PROP}name`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}name`)).toBe(0);
   });
 
   test('whereExprStrlen promotes function-filter property bindings to required', async () => {
@@ -605,15 +608,15 @@ describe('selectToAlgebra — where clauses', () => {
 
     const allTriples = collectAllTriples(plan.algebra);
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(countTriplesByPredicate(allTriples, `${Person.shape.id}/name`)).toBe(1);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/name`)).toBe(0);
+    expect(countTriplesByPredicate(allTriples, `${PROP}name`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}name`)).toBe(0);
   });
 
   test('countEquals keeps aggregate inputs optional', async () => {
     const plan = await capturePlan(() => queryFactories.countEquals());
 
     const optionalTriples = collectOptionalTriples(plan.algebra);
-    expect(countTriplesByPredicate(optionalTriples, `${Person.shape.id}/friends`)).toBe(1);
+    expect(countTriplesByPredicate(optionalTriples, `${PROP}hasFriend`)).toBe(1);
   });
 });
 
@@ -809,7 +812,7 @@ describe('EXISTS pattern conversion', () => {
         pattern: {
           kind: 'join',
           patterns: [
-            {kind: 'traverse', from: 'a0', to: 'a1', property: `${P}/friends`},
+            {kind: 'traverse', from: 'a0', to: 'a1', property: `${PROP}hasFriend`},
             {kind: 'shape_scan', shape: Employee.shape.id, alias: 'a1'},
           ],
         },
@@ -858,7 +861,7 @@ describe('EXISTS pattern conversion', () => {
         kind: 'exists_expr',
         pattern: {
           kind: 'optional',
-          pattern: {kind: 'traverse', from: 'a0', to: 'a1', property: `${P}/friends`},
+          pattern: {kind: 'traverse', from: 'a0', to: 'a1', property: `${PROP}hasFriend`},
         },
       },
       singleResult: false,
@@ -890,8 +893,8 @@ describe('EXISTS pattern conversion', () => {
         pattern: {
           kind: 'union',
           branches: [
-            {kind: 'traverse', from: 'a0', to: 'a1', property: `${P}/friends`},
-            {kind: 'traverse', from: 'a0', to: 'a2', property: `${P}/bestFriend`},
+            {kind: 'traverse', from: 'a0', to: 'a1', property: `${PROP}hasFriend`},
+            {kind: 'traverse', from: 'a0', to: 'a2', property: `${PROP}bestFriend`},
           ],
         },
       },

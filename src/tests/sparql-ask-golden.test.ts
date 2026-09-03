@@ -12,6 +12,7 @@ import {
   existsFactories,
   personClass,
   tmpEntityBase,
+  propBase,
 } from '../test-helpers/query-fixtures';
 import {Shape} from '../shapes/Shape';
 import {captureQuery} from '../test-helpers/query-capture-store';
@@ -27,6 +28,8 @@ setQueryContext('user', {id: 'user-1'}, Person);
 // Shape IRI (property predicates derive from it) and the separate class node it
 // declares as targetClass, which is what appears as rdf:type.
 const P = 'https://linked.cm/shape/core/Person';
+// Property predicates are the declared `sh:path`, not derived from the shape IRI.
+const PROP = propBase;
 const PT = personClass.id;
 const entity = (suffix: string) => ({id: `${tmpEntityBase}${suffix}`});
 
@@ -56,7 +59,7 @@ ASK WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 ASK WHERE {
   ?a0 rdf:type <${PT}> .
-  ?a0 <${P}/name> ?a0_name .
+  ?a0 <${PROP}name> ?a0_name .
   FILTER(?a0_name = "Semmy")
 }`);
   });

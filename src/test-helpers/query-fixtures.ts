@@ -8,15 +8,23 @@ import {getQueryContext} from '../queries/QueryContext';
 import {NodeReferenceValue, type UpdatePartial} from '../queries/QueryFactory';
 import {DeleteBuilder} from '../queries/DeleteBuilder';
 
-const tmpPropBase = 'linked://tmp/props/';
-const tmpTypeBase = 'linked://tmp/types/';
+// Predicates (`sh:path`) and classes (`targetClass`) are ordinary IRIs in their
+// own right — they are NOT derived from the shape IRI, and the engine has no
+// business inventing them. These used to be `linked://tmp/…`, which
+// `resolveShapeScanIri` / `resolvePropertyPredicateTerm` deliberately skipped so
+// that the goldens could assert shape-derived ids instead; that skip is gone, so
+// these are now what the emitted SPARQL actually contains.
+export const propBase = 'https://example.org/props/';
+export const typeBase = 'https://example.org/types/';
+// Subjects are plain data and were never resolved through that skip, so they keep
+// the temporary base.
 export const tmpEntityBase = 'linked://tmp/entities/';
 
 const prop = (suffix: string): NodeReferenceValue => ({
-  id: `${tmpPropBase}${suffix}`,
+  id: `${propBase}${suffix}`,
 });
 const type = (suffix: string): NodeReferenceValue => ({
-  id: `${tmpTypeBase}${suffix}`,
+  id: `${typeBase}${suffix}`,
 });
 const entity = (suffix: string): NodeReferenceValue => ({
   id: `${tmpEntityBase}${suffix}`,

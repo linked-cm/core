@@ -87,10 +87,6 @@ function tripleOf(
   return {subject, predicate, object};
 }
 
-function shouldResolveShapeOrPropertyId(resolvedId: string | null | undefined): boolean {
-  return !!resolvedId && !resolvedId.startsWith('linked://tmp/');
-}
-
 /**
  * Resolve the shape a query scans to the IRI written and matched as its `rdf:type`.
  *
@@ -131,7 +127,8 @@ function resolveShapeScanIri(shapeId: string): string {
  *   shape's `sh:path`, reusing the same `pathExprToSparql` / `collectPathUris` machinery as the
  *   inline-`pathExpr` branches. Without this, structured named-property paths collapsed to a shadow IRI
  *   that matched nothing.
- * - No matching shape / unresolvable → `{kind:'iri'}` of the property id itself (unchanged shadow fallback).
+ * - No matching property shape at all → `{kind:'iri'}` of the id as given (nothing
+ *   better is knowable; the caller passed an id no registered shape declares).
  */
 // Memoizes resolved predicate terms across the many call sites that resolve the
 // same property. Guarded by the shape-registry size so it self-invalidates when
@@ -192,9 +189,10 @@ function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
     const simplePathId = getSimplePathId(propertyShape.path);
     let term: SparqlTerm;
     if (simplePathId !== null) {
-      // Simple single-IRI path: resolve to the IRI, or fall back to the property id
-      // (e.g. unresolvable `linked://tmp/` ids) — unchanged from before.
-      term = iriTerm(shouldResolveShapeOrPropertyId(simplePathId) ? simplePathId : propertyId);
+      // Simple single-IRI path: the declared `sh:path` IS the predicate. There is
+      // no fallback to the property shape's own IRI — that identifies the
+      // *description* of the property, not the property itself.
+      term = iriTerm(simplePathId);
     } else {
       // Structured sh:path — emit a property-path predicate instead of a shadow IRI.
       term = {
@@ -2170,7 +2168,9 @@ export function updateToAlgebra(
         trav.from === '__mutation_subject__' ? subjectTerm : varTerm(trav.from);
       const traversalTriple = tripleOf(
         fromTerm,
-        iriTerm(trav.property),
+        // The declared `sh:path`, like every other predicate — not the property
+        // shape's own IRI, which identifies the description of the property.
+        resolvePropertyPredicateTerm(trav.property),
         varTerm(trav.to),
       );
       // The traversal edge binds the target var; each dependent leaf property is
@@ -2643,7 +2643,9 @@ export function updateWhereToAlgebra(
         trav.from === '__mutation_subject__' ? varTerm('a0') : varTerm(trav.from);
       const traversalTriple = tripleOf(
         fromTerm,
-        iriTerm(trav.property),
+        // The declared `sh:path`, like every other predicate — not the property
+        // shape's own IRI, which identifies the description of the property.
+        resolvePropertyPredicateTerm(trav.property),
         varTerm(trav.to),
       );
       whereAlgebra = {

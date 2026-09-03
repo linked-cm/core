@@ -20,6 +20,7 @@ import {
   petClass,
   employeeClass,
   metricClass,
+  propBase,
 } from '../test-helpers/query-fixtures';
 import {FusekiStore} from '../test-helpers/FusekiStore';
 import {
@@ -44,6 +45,8 @@ setQueryContext('user', {id: `${tmpEntityBase}p3`}, Person);
 
 // Shape URIs (SHACL-generated)
 const P = 'https://linked.cm/shape/core/Person';
+// Property predicates are the declared `sh:path`, not derived from the shape IRI.
+const PROP = propBase;
 const D = 'https://linked.cm/shape/core/Dog';
 const PET = 'https://linked.cm/shape/core/Pet';
 const E = 'https://linked.cm/shape/core/Employee';
@@ -66,65 +69,65 @@ const ENT = tmpEntityBase;
 // understood, plus a Dog `d1` (guardDogLevel) for updateExprCallback.
 const BASE_DATA = `
 <${ENT}p1> <${RDF_TYPE}> <${PT}> .
-<${ENT}p1> <${P}/name> "Semmy" .
-<${ENT}p1> <${P}/hobby> "Reading" .
-<${ENT}p1> <${P}/birthDate> "1990-01-01T13:45:30.000Z"^^<${XSD}dateTime> .
-<${ENT}p1> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
-<${ENT}p1> <${P}/friends> <${ENT}p2> .
-<${ENT}p1> <${P}/friends> <${ENT}p3> .
-<${ENT}p1> <${P}/pets> <${ENT}dog1> .
-<${ENT}p1> <${P}/firstPet> <${ENT}dog1> .
-<${ENT}p1> <${P}/nickNames> "Sem1" .
-<${ENT}p1> <${P}/nickNames> "Sem" .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p1> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p2> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p3> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p4> .
+<${ENT}p1> <${PROP}name> "Semmy" .
+<${ENT}p1> <${PROP}hobby> "Reading" .
+<${ENT}p1> <${PROP}birthDate> "1990-01-01T13:45:30.000Z"^^<${XSD}dateTime> .
+<${ENT}p1> <${PROP}isRealPerson> "true"^^<${XSD}boolean> .
+<${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
+<${ENT}p1> <${PROP}hasFriend> <${ENT}p3> .
+<${ENT}p1> <${PROP}hasPet> <${ENT}dog1> .
+<${ENT}p1> <${PROP}hasPet> <${ENT}dog1> .
+<${ENT}p1> <${PROP}nickName> "Sem1" .
+<${ENT}p1> <${PROP}nickName> "Sem" .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p1> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p2> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p3> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p4> .
 <${ENT}p2> <${RDF_TYPE}> <${PT}> .
-<${ENT}p2> <${P}/name> "Moa" .
-<${ENT}p2> <${P}/hobby> "Jogging" .
-<${ENT}p2> <${P}/isRealPerson> "false"^^<${XSD}boolean> .
-<${ENT}p2> <${P}/bestFriend> <${ENT}p3> .
-<${ENT}p2> <${P}/friends> <${ENT}p3> .
-<${ENT}p2> <${P}/friends> <${ENT}p4> .
-<${ENT}p2> <${P}/pets> <${ENT}dog2> .
-<${ENT}p2> <${P}/firstPet> <${ENT}dog2> .
+<${ENT}p2> <${PROP}name> "Moa" .
+<${ENT}p2> <${PROP}hobby> "Jogging" .
+<${ENT}p2> <${PROP}isRealPerson> "false"^^<${XSD}boolean> .
+<${ENT}p2> <${PROP}bestFriend> <${ENT}p3> .
+<${ENT}p2> <${PROP}hasFriend> <${ENT}p3> .
+<${ENT}p2> <${PROP}hasFriend> <${ENT}p4> .
+<${ENT}p2> <${PROP}hasPet> <${ENT}dog2> .
+<${ENT}p2> <${PROP}hasPet> <${ENT}dog2> .
 <${ENT}p3> <${RDF_TYPE}> <${PT}> .
-<${ENT}p3> <${P}/name> "Jinx" .
-<${ENT}p3> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
+<${ENT}p3> <${PROP}name> "Jinx" .
+<${ENT}p3> <${PROP}isRealPerson> "true"^^<${XSD}boolean> .
 <${ENT}p4> <${RDF_TYPE}> <${PT}> .
-<${ENT}p4> <${P}/name> "Quinn" .
+<${ENT}p4> <${PROP}name> "Quinn" .
 <${ENT}p5> <${RDF_TYPE}> <${PT}> .
-<${ENT}p5> <${P}/name> "Maximilian" .
+<${ENT}p5> <${PROP}name> "Maximilian" .
 <${ENT}dog1> <${RDF_TYPE}> <${DT}> .
 <${ENT}dog1> <${RDF_TYPE}> <${PETT}> .
-<${ENT}dog1> <${D}/guardDogLevel> "2"^^<${XSD}integer> .
-<${ENT}dog1> <${PET}/bestFriend> <${ENT}dog2> .
+<${ENT}dog1> <${PROP}guardDogLevel> "2"^^<${XSD}integer> .
+<${ENT}dog1> <${PROP}bestFriend> <${ENT}dog2> .
 <${ENT}dog2> <${RDF_TYPE}> <${DT}> .
 <${ENT}dog2> <${RDF_TYPE}> <${PETT}> .
 <${ENT}d1> <${RDF_TYPE}> <${DT}> .
 <${ENT}d1> <${RDF_TYPE}> <${PETT}> .
-<${ENT}d1> <${D}/guardDogLevel> "5"^^<${XSD}integer> .
+<${ENT}d1> <${PROP}guardDogLevel> "5"^^<${XSD}integer> .
 <${ENT}e1> <${RDF_TYPE}> <${ET}> .
-<${ENT}e1> <${E}/name> "Alice" .
-<${ENT}e1> <${E}/department> "Engineering" .
-<${ENT}e1> <${E}/bestFriend> <${ENT}e2> .
+<${ENT}e1> <${PROP}employeeName> "Alice" .
+<${ENT}e1> <${PROP}employeeDepartment> "Engineering" .
+<${ENT}e1> <${PROP}bestFriend> <${ENT}e2> .
 <${ENT}e2> <${RDF_TYPE}> <${ET}> .
-<${ENT}e2> <${E}/name> "Bob" .
-<${ENT}e2> <${E}/department> "Sales" .
+<${ENT}e2> <${PROP}employeeName> "Bob" .
+<${ENT}e2> <${PROP}employeeDepartment> "Sales" .
 <${ENT}m1> <${RDF_TYPE}> <${MT}> .
-<${ENT}m1> <${M}/score> "3.14"^^<${XSD}decimal> .
-<${ENT}m1> <${M}/rating> "2.5"^^<${XSD}double> .
-<${ENT}m1> <${M}/views> "1000000"^^<${XSD}long> .
-<${ENT}m1> <${M}/count> "42"^^<${XSD}integer> .
-<${ENT}m1> <${M}/joinedOn> "2020-06-15"^^<${XSD}date> .
-<${ENT}m1> <${M}/scores> "1.5"^^<${XSD}decimal> .
-<${ENT}m1> <${M}/scores> "2.5"^^<${XSD}decimal> .
-<${ENT}m1> <${M}/scores> "2.5"^^<${XSD}decimal> .
-<${ENT}m1> <${M}/scores> "3.5"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricScore> "3.14"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricRating> "2.5"^^<${XSD}double> .
+<${ENT}m1> <${PROP}metricViews> "1000000"^^<${XSD}long> .
+<${ENT}m1> <${PROP}metricCount> "42"^^<${XSD}integer> .
+<${ENT}m1> <${PROP}metricJoinedOn> "2020-06-15"^^<${XSD}date> .
+<${ENT}m1> <${PROP}metricScores> "1.5"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricScores> "2.5"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricScores> "2.5"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricScores> "3.5"^^<${XSD}decimal> .
 <${ENT}m2> <${RDF_TYPE}> <${MT}> .
-<${ENT}m2> <${M}/score> "-7.25"^^<${XSD}decimal> .
-<${ENT}m2> <${M}/count> "-3"^^<${XSD}integer> .
+<${ENT}m2> <${PROP}metricScore> "-7.25"^^<${XSD}decimal> .
+<${ENT}m2> <${PROP}metricCount> "-3"^^<${XSD}integer> .
 <${ENT}pna> <${RDF_TYPE}> <${PP}Node> .
 <${ENT}pna> <${PP}name> "A" .
 <${ENT}pna> <${PP}knows> <${ENT}pnb> .
@@ -223,7 +226,7 @@ describe('coverage tails — DSL-JSON delete & {$ctx} mutations', () => {
   test('delete round-trips via fromJSON (deleteWhere)', async () => {
     if (!fusekiAvailable) return;
     // give p2 hobby=Chess, then delete-where(hobby=Chess) over the wire
-    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${P}/hobby> ?o } INSERT { <${ENT}p2> <${P}/hobby> "Chess" } WHERE { <${ENT}p2> <${P}/hobby> ?o }`);
+    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${PROP}hobby> ?o } INSERT { <${ENT}p2> <${PROP}hobby> "Chess" } WHERE { <${ENT}p2> <${PROP}hobby> ?o }`);
     const dq = queryFactories.deleteWhere();
     await store.deleteQuery(fromJSON((dq as any).toJSON()) as any);
     expect(ids((await store.selectQuery(queryFactories.selectName())) as Row[]))
@@ -233,14 +236,14 @@ describe('coverage tails — DSL-JSON delete & {$ctx} mutations', () => {
   test('{$ctx} as update target (user = p3)', async () => {
     if (!fusekiAvailable) return;
     await store.updateQuery(Person.update({hobby: 'CtxHobby'}).for(getQueryContext('user')));
-    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p3> <${P}/hobby> ?h }`);
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p3> <${PROP}hobby> ?h }`);
     expect(r.results.bindings.map((b: any) => b.h.value)).toEqual(['CtxHobby']);
   });
 
   test('{$ctx} as mutation field value (p1.bestFriend := user p3)', async () => {
     if (!fusekiAvailable) return;
     await store.updateQuery(Person.update({bestFriend: getQueryContext('user')} as any).for({id: `${ENT}p1`}));
-    const r = await executeSparqlQuery(`SELECT ?b WHERE { <${ENT}p1> <${P}/bestFriend> ?b }`);
+    const r = await executeSparqlQuery(`SELECT ?b WHERE { <${ENT}p1> <${PROP}bestFriend> ?b }`);
     expect(r.results.bindings.map((b: any) => b.b.value)).toEqual([`${ENT}p3`]);
   });
 });
@@ -294,7 +297,7 @@ describe('coverage §6 — DSL-JSON round-trip', () => {
     const cq = Person.create({name: 'JsonRoundTrip'} as any);
     const created = (await store.createQuery(fromJSON((cq as any).toJSON()) as any)) as Row;
     expect(created.name).toBe('JsonRoundTrip');
-    const verify = await executeSparqlQuery(`SELECT ?n WHERE { <${created.id}> <${P}/name> ?n }`);
+    const verify = await executeSparqlQuery(`SELECT ?n WHERE { <${created.id}> <${PROP}name> ?n }`);
     expect(verify.results.bindings[0].n.value).toBe('JsonRoundTrip');
     await executeSparqlUpdate(`DELETE WHERE { <${created.id}> ?p ?o }`);
   });
@@ -303,7 +306,7 @@ describe('coverage §6 — DSL-JSON round-trip', () => {
     if (!fusekiAvailable) return;
     const uq = Person.update({hobby: 'JsonHobby'}).for({id: `${ENT}p1`});
     await store.updateQuery(fromJSON((uq as any).toJSON()) as any);
-    const verify = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${P}/hobby> ?h }`);
+    const verify = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${PROP}hobby> ?h }`);
     expect(verify.results.bindings.map((b: any) => b.h.value)).toEqual(['JsonHobby']);
   });
 });
@@ -851,14 +854,14 @@ describe('coverage §1 — expression updates', () => {
   test('updateExprCallback — guardDogLevel + 1 (d1: 5 → 6)', async () => {
     if (!fusekiAvailable) return;
     await store.updateQuery(queryFactories.updateExprCallback());
-    const r = await executeSparqlQuery(`SELECT ?v WHERE { <${ENT}d1> <${D}/guardDogLevel> ?v }`);
+    const r = await executeSparqlQuery(`SELECT ?v WHERE { <${ENT}d1> <${PROP}guardDogLevel> ?v }`);
     expect(r.results.bindings.map((b: any) => b.v.value)).toEqual(['6']);
   });
 
   test('updateExprNow — birthDate := now() (single, current year)', async () => {
     if (!fusekiAvailable) return;
     await store.updateQuery(queryFactories.updateExprNow());
-    const r = await executeSparqlQuery(`SELECT ?v WHERE { <${ENT}p1> <${P}/birthDate> ?v }`);
+    const r = await executeSparqlQuery(`SELECT ?v WHERE { <${ENT}p1> <${PROP}birthDate> ?v }`);
     expect(r.results.bindings.length).toBe(1);
     const yr = new Date(r.results.bindings[0].v.value).getFullYear();
     expect(yr).toBeGreaterThanOrEqual(2026);
@@ -873,7 +876,7 @@ describe('coverage §1 — expression updates', () => {
     await store.updateQuery(
       Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).for({id: `${ENT}p2`}),
     );
-    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p2> <${P}/hobby> ?h }`);
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p2> <${PROP}hobby> ?h }`);
     expect(r.results.bindings.map((b: any) => b.h.value)).toEqual(['JINX']);
   });
 
@@ -882,7 +885,7 @@ describe('coverage §1 — expression updates', () => {
     // p1 has no bestFriend: old hobby is removed, nothing is inserted — and
     // crucially the hobby must NOT be filled with every entity's UCASE(name).
     await store.updateQuery(queryFactories.updateExprTraversal());
-    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${P}/hobby> ?h }`);
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${PROP}hobby> ?h }`);
     const vals = r.results.bindings.map((b: any) => b.h.value);
     expect(vals).not.toContain('SEMMY');
     expect(vals.length).toBeLessThanOrEqual(1);
@@ -897,7 +900,7 @@ describe('coverage §1 — expression updates', () => {
         hobby: p.bestFriend.hobby.lcase(),
       })).for({id: `${ENT}p2`}),
     );
-    const n = await executeSparqlQuery(`SELECT ?n WHERE { <${ENT}p2> <${P}/name> ?n }`);
+    const n = await executeSparqlQuery(`SELECT ?n WHERE { <${ENT}p2> <${PROP}name> ?n }`);
     expect(n.results.bindings.map((b: any) => b.n.value)).toEqual(['JINX']);
   });
 });
@@ -913,7 +916,7 @@ describe('coverage §1 — bulk/conditional mutations', () => {
       `SELECT (COUNT(?s) AS ?c) WHERE { ?s <${RDF_TYPE}> <${PT}> }`,
     )).results.bindings[0].c.value);
   const hobbies = async () =>
-    (await executeSparqlQuery(`SELECT ?s ?h WHERE { ?s <${P}/hobby> ?h }`)).results.bindings
+    (await executeSparqlQuery(`SELECT ?s ?h WHERE { ?s <${PROP}hobby> ?h }`)).results.bindings
       .map((b: any) => `${b.s.value.replace(ENT, '')}=${b.h.value}`).sort();
 
   test('updateForAll — set hobby=Chess on all persons', async () => {
@@ -924,14 +927,14 @@ describe('coverage §1 — bulk/conditional mutations', () => {
 
   test('updateWhere — hobby:=Archived where hobby=Chess (set one Chess first)', async () => {
     if (!fusekiAvailable) return;
-    await executeSparqlUpdate(`DELETE { <${ENT}p1> <${P}/hobby> ?o } INSERT { <${ENT}p1> <${P}/hobby> "Chess" } WHERE { <${ENT}p1> <${P}/hobby> ?o }`);
+    await executeSparqlUpdate(`DELETE { <${ENT}p1> <${PROP}hobby> ?o } INSERT { <${ENT}p1> <${PROP}hobby> "Chess" } WHERE { <${ENT}p1> <${PROP}hobby> ?o }`);
     await store.updateQuery(queryFactories.updateWhere());
     expect(await hobbies()).toEqual(['p1=Archived', 'p2=Jogging']);
   });
 
   test('deleteWhere — delete persons with hobby=Chess (set p2 Chess first)', async () => {
     if (!fusekiAvailable) return;
-    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${P}/hobby> ?o } INSERT { <${ENT}p2> <${P}/hobby> "Chess" } WHERE { <${ENT}p2> <${P}/hobby> ?o }`);
+    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${PROP}hobby> ?o } INSERT { <${ENT}p2> <${PROP}hobby> "Chess" } WHERE { <${ENT}p2> <${PROP}hobby> ?o }`);
     await store.deleteQuery(queryFactories.deleteWhere());
     const remaining = (await store.selectQuery(queryFactories.selectName())) as Row[];
     expect(ids(remaining)).toEqual(['p1', 'p3', 'p4', 'p5']);
