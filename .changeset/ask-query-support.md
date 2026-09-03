@@ -14,11 +14,26 @@ ASK WHERE {
 }
 ```
 
+**Breaking: `IDataset.askQuery(query): Promise<boolean>` is required.** Every store must implement
+it. The query it receives is an ordinary `SelectQuery`, already normalised to its cheapest correct
+form — only the answer differs. A backend with a boolean primitive uses it; one without delegates to
+the exported shared default in a single line:
+
+```ts
+askQuery(query: SelectQuery) {
+  return askViaSelect(this, query);
+}
+```
+
+It is required rather than optional so the choice is visible in every store. An optional method
+would let a store silently take the slower path with nothing in the types or at the call site to say
+so. `askQuery` must resolve to a real boolean — a non-boolean is rejected rather than coerced, since
+a truthy value would read as "exists" — and must reject on failure.
+
 Public API:
 
-- **`IDataset.askQuery?(query): Promise<boolean>`** — optional. Implement it when the backend has a
-  cheaper boolean primitive. It must resolve to a real boolean and must reject on failure; a
-  non-boolean is rejected rather than coerced, since a truthy value would silently read as "exists".
+- **`IDataset.askQuery(query): Promise<boolean>`** — required (above).
+- **`askViaSelect(dataset, query)`** — the shared default implementation.
 - **`LinkedStorage.askQuery(query)`** — routes an existence check to the shape's dataset.
 - **`askToAlgebra` / `askToSparql` / `askPlanToSparql` / `SparqlAskPlan`** — the `ASK` arm of the
   SPARQL layer, alongside the `select*` equivalents.
@@ -26,10 +41,10 @@ Public API:
   **`isSparqlSelectResults`** — an `ASK` response carries `boolean` and no `results` key, so it is a
   sibling type rather than an optional field on `SparqlJsonResults`.
 
-**Nothing is required of existing stores.** A dataset without `askQuery` degrades through one shared
-path to the same normalised `SELECT … LIMIT 1` that shipped previously — a slower answer, never a
-different one, and still rejecting rather than reporting an unreachable store as `false`. No wire
-format, IR or result-mapping change: a remote store keeps sending exactly what it sent before.
+**Migration is one line per store** — the `askViaSelect` delegation above — and behaviour is
+unchanged for any store that takes it: the same normalised `SELECT … LIMIT 1` that shipped
+previously, still rejecting rather than reporting an unreachable store as `false`. No wire format,
+IR or result-mapping change: a remote store keeps sending exactly what it sent before.
 
 Two type-level notes for anyone implementing `SparqlDataset` directly:
 

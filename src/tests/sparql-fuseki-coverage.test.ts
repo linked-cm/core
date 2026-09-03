@@ -28,6 +28,7 @@ import {
 import {setQueryContext, getQueryContext} from '../queries/QueryContext';
 import {Expr} from '../expressions/Expr';
 import {fromJSON} from '../queries/fromJSON';
+import {askViaSelect} from '../queries/queryDispatch';
 import {createHash} from 'node:crypto';
 
 import '../ontologies/rdf';
@@ -1107,8 +1108,13 @@ describe('coverage — .exists() emits ASK against Fuseki', () => {
     if (!fusekiAvailable) return;
     // askViaSelect is only sound if it answers identically. Run each case both
     // ways against the same live data and compare.
+    // A store with no boolean primitive: askQuery is required, so it implements
+    // it the one-line way, delegating to the shared SELECT default.
     const selectOnly: any = {
       selectQuery: (q: any) => (store as any).selectQuery(q),
+      askQuery(q: any) {
+        return askViaSelect(this, q);
+      },
     };
     const cases: Array<[string, () => any]> = [
       ['present', () => Person.select().for(`${ENT}p1`)],

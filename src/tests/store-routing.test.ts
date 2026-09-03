@@ -3,6 +3,7 @@ import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
 import {LinkedStorage} from '../utils/LinkedStorage';
 import type {IDataset} from '../interfaces/IDataset';
+import {askViaSelect} from '../queries/queryDispatch';
 import type {NodeReferenceValue} from '../utils/NodeReference';
 
 const {linkedShape} = linkedPackage('store-routing-test');
@@ -39,6 +40,10 @@ const createStore = () => {
     selectQuery: async () => {
       calls.select += 1;
       return [];
+    },
+    // No boolean primitive — delegate to the shared default, as a real store would.
+    askQuery(query) {
+      return askViaSelect(this, query);
     },
     updateQuery: async () => {
       calls.update += 1;
@@ -141,10 +146,10 @@ describe('LinkedStorage.askQuery routing', () => {
     expect(defaultStore.calls.ask).toBe(0);
   });
 
-  test('a routed dataset without askQuery degrades to its selectQuery', async () => {
-    // The router cannot know before resolving the shape whether the dataset
-    // behind it answers booleans. The degradation is the shared askViaSelect —
-    // this asserts the routed store still gets asked, and correctly.
+  test('a routed dataset with no boolean primitive still answers, via SELECT', async () => {
+    // askQuery is required, so this store implements it by delegating to the
+    // shared askViaSelect default. Asserts the routed store gets asked, and
+    // that the delegation reaches its selectQuery.
     const selectOnly = createStore();
     LinkedStorage.setDefaultDataset(selectOnly.store);
     LinkedStorage.setDatasetForShapes(selectOnly.store, RoutedPet);
@@ -159,6 +164,9 @@ describe('LinkedStorage.askQuery routing', () => {
     const broken: IDataset = {
       selectQuery: async () => {
         throw new Error('store unreachable');
+      },
+      askQuery(query) {
+        return askViaSelect(this, query);
       },
     };
     LinkedStorage.setDefaultDataset(broken);

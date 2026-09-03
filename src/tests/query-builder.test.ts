@@ -9,7 +9,7 @@ import {walkPropertyPath} from '../queries/PropertyPath';
 import {FieldSet} from '../queries/FieldSet';
 import {setQueryContext, getQueryContext, PendingQueryContext, UnresolvedContextError} from '../queries/QueryContext';
 import {lower} from '../queries/lower';
-import {resolveExistence} from '../queries/queryDispatch';
+import {resolveExistence, askViaSelect} from '../queries/queryDispatch';
 
 const personShape = Person.shape;
 
@@ -895,6 +895,18 @@ describe('undecorated property access in a query', () => {
 // .exists() — boolean existence checks
 // =============================================================================
 
+/**
+ * A store with no boolean primitive of its own. `askQuery` is required on
+ * IDataset, so this is what such a store actually looks like — one line
+ * delegating to the shared default, not an absent method.
+ */
+const selectOnlyStore = (selectQuery: () => Promise<any>): any => ({
+  selectQuery,
+  askQuery(query: any) {
+    return askViaSelect(this, query);
+  },
+});
+
 describe('SelectBuilder — .exists()', () => {
   test('Person.exists(id) lowers to a bare, single-row, subject-filtered query', async () => {
     const ir = await captureQuery(existsFactories.existsById);
@@ -958,15 +970,15 @@ describe('SelectBuilder — .exists()', () => {
   });
 
   test('resolves true when a row comes back, false when none does', async () => {
-    const found = {selectQuery: async () => [{id: entity('p1').id}] as any};
-    const empty = {selectQuery: async () => [] as any};
+    const found = selectOnlyStore(async () => [{id: entity('p1').id}] as any);
+    const empty = selectOnlyStore(async () => [] as any);
     await expect(Person.select().exists(found as any)).resolves.toBe(true);
     await expect(Person.select().exists(empty as any)).resolves.toBe(false);
   });
 
   test('single-result form maps a row to true and null to false', async () => {
-    const found = {selectQuery: async () => ({id: entity('p1').id}) as any};
-    const missing = {selectQuery: async () => null as any};
+    const found = selectOnlyStore(async () => ({id: entity('p1').id}) as any);
+    const missing = selectOnlyStore(async () => null as any);
     await expect(Person.select().for(entity('p1')).exists(found as any)).resolves.toBe(true);
     await expect(Person.select().for(entity('p1')).exists(missing as any)).resolves.toBe(false);
   });
@@ -982,11 +994,9 @@ describe('SelectBuilder — .exists()', () => {
     // The bug this API replaces: `.catch(() => null)` around a select made an
     // unreachable store indistinguishable from a missing node, so every
     // `exists ? update : create` silently became an unconditional create.
-    const broken = {
-      selectQuery: async () => {
-        throw new Error('fuseki is down');
-      },
-    };
+    const broken = selectOnlyStore(async () => {
+      throw new Error('fuseki is down');
+    });
     await expect(Person.exists(entity('p1'), broken as any)).rejects.toThrow(
       /fuseki is down/,
     );
@@ -999,11 +1009,9 @@ describe('SelectBuilder — .exists()', () => {
     // exec() deliberately reports UnresolvedContextError as null ("not ready", a
     // reactive layer re-runs). exists() must not flatten that into a boolean:
     // "could not ask" is not "does not exist".
-    const unresolving = {
-      selectQuery: async () => {
-        throw new UnresolvedContextError('user');
-      },
-    };
+    const unresolving = selectOnlyStore(async () => {
+      throw new UnresolvedContextError('user');
+    });
     await expect(Person.select().exists(unresolving as any)).rejects.toThrow();
     // …while exec() keeps its existing, documented null behaviour.
     await expect(Person.select().exec(unresolving as any)).resolves.toBeNull();
@@ -1024,7 +1032,7 @@ describe('SelectBuilder — .exists()', () => {
   });
 
   test('.exists() is terminal — it returns a promise, not a builder', () => {
-    const result = Person.select().exists({selectQuery: async () => [] as any} as any);
+    const result = Person.select().exists(selectOnlyStore(async () => [] as any));
     expect(result).toBeInstanceOf(Promise);
     expect((result as any).where).toBeUndefined();
     return expect(result).resolves.toBe(false);
@@ -1119,20 +1127,29 @@ describe('SelectBuilder — .exists() prefers askQuery', () => {
     expect(seen.select).toBe(1);
   });
 
-  test('a store without askQuery degrades to SELECT and agrees with one that has it', async () => {
-    // The degradation is a slower answer, not a different one.
+  test('the shared default agrees with a native boolean primitive', async () => {
+    // askQuery is required, so a store with no ASK still implements it — via
+    // askViaSelect. Slower, never a different answer.
     for (const [rows, expected] of [
       [[{id: entity('p1').id}], true],
       [[], false],
     ] as const) {
-      const selectOnly = {selectQuery: async () => rows as any};
-      const asking = {
+      const viaDefault = selectOnlyStore(async () => rows as any);
+      const native = {
         askQuery: async () => expected,
         selectQuery: async () => rows as any,
       };
-      await expect(Person.exists(entity('p1'), selectOnly as any)).resolves.toBe(expected);
-      await expect(Person.exists(entity('p1'), asking as any)).resolves.toBe(expected);
+      await expect(Person.exists(entity('p1'), viaDefault)).resolves.toBe(expected);
+      await expect(Person.exists(entity('p1'), native as any)).resolves.toBe(expected);
     }
+  });
+
+  test('a store that does not implement askQuery at all is reported, not worked around', async () => {
+    // TypeScript rejects this at compile time; JS consumers get a clear error
+    // naming the contract and the one-line default, rather than a silent slow path.
+    await expect(
+      Person.exists(entity('p1'), {selectQuery: async () => []} as any),
+    ).rejects.toThrow(/does not implement the required IDataset\.askQuery/);
   });
 });
 
@@ -1177,7 +1194,7 @@ describe('existence checks — pagination is refused on BOTH paths', () => {
   // resolveExistence, in front of both, so which store a query is pointed at can
   // never change the answer.
   const asking = {askQuery: async () => true, selectQuery: async () => [] as any};
-  const selectOnly = {selectQuery: async () => [{id: entity('p1').id}] as any};
+  const selectOnly = selectOnlyStore(async () => [{id: entity('p1').id}] as any);
 
   test.each([
     ['a store that can ASK', asking],

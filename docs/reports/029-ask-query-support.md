@@ -6,8 +6,9 @@ packages: [core]
 
 # 029 — `ASK` query support
 
-Status: **done**. Suite **68 suites / 1699 passed / 120 skipped**, typecheck green (baseline before
-this work: 1654 passed). Additive `minor`.
+Status: **done**. Suite **68 suites / 1700 passed / 120 skipped**, typecheck green (baseline before
+this work: 1654 passed). `minor`, with one **breaking** interface change: `IDataset.askQuery` is
+required (one-line migration, below).
 
 Stacked on PR #206 (`feat/shape-exists`, report 028) — `.exists()` is the consumer and is not yet
 merged. Merges after it.
@@ -49,20 +50,53 @@ untouched, so the degradation is provably identical to what shipped; and the `AS
 from the same captured IR, which makes "the two forms ask the same thing" a tested claim rather than
 an assertion (`sparql-ask-golden.test.ts` strips both envelopes and compares the WHERE bodies).
 
+## Why a required method, and why a *method*
+
+Shipped first as an optional `askQuery`, then revised. Two questions, decided separately.
+
+**Why a separate method rather than `selectQuery` returning a boolean.** The query genuinely *is* an
+ordinary select query — same `SelectQuery` object, same normalisation; only the answer differs. But
+that is an argument about the *input*, not the return type. Folding it into `selectQuery` means
+widening its return to `SelectResult | boolean`, so every caller narrows, and — the real cost — a
+store that ignores the "I want a boolean" signal returns **rows where a boolean was expected**,
+silently, at runtime. With a separate method, not implementing it is a compile error. Same
+information, moved from runtime to the type system.
+
+**Why required rather than optional.** Optional never produces a wrong answer — the fallback is the
+golden-tested `SELECT … LIMIT 1`. What it produces is an *invisible* one: nothing in the types or at
+the call site tells you whether your store does one round-trip with a tiny payload or fetches a row
+and counts it. Required puts that choice in every store's source, where it is reviewable. The cost
+is one line per store:
+
+```ts
+askQuery(query: SelectQuery) {
+  return askViaSelect(this, query);
+}
+```
+
+`askViaSelect` stays exported, so every store taking that route still shares one implementation —
+the difference is that it is now opted into rather than defaulted into. In-repo that was seven call
+sites (five test doubles, two dispatch objects); `SparqlDataset` already had a real one.
+
+This is a **breaking** interface change, taken deliberately while the set of `IDataset`
+implementations is still small. Labelled `minor` per the repo's precedent for scoped breaks
+(`xsd:time`, changeset `fe7ed7d`).
+
 ## The degradation — the 028 objection, answered by placement
 
 `IDataset.askQuery` is optional. Adding it as required would break every external store
 implementation to buy a JSON payload. Two things defuse the silent-fallback objection:
 
-- **The fallback is not a wrong answer.** It is the golden-tested `SELECT … LIMIT 1` that ships
-  today. A store that cannot `ASK` still *rejects* on transport failure exactly as it does now. The
-  failure mode 028 removed was `.catch(() => null)` turning an unreachable store into `false`;
-  nothing here reintroduces it.
+- **The SELECT route is not a wrong answer.** It is the golden-tested `SELECT … LIMIT 1` that ships
+  today. A store taking it still *rejects* on transport failure exactly as it does now. The failure
+  mode 028 removed was `.catch(() => null)` turning an unreachable store into `false`; nothing here
+  reintroduces it.
 - **One function owns the whole contract.** `resolveExistence(target, query)` in `queryDispatch.ts`
-  makes the choice, performs the degradation, and enforces what a store may answer with. Both call
-  sites that can meet a target without `askQuery` go through it: `SelectBuilder._run` (the dispatch
-  has none) and `LinkedStorage.askQuery` (the dispatch has one, the *routed* dataset does not).
-  Neither branches for itself.
+  enforces the pagination guard and the boolean contract for every store. Both entry points go
+  through it — `SelectBuilder._run` in exists mode, and `LinkedStorage.askQuery` — rather than
+  calling `askQuery` directly, so neither re-implements any part of it. A target that does not
+  implement `askQuery` at all (a JavaScript consumer; TypeScript catches it at compile time) is
+  reported with an error naming the contract and the one-line default, not quietly worked around.
 
 ## Decisions
 
@@ -70,7 +104,7 @@ implementation to buy a JSON payload. Two things defuse the silent-fallback obje
 |---|---|---|
 | 1 | Stack on PR #206 | Branch from `dev` — would re-implement 861 lines and guarantee a conflict |
 | 2 | Scope to the SPARQL layer + dispatch seam | Backlog 036's full survey; type-free existence and the wire op stay backlogged (below) |
-| 3 | `askQuery` optional, one shared `resolveExistence` | Required `askQuery` (breaking); per-store fallbacks (N implementations to get wrong) |
+| 3 | `askQuery` **required**, one shared `resolveExistence` | Optional `askQuery` (shipped first, then revised — see below); per-store fallbacks (N implementations to get wrong); a boolean-returning `selectQuery` (see below) |
 | 4 | `_run` gains a `mode` | A parallel execution path — would duplicate the null-subject guard, the pending-context guard, the error wrapping and the non-swallowing of `UnresolvedContextError` |
 | 5 | No wire change | `op:'ask'` — unnecessary, since a remote store degrades and forwards the same select envelope it always did |
 | 6 | `askToAlgebra` **rejects** `OFFSET`/`LIMIT < 1` | Dropping them silently — `SELECT … LIMIT 0` answers "no rows" where `ASK` answers `true` |

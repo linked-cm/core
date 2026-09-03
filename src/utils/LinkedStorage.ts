@@ -140,11 +140,9 @@ export abstract class LinkedStorage {
   /**
    * Route an existence check to the shape's dataset.
    *
-   * `askQuery` is optional on `IDataset`, and this router cannot know until it has
-   * resolved the shape whether the dataset behind it can answer a boolean. That
-   * choice — and the degradation to a normalised `SELECT … LIMIT 1` when it
-   * cannot — belongs to `resolveExistence`, which the builder also goes through.
-   * Nothing about the existence contract is re-implemented here.
+   * Routing only. The existence contract — the boolean answer, the refusal to
+   * coerce a non-boolean, the pagination guard — belongs to `resolveExistence`,
+   * which the builder also goes through. Nothing about it is re-implemented here.
    */
   static askQuery(query: SelectQuery): Promise<boolean> {
     if (!query?.shape) {

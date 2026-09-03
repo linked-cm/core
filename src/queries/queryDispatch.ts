@@ -14,12 +14,8 @@ import type {IDataset} from '../interfaces/IDataset.js';
  */
 export interface QueryDispatch {
   selectQuery<R = any>(query: SelectQuery): Promise<R>;
-  /**
-   * Whether any solution exists — a boolean, not a result set. Optional: a
-   * dispatch that cannot answer one is degraded through {@link askViaSelect},
-   * never left to answer wrongly.
-   */
-  askQuery?(query: SelectQuery): Promise<boolean>;
+  /** Whether any solution exists — a boolean, not a result set. */
+  askQuery(query: SelectQuery): Promise<boolean>;
   createQuery<R = any>(query: CreateQuery): Promise<R>;
   updateQuery<R = any>(query: UpdateQuery): Promise<R>;
   deleteQuery(query: DeleteQuery): Promise<DeleteResponse>;
@@ -28,7 +24,7 @@ export interface QueryDispatch {
 /** The minimum a target needs to answer an existence check the slow way. */
 type SelectCapable = {selectQuery(query: SelectQuery): Promise<any>};
 
-/** A target that may also answer a boolean directly. */
+/** A target that can answer an existence check. */
 type ExistenceTarget = SelectCapable & {
   askQuery?(query: SelectQuery): Promise<boolean>;
 };
@@ -64,11 +60,21 @@ function assertAnswerableWithoutPagination(query: SelectQuery): void {
 }
 
 /**
- * The **one** place a missing `askQuery` degrades to `SELECT … LIMIT 1`.
+ * The shared default implementation of {@link IDataset.askQuery}, for a backend
+ * with no boolean primitive of its own:
  *
- * A slower answer, not a worse one: it is exactly the query `.exists()` shipped
- * on. Failures propagate — a store that cannot be reached rejects here just as it
- * would through `askQuery`.
+ * ```ts
+ * askQuery(query: SelectQuery) {
+ *   return askViaSelect(this, query);
+ * }
+ * ```
+ *
+ * Runs the already-normalised query as `SELECT … LIMIT 1` and converts. A slower
+ * answer, never a different one — it is exactly what `.exists()` shipped on.
+ * Failures propagate; an unreachable store rejects rather than answering `false`.
+ *
+ * Exported so that every store taking this route shares one implementation
+ * instead of writing its own conversion.
  */
 export async function askViaSelect(
   target: SelectCapable,
@@ -80,21 +86,20 @@ export async function askViaSelect(
 
 /**
  * Answer "does any solution exist?" against `target` — the single entry point for
- * every existence check in the library.
- *
- * `askQuery` is optional on `IDataset`, so two call sites can meet a target that
- * lacks it: `SelectBuilder.exists()` (the dispatch has no `askQuery`) and
- * `LinkedStorage.askQuery` (the dispatch has one, but the *routed* dataset does
- * not). Both come here rather than branching for themselves, so the choice, the
- * degradation and the contract below have one implementation between them.
+ * every existence check in the library. `SelectBuilder.exists()` and
+ * `LinkedStorage.askQuery` both come here rather than calling `askQuery`
+ * directly, so the contract below is enforced once for every store.
  *
  * The caller must have normalised the query first (drop the projection, preloads,
  * sorting and pagination; `LIMIT 1`) — `.exists()` does.
  *
- * A store's `askQuery` **must** resolve to a real boolean. Anything else rejects
- * rather than being coerced: a truthy non-boolean would otherwise read as
- * "exists", which is the quiet-wrong-answer failure this whole API was built to
- * remove. Errors propagate for the same reason — "could not ask" is never `false`.
+ * `askQuery` is **required** on `IDataset`; a target without it is a store that
+ * has not implemented the interface, which is reported as such rather than
+ * quietly worked around. (TypeScript catches this at compile time; the runtime
+ * check is for JavaScript consumers.) It must resolve to a real boolean —
+ * anything else rejects rather than being coerced, since a truthy non-boolean
+ * would read as "exists". Errors propagate for the same reason: "could not ask"
+ * is never `false`.
  */
 export async function resolveExistence(
   target: ExistenceTarget,
@@ -102,7 +107,12 @@ export async function resolveExistence(
 ): Promise<boolean> {
   assertAnswerableWithoutPagination(query);
   if (typeof target.askQuery !== 'function') {
-    return askViaSelect(target, query);
+    throw new Error(
+      'This dataset does not implement the required IDataset.askQuery(query). ' +
+      'Implement it using the backend\'s boolean primitive (a SPARQL store answers ' +
+      'ASK), or delegate to the shared default: ' +
+      '`askQuery(query) { return askViaSelect(this, query); }`.',
+    );
   }
   const answer = await target.askQuery(query);
   if (typeof answer !== 'boolean') {
