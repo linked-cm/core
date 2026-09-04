@@ -15,6 +15,7 @@ import type {SortByPath, WherePath} from './SelectQuery.js';
 import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesugar.js';
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {getQueryDispatch} from './queryDispatch.js';
+import {AskBuilder} from './AskBuilder.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {NodeShapeData} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
@@ -331,26 +332,26 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * **Kept** — filters, `minus` entries and the subject: those decide whether a match
    * exists. `LIMIT 1` is then applied.
    *
-   * So `.select(…).orderBy(…).offset(10).exists()` costs, and answers, exactly the same
-   * as a bare `.exists()`:
+   * So `.select(…).orderBy(…).offset(10).exists()` costs, and answers, exactly the
+   * same as a bare `.exists()`. Against a SPARQL store that goes out as:
    *
    * ```sparql
-   * SELECT DISTINCT ?a0 WHERE { ?a0 rdf:type <…> . FILTER(?a0 = <…>) } LIMIT 1
+   * ASK WHERE { ?a0 rdf:type <…> . FILTER(?a0 = <…>) }
    * ```
    *
-   * Pagination is dropped rather than honoured on purpose. `OFFSET` skips rows of the
-   * *solution sequence*, whose cardinality depends on the projection — a multi-valued
-   * projected property yields several rows per subject. Keeping `offset` while dropping
-   * the projection would let the same chain answer `true` before normalisation and
-   * `false` after. `exists()` therefore answers a question about the **match set**,
-   * not about a page of it.
+   * Pagination does not survive, and cannot: `OFFSET` skips rows of a *solution
+   * sequence*, and an ask has none. (Nor is it merely dropped — an
+   * {@link AskBuilder} has nowhere to hold it.) `exists()` answers a question about
+   * the **match set**, not about a page of it.
    *
    * ### Errors are not swallowed
    *
    * A store, transport or lowering failure rejects the returned promise; it is never
    * reported as `false`. That includes an unresolved query-context reference in a
    * where clause, which `exec()` deliberately reports as `null` ("not ready") but
-   * which `exists()` must not flatten into a boolean.
+   * which `exists()` must not flatten into a boolean — and a store whose `askQuery`
+   * resolves to something that is not a boolean, which rejects rather than being
+   * coerced into one.
    *
    * The one case that does resolve `false` without querying is a query with **no
    * subject to ask about** — `.for(null)`, `.for(undefined)`, or an unresolved
@@ -360,20 +361,54 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * @param target Optional explicit dataset, as for {@link exec}.
    */
   async exists(target?: IDataset): Promise<boolean> {
-    const result = await this.clone({
-      // Drop everything that cannot change whether a match exists, plus pagination.
-      selectFn: undefined,
-      fieldSet: undefined,
-      selectAllLabels: undefined,
-      preloads: undefined,
-      sortByFn: undefined,
-      sortDirection: undefined,
-      _sortBy: undefined,
-      offset: undefined,
-      // The cheapest correct bound. Replaces any limit set earlier in the chain.
-      limit: 1,
-    })._run(target, false);
-    return Array.isArray(result) ? result.length > 0 : result != null;
+    return this._toAsk().exec(target);
+  }
+
+  /**
+   * Reduce this select to the ask query that answers the same existence question.
+   *
+   * Only the pattern survives — shape, subject(s), filters, `minus`. The
+   * projection, preloads, sorting and pagination are not "dropped" so much as
+   * unrepresentable: {@link AskBuilder} has nowhere to put them. That is the point
+   * of it being a separate builder rather than a mode of this one — the
+   * normalisation cannot be forgotten or half-applied.
+   */
+  private _toAsk(): AskBuilder {
+    let where: WherePath | undefined;
+    if (this._whereFn) {
+      where = processWhereClause(this._whereFn, this._shape);
+    } else if (this._where) {
+      where = this._where;
+    }
+
+    let minusEntries: RawMinusEntry[] | undefined;
+    if (this._minusEntries && this._minusEntries.length > 0) {
+      minusEntries = this._evaluateMinusEntries();
+    } else if (this._rawMinusEntries && this._rawMinusEntries.length > 0) {
+      minusEntries = this._rawMinusEntries;
+    }
+
+    // A PendingQueryContext must survive as itself. It has an `id` *getter*, so
+    // narrowing it to `{id}` here would silently resolve it against THIS process's
+    // context map — and the ask would then travel as a concrete IRI where the
+    // equivalent select travels as `{"@ctx": name}` for the receiver to resolve.
+    const subject =
+      this._subject instanceof PendingQueryContext
+        ? this._subject
+        : this._subject && typeof this._subject === 'object' && 'id' in this._subject
+          ? {id: (this._subject as NodeReferenceValue).id}
+          : undefined;
+
+    return AskBuilder.of({
+      shapeClass: this._shape,
+      subject,
+      subjects: this._subjects,
+      where,
+      minusEntries,
+      // `.for(null)`. An unresolved pending context is handled by AskBuilder.exec,
+      // which sees the live context and answers `false` without querying.
+      nullSubject: this._nullSubject,
+    });
   }
 
   /**

@@ -9,6 +9,7 @@ import {walkPropertyPath} from '../queries/PropertyPath';
 import {FieldSet} from '../queries/FieldSet';
 import {setQueryContext, getQueryContext, PendingQueryContext, UnresolvedContextError} from '../queries/QueryContext';
 import {lower} from '../queries/lower';
+import {resolveExistence} from '../queries/queryDispatch';
 
 const personShape = Person.shape;
 
@@ -894,16 +895,31 @@ describe('undecorated property access in a query', () => {
 // .exists() — boolean existence checks
 // =============================================================================
 
+/**
+ * A store that answers asks directly, as every IDataset must. `answer` may be a
+ * value or a thunk that throws — an ask is never rewritten as a select, so what
+ * this returns is the whole story.
+ */
+const askStore = (answer: boolean | (() => never)): any => ({
+  selectQuery: async () => {
+    throw new Error('selectQuery must not be reached by an existence check');
+  },
+  askQuery: async () => (typeof answer === 'function' ? answer() : answer),
+});
+
 describe('SelectBuilder — .exists()', () => {
   test('Person.exists(id) lowers to a bare, single-row, subject-filtered query', async () => {
-    const ir = await captureQuery(existsFactories.existsById);
+    const ir: any = await captureQuery(existsFactories.existsById);
+    expect(ir.kind).toBe('ask');
     expect(ir.subjectId).toBe(entity('p1').id);
-    expect(ir.singleResult).toBe(true);
-    expect(ir.limit).toBe(1);
-    // Nothing is projected — the root alias alone answers the question.
-    expect(ir.projection).toHaveLength(0);
-    expect(ir.resultMap).toHaveLength(0);
-    expect(ir.sortBy).toBeUndefined();
+    expect(ir.root).toBeDefined();
+    // There is no projection, resultMap, sorting or pagination on an ask IR at
+    // all — not an empty one. The shape of the type IS the normalisation.
+    expect(ir.projection).toBeUndefined();
+    expect(ir.resultMap).toBeUndefined();
+    expect(ir.orderBy).toBeUndefined();
+    expect(ir.limit).toBeUndefined();
+    expect(ir.offset).toBeUndefined();
   });
 
   test('.exists() normalises away projection, preloads and sorting', async () => {
@@ -918,10 +934,10 @@ describe('SelectBuilder — .exists()', () => {
     // projection exists() just dropped. Honouring offset while dropping the
     // projection would let the same chain answer true before normalisation and
     // false after; exists() answers about the match set, not a page of it.
-    const paginated = await captureQuery(existsFactories.existsPaginated);
+    const paginated: any = await captureQuery(existsFactories.existsPaginated);
     const bare = await captureQuery(existsFactories.existsById);
     expect(paginated.offset).toBeUndefined();
-    expect(paginated.limit).toBe(1);
+    expect(paginated.limit).toBeUndefined();
     expect(sanitize(paginated)).toEqual(sanitize(bare));
   });
 
@@ -931,8 +947,8 @@ describe('SelectBuilder — .exists()', () => {
         .minus((p) => p.name.equals('Semmy'))
         .exists(),
     );
-    expect(ir.limit).toBe(1);
-    expect(ir.projection).toHaveLength(0);
+    expect(ir.kind).toBe('ask');
+    expect(ir.projection).toBeUndefined();
     // The minus survives normalisation: the IR is not the same as a bare exists.
     const bare = await captureQuery(() => Person.select().exists());
     expect(JSON.stringify(ir)).toContain('minus');
@@ -944,30 +960,30 @@ describe('SelectBuilder — .exists()', () => {
       Person.selectAll().forAll([entity('p1'), entity('p2')]).exists(),
     );
     expect(ir.subjectIds).toEqual([entity('p1').id, entity('p2').id]);
-    expect(ir.projection).toHaveLength(0);
-    expect(ir.limit).toBe(1);
+    expect(ir.projection).toBeUndefined();
+    expect(ir.limit).toBeUndefined();
   });
 
   test('.exists() keeps the where clause — it decides whether a row exists', async () => {
-    const ir = await captureQuery(existsFactories.existsWhere);
-    expect(ir.limit).toBe(1);
-    expect(ir.projection).toHaveLength(0);
+    const ir: any = await captureQuery(existsFactories.existsWhere);
+    expect(ir.kind).toBe('ask');
+    expect(ir.projection).toBeUndefined();
     expect(ir.where).toBeDefined();
     expect(ir.subjectId).toBeUndefined();
   });
 
-  test('resolves true when a row comes back, false when none does', async () => {
-    const found = {selectQuery: async () => [{id: entity('p1').id}] as any};
-    const empty = {selectQuery: async () => [] as any};
-    await expect(Person.select().exists(found as any)).resolves.toBe(true);
-    await expect(Person.select().exists(empty as any)).resolves.toBe(false);
+  test("resolves the store's boolean, both ways, without touching selectQuery", async () => {
+    await expect(Person.select().exists(askStore(true))).resolves.toBe(true);
+    await expect(Person.select().exists(askStore(false))).resolves.toBe(false);
   });
 
-  test('single-result form maps a row to true and null to false', async () => {
-    const found = {selectQuery: async () => ({id: entity('p1').id}) as any};
-    const missing = {selectQuery: async () => null as any};
-    await expect(Person.select().for(entity('p1')).exists(found as any)).resolves.toBe(true);
-    await expect(Person.select().for(entity('p1')).exists(missing as any)).resolves.toBe(false);
+  test('the subject form behaves identically — there is one path', async () => {
+    await expect(
+      Person.select().for(entity('p1')).exists(askStore(true)),
+    ).resolves.toBe(true);
+    await expect(
+      Person.select().for(entity('p1')).exists(askStore(false)),
+    ).resolves.toBe(false);
   });
 
   test('a null/undefined id resolves false without dispatching a query', async () => {
@@ -981,11 +997,9 @@ describe('SelectBuilder — .exists()', () => {
     // The bug this API replaces: `.catch(() => null)` around a select made an
     // unreachable store indistinguishable from a missing node, so every
     // `exists ? update : create` silently became an unconditional create.
-    const broken = {
-      selectQuery: async () => {
-        throw new Error('fuseki is down');
-      },
-    };
+    const broken = askStore(() => {
+      throw new Error('fuseki is down');
+    });
     await expect(Person.exists(entity('p1'), broken as any)).rejects.toThrow(
       /fuseki is down/,
     );
@@ -999,6 +1013,9 @@ describe('SelectBuilder — .exists()', () => {
     // reactive layer re-runs). exists() must not flatten that into a boolean:
     // "could not ask" is not "does not exist".
     const unresolving = {
+      askQuery: async () => {
+        throw new UnresolvedContextError('user');
+      },
       selectQuery: async () => {
         throw new UnresolvedContextError('user');
       },
@@ -1023,9 +1040,183 @@ describe('SelectBuilder — .exists()', () => {
   });
 
   test('.exists() is terminal — it returns a promise, not a builder', () => {
-    const result = Person.select().exists({selectQuery: async () => [] as any} as any);
+    const result = Person.select().exists(askStore(false));
     expect(result).toBeInstanceOf(Promise);
     expect((result as any).where).toBeUndefined();
     return expect(result).resolves.toBe(false);
+  });
+});
+
+// =============================================================================
+// .exists() → ASK dispatch
+// =============================================================================
+
+describe('SelectBuilder — .exists() prefers askQuery', () => {
+  /** A store that answers booleans directly, recording what it was asked. */
+  const askStore = (answer: boolean) => {
+    const seen: {ask: number; select: number; query?: any} = {ask: 0, select: 0};
+    const store = {
+      askQuery: async (q: any) => {
+        seen.ask += 1;
+        seen.query = q;
+        return answer;
+      },
+      selectQuery: async () => {
+        seen.select += 1;
+        return [] as any;
+      },
+    };
+    return {store, seen};
+  };
+
+  test('uses askQuery when the target has one, and does not also select', async () => {
+    const {store, seen} = askStore(true);
+    await expect(Person.exists(entity('p1'), store as any)).resolves.toBe(true);
+    expect(seen.ask).toBe(1);
+    expect(seen.select).toBe(0);
+  });
+
+  test('askQuery returning FALSE resolves false — not "not null, therefore true"', async () => {
+    // The conversion `.exists()` shipped on was `result != null`, which reads a
+    // literal `false` from a store as "present". The boolean arm in exists()
+    // exists for exactly this, and this test is what holds it in place.
+    const {store, seen} = askStore(false);
+    await expect(Person.exists(entity('p1'), store as any)).resolves.toBe(false);
+    expect(seen.ask).toBe(1);
+  });
+
+  test('askQuery receives the normalised query, not the decorated chain', async () => {
+    const {store, seen} = askStore(true);
+    await Person.select((p) => p.name)
+      .orderBy((p) => p.name)
+      .for(entity('p1'))
+      .offset(10)
+      .exists(store as any);
+    const ir: any = lower(seen.query);
+    expect(ir.kind).toBe('ask');
+    expect(ir.limit).toBeUndefined();
+    expect(ir.offset).toBeUndefined();
+    expect(ir.projection).toBeUndefined();
+    expect(ir.orderBy).toBeUndefined();
+  });
+
+  test('a store failure on the ASK path REJECTS — same contract as the SELECT path', async () => {
+    const broken = {
+      askQuery: async () => {
+        throw new Error('fuseki is down');
+      },
+      selectQuery: async () => [] as any,
+    };
+    await expect(Person.exists(entity('p1'), broken as any)).rejects.toThrow(
+      /fuseki is down/,
+    );
+  });
+
+  test('an unresolved where-clause context still REJECTS on the ASK path', async () => {
+    const unresolving = {
+      askQuery: async () => {
+        throw new UnresolvedContextError('user');
+      },
+      selectQuery: async () => [] as any,
+    };
+    await expect(Person.select().exists(unresolving as any)).rejects.toThrow();
+  });
+
+  test('a null id short-circuits to false without reaching askQuery', async () => {
+    const {store, seen} = askStore(true);
+    await expect(Person.exists(null, store as any)).resolves.toBe(false);
+    expect(seen.ask).toBe(0);
+    expect(seen.select).toBe(0);
+  });
+
+  test('exec() never takes the ASK path', async () => {
+    const {store, seen} = askStore(true);
+    await Person.select((p) => p.name).exec(store as any);
+    expect(seen.ask).toBe(0);
+    expect(seen.select).toBe(1);
+  });
+
+  test('a store that does not implement askQuery at all is reported, not worked around', async () => {
+    // TypeScript rejects this at compile time; JS consumers get a clear error
+    // naming the contract and the one-line default, rather than a silent slow path.
+    await expect(
+      Person.exists(entity('p1'), {selectQuery: async () => []} as any),
+    ).rejects.toThrow(/does not implement the required IDataset\.askQuery/);
+  });
+});
+
+// =============================================================================
+// The existence contract — what a store is allowed to answer with
+// =============================================================================
+
+describe('SelectBuilder — .exists() enforces the boolean contract', () => {
+  // A store that answers with something truthy but not a boolean used to slip
+  // through as "exists": the conversion was `result != null`. Coercion here is
+  // exactly the quiet-wrong-answer this API family exists to remove, so a
+  // non-boolean is a rejected store contract, not an answer.
+  test.each([
+    ['a truthy object', {} as any],
+    ['a row array', [{id: 'x'}] as any],
+    ['a string', 'true' as any],
+    ['undefined', undefined as any],
+    ['null', null as any],
+    ['a number', 1 as any],
+  ])('askQuery resolving %s REJECTS rather than coercing', async (_label, value) => {
+    const store = {
+      askQuery: async () => value,
+      selectQuery: async () => [] as any,
+    };
+    await expect(Person.exists(entity('p1'), store as any)).rejects.toThrow(
+      /must resolve to a boolean/,
+    );
+  });
+
+  test('both real booleans pass the contract unchanged', async () => {
+    for (const answer of [true, false]) {
+      const store = {askQuery: async () => answer, selectQuery: async () => [] as any};
+      await expect(Person.exists(entity('p1'), store as any)).resolves.toBe(answer);
+    }
+  });
+});
+
+describe('AskBuilder — pagination is unrepresentable, not guarded', () => {
+  // The earlier design normalised a select and then guarded against OFFSET /
+  // LIMIT 0 surviving. AskBuilder has nowhere to put them, so there is nothing
+  // left to guard: a chain carrying either still reduces to the same ask.
+  test('a chain with offset and limit(0) still answers', async () => {
+    const store = {
+      selectQuery: async () => {
+        throw new Error('not reached');
+      },
+      askQuery: async () => true,
+    };
+    await expect(
+      Person.select().for(entity('p1')).offset(5).limit(0).exists(store as any),
+    ).resolves.toBe(true);
+  });
+
+  test('the ask it reduces to carries no pagination, projection or sorting', async () => {
+    const ir: any = await captureQuery(() =>
+      Person.select((p) => p.name)
+        .orderBy((p) => p.name)
+        .for(entity('p1'))
+        .offset(10)
+        .limit(50)
+        .exists(),
+    );
+    expect(ir.kind).toBe('ask');
+    expect(ir.limit).toBeUndefined();
+    expect(ir.offset).toBeUndefined();
+    expect(ir.orderBy).toBeUndefined();
+    expect(ir.projection).toBeUndefined();
+    // The pattern that decides the answer survives.
+    expect(ir.subjectId).toBe(entity('p1').id);
+    expect(ir.root).toBeDefined();
+  });
+
+  test('a decorated chain and a bare exists lower to the same ask', async () => {
+    const decorated = await captureQuery(existsFactories.existsNormalised);
+    const bare = await captureQuery(existsFactories.existsById);
+    expect(sanitize(decorated)).toEqual(sanitize(bare));
   });
 });

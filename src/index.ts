@@ -48,6 +48,9 @@ export type {FieldSetEntry, FieldSetInput, FieldSetJSON, FieldSetFieldJSON} from
 export type {QueryBuilderJSON} from './queries/QueryBuilder.js';
 
 // Phase 3b — Mutation builders
+export {AskBuilder, isAskQuery} from './queries/AskBuilder.js';
+export type {AskSpec} from './queries/AskBuilder.js';
+export type {AskQuery, AskQueryJSON, RawAskInput} from './queries/AskQuery.js';
 export {CreateBuilder} from './queries/CreateBuilder.js';
 export {UpdateBuilder} from './queries/UpdateBuilder.js';
 export {DeleteBuilder} from './queries/DeleteBuilder.js';

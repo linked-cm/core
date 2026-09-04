@@ -4,6 +4,7 @@ import type {
   SparqlTerm,
   SparqlTriple,
   SparqlSelectPlan,
+  SparqlAskPlan,
   SparqlInsertDataPlan,
   SparqlDeleteInsertPlan,
   SparqlDeleteWherePlan,
@@ -389,6 +390,32 @@ export function selectPlanToSparql(
   parts.push(selectLine);
   parts.push(whereBlock);
   parts.push(...clauses);
+
+  return parts.join('\n');
+}
+
+/**
+ * Serializes a {@link SparqlAskPlan} to `ASK WHERE { … }`.
+ *
+ * The same WHERE body as {@link selectPlanToSparql}, with the projection line and
+ * every solution modifier removed — `ASK` accepts none of them.
+ */
+export function askPlanToSparql(
+  plan: SparqlAskPlan,
+  _options?: SparqlOptions,
+): string {
+  const collector: UriCollector = {uris: new Set()};
+
+  // 1. Serialize WHERE body (collects the URIs the prefix block is built from)
+  const body = serializeAlgebraNode(plan.algebra, collector);
+
+  // 2. Build PREFIX block (after collecting all URIs)
+  const prefixBlock = buildPrefixBlock(collector.uris);
+
+  // 3. Assemble
+  const parts: string[] = [];
+  if (prefixBlock) parts.push(prefixBlock);
+  parts.push(`ASK WHERE {\n${indent(body)}\n}`);
 
   return parts.join('\n');
 }

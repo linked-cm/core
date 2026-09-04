@@ -1,37 +1,40 @@
 ---
-summary: Add SPARQL ASK end-to-end (algebra, serializer, wire op, IDataset.askQuery) if a boolean is ever needed on the wire or existence is needed without the shape's rdf:type scan. Deliberately not done for `Shape.exists`, which lowers to an ordinary SELECT.
+summary: What remains of ASK after report 029 — the downstream half of the `op:'ask'` wire envelope (execution-gateway, server), so a remote peer answers the boolean itself rather than the local store doing it.
 packages: [core]
 ---
 
-# 036 — `ASK` query support
+# 036 — `ASK`: what remains
 
-`Shape.exists()` / `SelectBuilder.exists()` (report 028) answer existence with
-`SELECT DISTINCT ?a0 WHERE { … } LIMIT 1`, not `ASK`. That was chosen deliberately: it needs no
-pipeline change and therefore works on every `IDataset` — Fuseki, Host Agent, remote/DSL-JSON —
-without any store opting in.
+Report 029 shipped ask queries end to end inside `@_linked/core`: `AskBuilder`, `IRAskQuery`, the
+`op: 'ask'` DSL-JSON envelope, `ASK WHERE { … }`, a required `IDataset.askQuery`, shapeless
+existence via `Shape.exists(uri)`, and router fan-out for it. Type-free existence — the item this
+backlog used to be mostly about — is done.
 
-Reasons `ASK` might still be wanted later:
+What is left is downstream of this package.
 
-- **Existence without the type constraint.** Every select scan emits `?a0 rdf:type <ShapeClass> .`
-  (`irToAlgebra.ts`, `resolveShapeScanIri`). So `Person.exists(id)` means "exists *as a Person*".
-  There is currently no way to ask "is there any node with this IRI at all?".
-- A boolean on the wire rather than a one-row result set.
+## The receiving side of `op: 'ask'`
 
-What it would take (surveyed, not started):
+`fromJSON` routes an `op: 'ask'` envelope to an `AskBuilder`, and `AskBuilder.exec()` resolves to a
+boolean through the local dispatch — so a receiving process needs no new plumbing beyond what it
+already does for select and mutation envelopes. But the gateway and server packages have to actually
+handle the new kind:
 
-| Layer | File | Change |
-|---|---|---|
-| Algebra | `src/sparql/SparqlAlgebra.ts` | `SparqlAskPlan` in the `SparqlPlan` union |
-| Serializer | `src/sparql/algebraToString.ts` | `askPlanToSparql` → `ASK WHERE { … }` |
-| IR → algebra | `src/sparql/irToAlgebra.ts` | `askToAlgebra` / `askToSparql` (reuse `selectToAlgebra`'s pattern build, drop steps 7–9) |
-| Result mapping | `src/sparql/resultMapping.ts` | `SparqlJsonResults` has **no `boolean` field** today; widen it + `mapSparqlAskResult` |
-| IR | `src/queries/IntermediateRepresentation.ts` | `IRAskQuery`, `AskResult = boolean` |
-| Wire | `QueryBuilderSerialization.ts`, `fromJSON.ts`, `wireVersion.ts` | `op: 'ask'` + wire-version bump |
-| Contract | `src/interfaces/IDataset.ts` | `askQuery?(q): Promise<boolean>` |
-| Dispatch | `queries/queryDispatch.ts`, `utils/LinkedStorage.ts` | routing |
-| Downstream | `packages/execution-gateway`, `packages/server` (`BackendAPIStoreProvider`) | endpoint method |
+| Package | Change |
+|---|---|
+| `execution-gateway` | accept `op: 'ask'`, return a boolean rather than a result set |
+| `server` (`BackendAPIStoreProvider`) | implement `askQuery` by forwarding the ask envelope |
 
-~15 files across 3 packages. Note the trap: an **optional** `askQuery` on `IDataset` means every
-store that does not implement it either errors or silently falls back — reintroducing the
-quiet-wrong-answer failure mode that `exists()` was built to remove. Any implementation should make
-the fallback to SELECT explicit and shared, not per-store.
+Until that lands, a remote store's `askQuery` has to answer some other way — there is no ask→select
+rewrite in core to fall back on, by design (report 029).
+
+**Ordering:** deploy receivers first. `assertWireVersion` only rejects on a *major* mismatch, so the
+`1.0 → 1.1` bump gates nothing; what protects an old peer is `fromJSON` throwing `Unknown query op`,
+which makes it fail loud rather than silently re-running the query as a select.
+
+## Further ask questions
+
+The envelope extends by *pattern*, not by flags — "is this node related to that one by this path"
+is the same `op: 'ask'` with a different `where`. Nothing further is needed for those.
+
+The one question that would **not** fit is SHACL conformance ("does this node validate against this
+shape?"): it is not pattern-shaped, and should get its own `op` rather than be squeezed in here.

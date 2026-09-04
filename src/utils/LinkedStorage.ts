@@ -1,10 +1,11 @@
 import {CoreSet} from '../collections/CoreSet.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
+import type {AskQuery} from '../queries/AskQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
-import {setQueryDispatch} from '../queries/queryDispatch.js';
+import {setQueryDispatch, resolveExistence} from '../queries/queryDispatch.js';
 import {getShapeClass} from './ShapeClass.js';
 import type {NodeShapeData} from '../shapes/SHACL.js';
 
@@ -55,6 +56,7 @@ export abstract class LinkedStorage {
     }
     setQueryDispatch({
       selectQuery: (q) => this.selectQuery(q),
+      askQuery: (q) => this.askQuery(q),
       createQuery: (q) => this.createQuery(q),
       updateQuery: (q) => this.updateQuery(q),
       deleteQuery: (q) => this.deleteQuery(q),
@@ -134,6 +136,60 @@ export abstract class LinkedStorage {
       );
     }
     return dataset.selectQuery(query) as Promise<ResultType>;
+  }
+
+  /**
+   * Route an ask query.
+   *
+   * A **shaped** ask routes like every other query — by its shape, to one dataset.
+   *
+   * A **shapeless** ask ("does a node with this IRI exist at all") has no shape,
+   * and therefore no routing key. Asking only the default dataset would answer
+   * `false` for a node that exists in a pinned one — a wrong answer, quietly. So a
+   * router must ask every dataset it knows and OR the results. That is cheap
+   * precisely because the answers are booleans: the fan-out short-circuits on the
+   * first `true`, where the same sweep for rows could not.
+   *
+   * Any other router implementing `IDataset` inherits this obligation: a shapeless
+   * ask means "anywhere I can reach", not "in my default store".
+   *
+   * The contract itself — a real boolean, errors never flattened to `false` —
+   * belongs to `resolveExistence`, which the builder also goes through. None of it
+   * is re-implemented here.
+   */
+  static async askQuery(query: AskQuery): Promise<boolean> {
+    if (!query?.shape) {
+      return this.askAnyDataset(query);
+    }
+    const dataset = this.resolveDatasetForQueryShape(query.shape);
+    if (!dataset) {
+      throw new Error(
+        'No query dataset configured. Call LinkedStorage.setDefaultDataset().',
+      );
+    }
+    return resolveExistence(dataset, query);
+  }
+
+  /**
+   * Fan a shapeless ask out across every known dataset, resolving `true` as soon
+   * as one answers `true`.
+   *
+   * Sequential rather than parallel: the common case is a single dataset, and an
+   * early `true` should not have already cost a query against every other store.
+   * A failure from any dataset propagates — an unreachable store makes the answer
+   * unknown, and "unknown" is not `false`.
+   */
+  private static async askAnyDataset(query: AskQuery): Promise<boolean> {
+    const datasets = this.getDatasets();
+    if (datasets.size === 0) {
+      throw new Error(
+        'No query dataset configured. Call LinkedStorage.setDefaultDataset().',
+      );
+    }
+    for (const dataset of datasets) {
+      if (await resolveExistence(dataset, query)) return true;
+    }
+    return false;
   }
 
   static updateQuery<ResponseType>(query: UpdateQuery): Promise<ResponseType> {

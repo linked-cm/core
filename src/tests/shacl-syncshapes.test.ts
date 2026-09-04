@@ -52,6 +52,7 @@ function installMock(existingIds: string[]) {
   calls = [];
   setQueryDispatch({
     selectQuery: async () => existingIds.map((id) => ({id})) as any,
+    askQuery: async () => existingIds.length > 0,
     createQuery: async (q: any) => {
       calls.push({kind: 'create', id: (lower(q) as any)?.data?.id});
       return {} as any;
@@ -220,6 +221,7 @@ describe('syncShape (single)', () => {
 function makeTargetStore(existingIds: string[]) {
   const storeCalls: Call[] = [];
   const store: IDataset = {
+    askQuery: async () => false,
     selectQuery: async () => existingIds.map((id) => ({id})) as any,
     createQuery: async (q: any) => {
       storeCalls.push({kind: 'create', id: (lower(q) as any)?.data?.id});

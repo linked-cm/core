@@ -13,6 +13,7 @@ import type {
 import type {NodeReferenceValue, UpdatePartial} from '../queries/QueryFactory.js';
 import type {NodeId} from '../queries/MutationQuery.js';
 import {QueryBuilder} from '../queries/QueryBuilder.js';
+import {AskBuilder} from '../queries/AskBuilder.js';
 import type {PendingQueryContext} from '../queries/QueryContext.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import {CreateBuilder} from '../queries/CreateBuilder.js';
@@ -181,6 +182,15 @@ export abstract class Shape {
   /**
    * Whether a node with this id exists as an instance of this shape.
    *
+   * On the base class — `Shape.exists(uri)` — it means something different and
+   * weaker: does a node with this IRI exist **at all**, under any type or none.
+   * There is no shape to constrain by, so no `rdf:type` triple is emitted and the
+   * query is `ASK { <uri> ?p ?o }`. (`Shape` is free to mean this because the
+   * shapes themselves are described by `NodeShape` and `PropertyShape`, so
+   * `Shape.exists` is not needed for "is this a shape?".) Because a shapeless ask
+   * has no shape to route on, a router asks every dataset it knows — see
+   * `LinkedStorage.askQuery`.
+   *
    * ```typescript
    * if (await SourceDocument.exists({id})) {
    *   await SourceDocument.update(values).for({id});
@@ -191,8 +201,12 @@ export abstract class Shape {
    *
    * Resolves to a real `boolean` — unlike `select().where(…).one()`, which resolves
    * to a row or `null` and leaves the conversion (and the failure modes) to the
-   * caller. Runs the cheapest correct query: one projected variable, the shape's
-   * type triple, an equality filter on the subject, `LIMIT 1`.
+   * caller. Runs the cheapest correct query: against a SPARQL store, an
+   * `ASK WHERE { ?a0 rdf:type <ShapeClass> . FILTER(?a0 = <id>) }` — the shape's
+   * type triple and an equality filter on the subject, nothing else.
+   *
+   * Note the type triple: this asks whether the node exists **as an instance of
+   * this shape**. A node with that IRI and a different type answers `false`.
    *
    * A `null`/`undefined` id resolves to `false` without touching the store — as does
    * a `PendingQueryContext` whose value has not landed yet, since there is no subject
@@ -212,13 +226,18 @@ export abstract class Shape {
    *   global query dispatch.
    */
   static async exists<S extends Shape>(
-    this: ShapeConstructor<S>,
+    this: ShapeConstructor<S> | typeof Shape,
     id: string | NodeReferenceValue | PendingQueryContext | null | undefined,
     target?: IDataset,
   ): Promise<boolean> {
-    // `async`, so that a bad string IRI (resolveUriOrThrow, inside .for()) rejects
-    // rather than throwing synchronously past the caller's .catch().
-    return QueryBuilder.from(this).for(id).exists(target);
+    // `async`, so that a bad string IRI (resolveUriOrThrow) rejects rather than
+    // throwing synchronously past the caller's .catch().
+    if ((this as unknown) === Shape) {
+      // Called on the base class: no shape to constrain by, so no rdf:type triple.
+      // `ASK { <iri> ?p ?o }` — does this node exist at all?
+      return AskBuilder.forNode(id).exec(target);
+    }
+    return QueryBuilder.from(this as ShapeConstructor<S>).for(id).exists(target);
   }
 
   /**

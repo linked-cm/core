@@ -164,7 +164,7 @@ describe('createToAlgebra', () => {
     const friendTriples = plan.triples.filter(
       (t) =>
         t.predicate.kind === 'iri' &&
-        t.predicate.value.endsWith('/friends'),
+        t.predicate.value.endsWith('/hasFriend'),
     );
     expect(friendTriples.length).toBeGreaterThanOrEqual(2);
 
@@ -249,7 +249,7 @@ describe('updateToAlgebra', () => {
     // Delete should have a wildcard variable for old friends
     const deleteFriends = plan.deletePatterns.find(
       (t) =>
-        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/friends'),
+        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/hasFriend'),
     );
     expect(deleteFriends).toBeDefined();
     expect(deleteFriends!.object.kind).toBe('variable');
@@ -257,7 +257,7 @@ describe('updateToAlgebra', () => {
     // Insert should have the specific friend reference
     const insertFriends = plan.insertPatterns.find(
       (t) =>
-        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/friends'),
+        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/hasFriend'),
     );
     expect(insertFriends).toBeDefined();
     expect(insertFriends!.object).toEqual({
@@ -278,7 +278,7 @@ describe('updateToAlgebra', () => {
     // Delete should contain specific remove targets (not wildcard)
     const deleteFriends = plan.deletePatterns.filter(
       (t) =>
-        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/friends'),
+        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/hasFriend'),
     );
     expect(deleteFriends.length).toBeGreaterThanOrEqual(1);
 
@@ -292,7 +292,7 @@ describe('updateToAlgebra', () => {
     // Insert should contain the add target (entity p2)
     const insertFriends = plan.insertPatterns.filter(
       (t) =>
-        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/friends'),
+        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/hasFriend'),
     );
     expect(insertFriends.length).toBeGreaterThanOrEqual(1);
     const addedFriend = insertFriends.find(
@@ -508,7 +508,7 @@ describe('updateToAlgebra', () => {
     // Insert patterns for friends should be empty
     const insertFriends = plan.insertPatterns.filter(
       (t) =>
-        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/friends'),
+        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/hasFriend'),
     );
     expect(insertFriends.length).toBe(0);
   });
@@ -525,7 +525,7 @@ describe('updateToAlgebra', () => {
     // Delete should have wildcard
     const deleteFriends = plan.deletePatterns.find(
       (t) =>
-        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/friends'),
+        t.predicate.kind === 'iri' && t.predicate.value.endsWith('/hasFriend'),
     );
     expect(deleteFriends).toBeDefined();
     expect(deleteFriends!.object.kind).toBe('variable');

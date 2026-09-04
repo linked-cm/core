@@ -8,7 +8,13 @@
  * Coverage: all 75 query factories from query-fixtures.ts
  */
 import {describe, expect, test, beforeAll, afterAll} from '@jest/globals';
-import {queryFactories, Person, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {queryFactories, Person, tmpEntityBase,
+  personClass,
+  dogClass,
+  petClass,
+  employeeClass,
+  propBase,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {lower} from '../queries/lower';
 import {
@@ -53,63 +59,74 @@ setQueryContext('user', {id: `${tmpEntityBase}p3`}, Person);
 // ---------------------------------------------------------------------------
 
 const P = 'https://linked.cm/shape/core/Person';
+// Property predicates are the declared `sh:path`, not derived from the shape IRI.
+const PROP = propBase;
 const D = 'https://linked.cm/shape/core/Dog';
 const PET = 'https://linked.cm/shape/core/Pet';
 const E = 'https://linked.cm/shape/core/Employee';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+// Class IRIs — the separate node each shape declares as its `targetClass`.
+// Only these appear as an rdf:type; the shape IRIs above identify the
+// SHACL descriptions and are what property predicates derive from.
+const PT = personClass.id;
+const DT = dogClass.id;
+const PETT = petClass.id;
+const ET = employeeClass.id;
+
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const ENT = tmpEntityBase; // linked://tmp/entities/
 
 // ---------------------------------------------------------------------------
 // N-Triples test data
 //
-// Uses the SHACL-generated property shape URIs (e.g. <P>/name) that the
-// SPARQL pipeline produces, NOT the raw linked://tmp/props/ URIs.
+// Predicates are the declared `sh:path` and types the declared `targetClass` —
+// what the SPARQL pipeline actually emits. Neither is derived from the shape IRI:
+// note `friends` is stored under <PROP>hasFriend, not <PROP>friends.
 // ---------------------------------------------------------------------------
 
 const TEST_DATA = `
-<${ENT}p1> <${RDF_TYPE}> <${P}> .
-<${ENT}p1> <${P}/name> "Semmy" .
-<${ENT}p1> <${P}/hobby> "Reading" .
-<${ENT}p1> <${P}/birthDate> "1990-01-01T00:00:00.000Z"^^<${XSD}dateTime> .
-<${ENT}p1> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
-<${ENT}p1> <${P}/friends> <${ENT}p2> .
-<${ENT}p1> <${P}/friends> <${ENT}p3> .
-<${ENT}p1> <${P}/pets> <${ENT}dog1> .
-<${ENT}p1> <${P}/firstPet> <${ENT}dog1> .
-<${ENT}p1> <${P}/nickNames> "Sem1" .
-<${ENT}p1> <${P}/nickNames> "Sem" .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p1> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p2> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p3> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p4> .
-<${ENT}p2> <${RDF_TYPE}> <${P}> .
-<${ENT}p2> <${P}/name> "Moa" .
-<${ENT}p2> <${P}/hobby> "Jogging" .
-<${ENT}p2> <${P}/isRealPerson> "false"^^<${XSD}boolean> .
-<${ENT}p2> <${P}/bestFriend> <${ENT}p3> .
-<${ENT}p2> <${P}/friends> <${ENT}p3> .
-<${ENT}p2> <${P}/friends> <${ENT}p4> .
-<${ENT}p2> <${P}/pets> <${ENT}dog2> .
-<${ENT}p2> <${P}/firstPet> <${ENT}dog2> .
-<${ENT}p3> <${RDF_TYPE}> <${P}> .
-<${ENT}p3> <${P}/name> "Jinx" .
-<${ENT}p3> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
-<${ENT}p4> <${RDF_TYPE}> <${P}> .
-<${ENT}p4> <${P}/name> "Quinn" .
-<${ENT}dog1> <${RDF_TYPE}> <${D}> .
-<${ENT}dog1> <${RDF_TYPE}> <${PET}> .
-<${ENT}dog1> <${D}/guardDogLevel> "2"^^<${XSD}integer> .
-<${ENT}dog1> <${PET}/bestFriend> <${ENT}dog2> .
-<${ENT}dog2> <${RDF_TYPE}> <${D}> .
-<${ENT}dog2> <${RDF_TYPE}> <${PET}> .
-<${ENT}e1> <${RDF_TYPE}> <${E}> .
-<${ENT}e1> <${E}/name> "Alice" .
-<${ENT}e1> <${E}/department> "Engineering" .
-<${ENT}e1> <${E}/bestFriend> <${ENT}e2> .
-<${ENT}e2> <${RDF_TYPE}> <${E}> .
-<${ENT}e2> <${E}/name> "Bob" .
-<${ENT}e2> <${E}/department> "Sales" .
+<${ENT}p1> <${RDF_TYPE}> <${PT}> .
+<${ENT}p1> <${PROP}name> "Semmy" .
+<${ENT}p1> <${PROP}hobby> "Reading" .
+<${ENT}p1> <${PROP}birthDate> "1990-01-01T00:00:00.000Z"^^<${XSD}dateTime> .
+<${ENT}p1> <${PROP}isRealPerson> "true"^^<${XSD}boolean> .
+<${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
+<${ENT}p1> <${PROP}hasFriend> <${ENT}p3> .
+<${ENT}p1> <${PROP}hasPet> <${ENT}dog1> .
+<${ENT}p1> <${PROP}hasPet> <${ENT}dog1> .
+<${ENT}p1> <${PROP}nickName> "Sem1" .
+<${ENT}p1> <${PROP}nickName> "Sem" .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p1> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p2> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p3> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p4> .
+<${ENT}p2> <${RDF_TYPE}> <${PT}> .
+<${ENT}p2> <${PROP}name> "Moa" .
+<${ENT}p2> <${PROP}hobby> "Jogging" .
+<${ENT}p2> <${PROP}isRealPerson> "false"^^<${XSD}boolean> .
+<${ENT}p2> <${PROP}bestFriend> <${ENT}p3> .
+<${ENT}p2> <${PROP}hasFriend> <${ENT}p3> .
+<${ENT}p2> <${PROP}hasFriend> <${ENT}p4> .
+<${ENT}p2> <${PROP}hasPet> <${ENT}dog2> .
+<${ENT}p2> <${PROP}hasPet> <${ENT}dog2> .
+<${ENT}p3> <${RDF_TYPE}> <${PT}> .
+<${ENT}p3> <${PROP}name> "Jinx" .
+<${ENT}p3> <${PROP}isRealPerson> "true"^^<${XSD}boolean> .
+<${ENT}p4> <${RDF_TYPE}> <${PT}> .
+<${ENT}p4> <${PROP}name> "Quinn" .
+<${ENT}dog1> <${RDF_TYPE}> <${DT}> .
+<${ENT}dog1> <${RDF_TYPE}> <${PETT}> .
+<${ENT}dog1> <${PROP}guardDogLevel> "2"^^<${XSD}integer> .
+<${ENT}dog1> <${PROP}bestFriend> <${ENT}dog2> .
+<${ENT}dog2> <${RDF_TYPE}> <${DT}> .
+<${ENT}dog2> <${RDF_TYPE}> <${PETT}> .
+<${ENT}e1> <${RDF_TYPE}> <${ET}> .
+<${ENT}e1> <${PROP}employeeName> "Alice" .
+<${ENT}e1> <${PROP}employeeDepartment> "Engineering" .
+<${ENT}e1> <${PROP}bestFriend> <${ENT}e2> .
+<${ENT}e2> <${RDF_TYPE}> <${ET}> .
+<${ENT}e2> <${PROP}employeeName> "Bob" .
+<${ENT}e2> <${PROP}employeeDepartment> "Sales" .
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -1473,8 +1490,8 @@ describe('Fuseki mutations — CREATE', () => {
 
     const verifyResult = await executeSparqlQuery(`
       SELECT ?s ?name WHERE {
-        ?s <${P}/name> "Test Create" .
-        ?s <${P}/name> ?name .
+        ?s <${PROP}name> "Test Create" .
+        ?s <${PROP}name> ?name .
       }
     `);
     expect(verifyResult.results.bindings.length).toBeGreaterThanOrEqual(1);
@@ -1495,8 +1512,8 @@ describe('Fuseki mutations — CREATE', () => {
     // Verify the created person exists with name "Test Create"
     const verifyResult = await executeSparqlQuery(`
       SELECT ?s ?name WHERE {
-        ?s <${P}/name> "Test Create" .
-        ?s <${P}/name> ?name .
+        ?s <${PROP}name> "Test Create" .
+        ?s <${PROP}name> ?name .
       }
     `);
     expect(verifyResult.results.bindings.length).toBeGreaterThanOrEqual(1);
@@ -1506,7 +1523,7 @@ describe('Fuseki mutations — CREATE', () => {
     // Verify friends were linked
     const friendsResult = await executeSparqlQuery(`
       SELECT ?friend WHERE {
-        <${createdUri}> <${P}/friends> ?friend .
+        <${createdUri}> <${PROP}hasFriend> ?friend .
       }
     `);
     expect(friendsResult.results.bindings.length).toBeGreaterThanOrEqual(1);
@@ -1515,7 +1532,7 @@ describe('Fuseki mutations — CREATE', () => {
     await executeSparqlUpdate(`DELETE WHERE { <${createdUri}> ?p ?o }`);
     // Clean up the "New Friend" entity
     const newFriendResult = await executeSparqlQuery(`
-      SELECT ?s WHERE { ?s <${P}/name> "New Friend" . }
+      SELECT ?s WHERE { ?s <${PROP}name> "New Friend" . }
     `);
     for (const binding of newFriendResult.results.bindings) {
       await executeSparqlUpdate(`DELETE WHERE { <${binding.s.value}> ?p ?o }`);
@@ -1532,7 +1549,7 @@ describe('Fuseki mutations — CREATE', () => {
     const fixedUri = `${ENT}fixed-id`;
     const verifyResult = await executeSparqlQuery(`
       SELECT ?name WHERE {
-        <${fixedUri}> <${P}/name> ?name .
+        <${fixedUri}> <${PROP}name> ?name .
       }
     `);
     expect(verifyResult.results.bindings.length).toBe(1);
@@ -1557,16 +1574,16 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?hobby WHERE { <${ENT}p1> <${P}/hobby> ?hobby . }
+        SELECT ?hobby WHERE { <${ENT}p1> <${PROP}hobby> ?hobby . }
       `);
       expect(verifyResult.results.bindings.length).toBe(1);
       expect(verifyResult.results.bindings[0].hobby.value).toBe('Chess');
     } finally {
       // Restore
       await executeSparqlUpdate(`
-        DELETE { <${ENT}p1> <${P}/hobby> "Chess" . }
-        INSERT { <${ENT}p1> <${P}/hobby> "Reading" . }
-        WHERE { <${ENT}p1> <${P}/hobby> "Chess" . }
+        DELETE { <${ENT}p1> <${PROP}hobby> "Chess" . }
+        INSERT { <${ENT}p1> <${PROP}hobby> "Reading" . }
+        WHERE { <${ENT}p1> <${PROP}hobby> "Chess" . }
       `);
     }
   });
@@ -1580,7 +1597,7 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?friend WHERE { <${ENT}p1> <${P}/friends> ?friend . }
+        SELECT ?friend WHERE { <${ENT}p1> <${PROP}hasFriend> ?friend . }
       `);
       // After overwrite, p1 should have only p2 as friend
       expect(verifyResult.results.bindings.length).toBe(1);
@@ -1588,7 +1605,7 @@ describe('Fuseki mutations — UPDATE', () => {
     } finally {
       // Restore: re-add p3 as friend
       await executeSparqlUpdate(`
-        INSERT DATA { <${ENT}p1> <${P}/friends> <${ENT}p3> . }
+        INSERT DATA { <${ENT}p1> <${PROP}hasFriend> <${ENT}p3> . }
       `);
     }
   });
@@ -1602,13 +1619,13 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?hobby WHERE { <${ENT}p1> <${P}/hobby> ?hobby . }
+        SELECT ?hobby WHERE { <${ENT}p1> <${PROP}hobby> ?hobby . }
       `);
       expect(verifyResult.results.bindings.length).toBe(0);
     } finally {
       // Restore
       await executeSparqlUpdate(`
-        INSERT DATA { <${ENT}p1> <${P}/hobby> "Reading" . }
+        INSERT DATA { <${ENT}p1> <${PROP}hobby> "Reading" . }
       `);
     }
   });
@@ -1622,12 +1639,12 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?hobby WHERE { <${ENT}p1> <${P}/hobby> ?hobby . }
+        SELECT ?hobby WHERE { <${ENT}p1> <${PROP}hobby> ?hobby . }
       `);
       expect(verifyResult.results.bindings.length).toBe(0);
     } finally {
       await executeSparqlUpdate(`
-        INSERT DATA { <${ENT}p1> <${P}/hobby> "Reading" . }
+        INSERT DATA { <${ENT}p1> <${PROP}hobby> "Reading" . }
       `);
     }
   });
@@ -1643,8 +1660,8 @@ describe('Fuseki mutations — UPDATE', () => {
       // p1 should now have a bestFriend pointing to a new entity named "Bestie"
       const verifyResult = await executeSparqlQuery(`
         SELECT ?bf ?name WHERE {
-          <${ENT}p1> <${P}/bestFriend> ?bf .
-          ?bf <${P}/name> ?name .
+          <${ENT}p1> <${PROP}bestFriend> ?bf .
+          ?bf <${PROP}name> ?name .
         }
       `);
       expect(verifyResult.results.bindings.length).toBe(1);
@@ -1652,11 +1669,11 @@ describe('Fuseki mutations — UPDATE', () => {
     } finally {
       // Cleanup: remove the bestFriend link and the created entity
       const bfResult = await executeSparqlQuery(`
-        SELECT ?bf WHERE { <${ENT}p1> <${P}/bestFriend> ?bf . }
+        SELECT ?bf WHERE { <${ENT}p1> <${PROP}bestFriend> ?bf . }
       `);
       if (bfResult.results.bindings.length > 0) {
         const bfUri = bfResult.results.bindings[0].bf.value;
-        await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${P}/bestFriend> ?o }`);
+        await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${PROP}bestFriend> ?o }`);
         await executeSparqlUpdate(`DELETE WHERE { <${bfUri}> ?p ?o }`);
       }
     }
@@ -1671,13 +1688,13 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?bf WHERE { <${ENT}p1> <${P}/bestFriend> ?bf . }
+        SELECT ?bf WHERE { <${ENT}p1> <${PROP}bestFriend> ?bf . }
       `);
       expect(verifyResult.results.bindings.length).toBe(1);
       expect(verifyResult.results.bindings[0].bf.value).toBe(`${ENT}p2`);
     } finally {
       // Cleanup: remove bestFriend link
-      await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${P}/bestFriend> ?o }`);
+      await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${PROP}bestFriend> ?o }`);
     }
   });
 
@@ -1690,7 +1707,7 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?friend WHERE { <${ENT}p1> <${P}/friends> ?friend . }
+        SELECT ?friend WHERE { <${ENT}p1> <${PROP}hasFriend> ?friend . }
       `);
       const friends = verifyResult.results.bindings.map((b: any) => b.friend.value);
       // p1 had [p2, p3]. Remove p3 → [p2]. Add p2 (already exists) → [p2].
@@ -1699,7 +1716,7 @@ describe('Fuseki mutations — UPDATE', () => {
     } finally {
       // Restore: re-add p3
       await executeSparqlUpdate(`
-        INSERT DATA { <${ENT}p1> <${P}/friends> <${ENT}p3> . }
+        INSERT DATA { <${ENT}p1> <${PROP}hasFriend> <${ENT}p3> . }
       `);
     }
   });
@@ -1713,7 +1730,7 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?friend WHERE { <${ENT}p1> <${P}/friends> ?friend . }
+        SELECT ?friend WHERE { <${ENT}p1> <${PROP}hasFriend> ?friend . }
       `);
       const friends = verifyResult.results.bindings.map((b: any) => b.friend.value);
       expect(friends).not.toContain(`${ENT}p2`);
@@ -1721,7 +1738,7 @@ describe('Fuseki mutations — UPDATE', () => {
     } finally {
       // Restore: re-add p2
       await executeSparqlUpdate(`
-        INSERT DATA { <${ENT}p1> <${P}/friends> <${ENT}p2> . }
+        INSERT DATA { <${ENT}p1> <${PROP}hasFriend> <${ENT}p2> . }
       `);
     }
   });
@@ -1735,7 +1752,7 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?friend WHERE { <${ENT}p1> <${P}/friends> ?friend . }
+        SELECT ?friend WHERE { <${ENT}p1> <${PROP}hasFriend> ?friend . }
       `);
       const friends = verifyResult.results.bindings.map((b: any) => b.friend.value);
       expect(friends).toContain(`${ENT}p2`);
@@ -1743,7 +1760,7 @@ describe('Fuseki mutations — UPDATE', () => {
     } finally {
       // Restore: re-add p3
       await executeSparqlUpdate(`
-        INSERT DATA { <${ENT}p1> <${P}/friends> <${ENT}p3> . }
+        INSERT DATA { <${ENT}p1> <${PROP}hasFriend> <${ENT}p3> . }
       `);
     }
   });
@@ -1757,15 +1774,15 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?friend WHERE { <${ENT}p1> <${P}/friends> ?friend . }
+        SELECT ?friend WHERE { <${ENT}p1> <${PROP}hasFriend> ?friend . }
       `);
       expect(verifyResult.results.bindings.length).toBe(0);
     } finally {
       // Restore: re-add p2 and p3
       await executeSparqlUpdate(`
         INSERT DATA {
-          <${ENT}p1> <${P}/friends> <${ENT}p2> .
-          <${ENT}p1> <${P}/friends> <${ENT}p3> .
+          <${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
+          <${ENT}p1> <${PROP}hasFriend> <${ENT}p3> .
         }
       `);
     }
@@ -1783,20 +1800,20 @@ describe('Fuseki mutations — UPDATE', () => {
     try {
       // p1 should now have bestFriend pointing to the predefined URI
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?bf WHERE { <${ENT}p1> <${P}/bestFriend> ?bf . }
+        SELECT ?bf WHERE { <${ENT}p1> <${PROP}bestFriend> ?bf . }
       `);
       expect(verifyResult.results.bindings.length).toBe(1);
       expect(verifyResult.results.bindings[0].bf.value).toBe(nestedUri);
 
       // Phase 17 fix: the nested entity's data is now inserted
       const nameResult = await executeSparqlQuery(`
-        SELECT ?name WHERE { <${nestedUri}> <${P}/name> ?name . }
+        SELECT ?name WHERE { <${nestedUri}> <${PROP}name> ?name . }
       `);
       expect(nameResult.results.bindings.length).toBe(1);
       expect(nameResult.results.bindings[0].name.value).toBe('Bestie');
     } finally {
       // Cleanup
-      await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${P}/bestFriend> ?o }`);
+      await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${PROP}bestFriend> ?o }`);
       await executeSparqlUpdate(`DELETE WHERE { <${nestedUri}> ?p ?o }`);
     }
   });
@@ -1810,16 +1827,16 @@ describe('Fuseki mutations — UPDATE', () => {
 
     try {
       const verifyResult = await executeSparqlQuery(`
-        SELECT ?bd WHERE { <${ENT}p1> <${P}/birthDate> ?bd . }
+        SELECT ?bd WHERE { <${ENT}p1> <${PROP}birthDate> ?bd . }
       `);
       expect(verifyResult.results.bindings.length).toBe(1);
       expect(verifyResult.results.bindings[0].bd.value).toContain('2020');
     } finally {
       // Restore original birthDate
       await executeSparqlUpdate(`
-        DELETE { <${ENT}p1> <${P}/birthDate> ?old . }
-        INSERT { <${ENT}p1> <${P}/birthDate> "1990-01-01T00:00:00.000Z"^^<${XSD}dateTime> . }
-        WHERE { <${ENT}p1> <${P}/birthDate> ?old . }
+        DELETE { <${ENT}p1> <${PROP}birthDate> ?old . }
+        INSERT { <${ENT}p1> <${PROP}birthDate> "1990-01-01T00:00:00.000Z"^^<${XSD}dateTime> . }
+        WHERE { <${ENT}p1> <${PROP}birthDate> ?old . }
       `);
     }
   });
@@ -1836,14 +1853,14 @@ describe('Fuseki mutations — DELETE', () => {
     const toDeleteUri = `${ENT}to-delete`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${toDeleteUri}> <${RDF_TYPE}> <${P}> .
-        <${toDeleteUri}> <${P}/name> "ToBeDeleted" .
-        <${ENT}p1> <${P}/bestFriend> <${toDeleteUri}> .
+        <${toDeleteUri}> <${RDF_TYPE}> <${PT}> .
+        <${toDeleteUri}> <${PROP}name> "ToBeDeleted" .
+        <${ENT}p1> <${PROP}bestFriend> <${toDeleteUri}> .
       }
     `);
 
     const beforeResult = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${toDeleteUri}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${toDeleteUri}> <${PROP}name> ?name . }
     `);
     expect(beforeResult.results.bindings.length).toBe(1);
 
@@ -1852,12 +1869,12 @@ describe('Fuseki mutations — DELETE', () => {
     await executeSparqlUpdate(sparql);
 
     const afterResult = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${toDeleteUri}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${toDeleteUri}> <${PROP}name> ?name . }
     `);
     expect(afterResult.results.bindings.length).toBe(0);
 
     // Clean up incoming reference
-    await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${P}/bestFriend> <${toDeleteUri}> }`);
+    await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${PROP}bestFriend> <${toDeleteUri}> }`);
   });
 
   test('deleteSingleRef — same as deleteSingle', async () => {
@@ -1866,9 +1883,9 @@ describe('Fuseki mutations — DELETE', () => {
     const toDeleteUri = `${ENT}to-delete`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${toDeleteUri}> <${RDF_TYPE}> <${P}> .
-        <${toDeleteUri}> <${P}/name> "ToBeDeleted" .
-        <${ENT}p1> <${P}/bestFriend> <${toDeleteUri}> .
+        <${toDeleteUri}> <${RDF_TYPE}> <${PT}> .
+        <${toDeleteUri}> <${PROP}name> "ToBeDeleted" .
+        <${ENT}p1> <${PROP}bestFriend> <${toDeleteUri}> .
       }
     `);
 
@@ -1877,11 +1894,11 @@ describe('Fuseki mutations — DELETE', () => {
     await executeSparqlUpdate(sparql);
 
     const afterResult = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${toDeleteUri}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${toDeleteUri}> <${PROP}name> ?name . }
     `);
     expect(afterResult.results.bindings.length).toBe(0);
 
-    await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${P}/bestFriend> <${toDeleteUri}> }`);
+    await executeSparqlUpdate(`DELETE WHERE { <${ENT}p1> <${PROP}bestFriend> <${toDeleteUri}> }`);
   });
 
   test('deleteMultiple — delete two entities', async () => {
@@ -1891,11 +1908,11 @@ describe('Fuseki mutations — DELETE', () => {
     const del2 = `${ENT}to-delete-2`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${del1}> <${RDF_TYPE}> <${P}> .
-        <${del1}> <${P}/name> "Del1" .
-        <${del2}> <${RDF_TYPE}> <${P}> .
-        <${del2}> <${P}/name> "Del2" .
-        <${del1}> <${P}/bestFriend> <${del2}> .
+        <${del1}> <${RDF_TYPE}> <${PT}> .
+        <${del1}> <${PROP}name> "Del1" .
+        <${del2}> <${RDF_TYPE}> <${PT}> .
+        <${del2}> <${PROP}name> "Del2" .
+        <${del1}> <${PROP}bestFriend> <${del2}> .
       }
     `);
 
@@ -1904,10 +1921,10 @@ describe('Fuseki mutations — DELETE', () => {
     await executeSparqlUpdate(sparql);
 
     const after1 = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${del1}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${del1}> <${PROP}name> ?name . }
     `);
     const after2 = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${del2}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${del2}> <${PROP}name> ?name . }
     `);
     expect(after1.results.bindings.length).toBe(0);
     expect(after2.results.bindings.length).toBe(0);
@@ -1920,11 +1937,11 @@ describe('Fuseki mutations — DELETE', () => {
     const del2 = `${ENT}to-delete-2`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${del1}> <${RDF_TYPE}> <${P}> .
-        <${del1}> <${P}/name> "Del1" .
-        <${del2}> <${RDF_TYPE}> <${P}> .
-        <${del2}> <${P}/name> "Del2" .
-        <${del1}> <${P}/bestFriend> <${del2}> .
+        <${del1}> <${RDF_TYPE}> <${PT}> .
+        <${del1}> <${PROP}name> "Del1" .
+        <${del2}> <${RDF_TYPE}> <${PT}> .
+        <${del2}> <${PROP}name> "Del2" .
+        <${del1}> <${PROP}bestFriend> <${del2}> .
       }
     `);
 
@@ -1933,10 +1950,10 @@ describe('Fuseki mutations — DELETE', () => {
     await executeSparqlUpdate(sparql);
 
     const after1 = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${del1}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${del1}> <${PROP}name> ?name . }
     `);
     const after2 = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${del2}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${del2}> <${PROP}name> ?name . }
     `);
     expect(after1.results.bindings.length).toBe(0);
     expect(after2.results.bindings.length).toBe(0);
@@ -1993,7 +2010,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
 
     // Verify the entity was actually created in Fuseki
     const verifyResult = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${result.id}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${result.id}> <${PROP}name> ?name . }
     `);
     expect(verifyResult.results.bindings.length).toBe(1);
     expect(verifyResult.results.bindings[0].name.value).toBe('Test Create');
@@ -2022,7 +2039,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
 
     // Verify it was stored under the custom URI in Fuseki
     const verifyResult = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${customUri}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${customUri}> <${PROP}name> ?name . }
     `);
     expect(verifyResult.results.bindings.length).toBe(1);
     expect(verifyResult.results.bindings[0].name.value).toBe('Fixed');
@@ -2056,12 +2073,12 @@ describe('SparqlDataset (via FusekiStore)', () => {
 
     // Verify both entities exist in Fuseki
     const userVerify = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${userResult.id}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${userResult.id}> <${PROP}name> ?name . }
     `);
     expect(userVerify.results.bindings.length).toBe(1);
 
     const accountVerify = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${accountResult.id}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${accountResult.id}> <${PROP}name> ?name . }
     `);
     expect(accountVerify.results.bindings.length).toBe(1);
     expect(accountVerify.results.bindings[0].name.value).toBe('Account Entity');
@@ -2081,9 +2098,9 @@ describe('SparqlDataset (via FusekiStore)', () => {
 
     // Restore the original name
     await executeSparqlUpdate(`
-      DELETE { <${ENT}p1> <${P}/name> ?old . }
-      INSERT { <${ENT}p1> <${P}/name> "Semmy" . }
-      WHERE { <${ENT}p1> <${P}/name> ?old . }
+      DELETE { <${ENT}p1> <${PROP}name> ?old . }
+      INSERT { <${ENT}p1> <${PROP}name> "Semmy" . }
+      WHERE { <${ENT}p1> <${PROP}name> ?old . }
     `);
   });
 
@@ -2093,8 +2110,8 @@ describe('SparqlDataset (via FusekiStore)', () => {
     const toDeleteUri = `${ENT}store-delete-test`;
     await executeSparqlUpdate(`
       INSERT DATA {
-        <${toDeleteUri}> <${RDF_TYPE}> <${P}> .
-        <${toDeleteUri}> <${P}/name> "StoreDeleteTest" .
+        <${toDeleteUri}> <${RDF_TYPE}> <${PT}> .
+        <${toDeleteUri}> <${PROP}name> "StoreDeleteTest" .
       }
     `);
 
@@ -2105,7 +2122,7 @@ describe('SparqlDataset (via FusekiStore)', () => {
 
     // Verify deletion
     const afterResult = await executeSparqlQuery(`
-      SELECT ?name WHERE { <${toDeleteUri}> <${P}/name> ?name . }
+      SELECT ?name WHERE { <${toDeleteUri}> <${PROP}name> ?name . }
     `);
     expect(afterResult.results.bindings.length).toBe(0);
   });

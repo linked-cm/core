@@ -24,6 +24,7 @@ function makeStore(on: 'global' | 'target', supports: Set<string>): IDataset {
     return {} as any;
   };
   const store: IDataset = {
+    askQuery: async () => false,
     selectQuery: async () => record('select'),
   };
   if (supports.has('create')) store.createQuery = async () => record('create');

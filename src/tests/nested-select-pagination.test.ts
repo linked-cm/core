@@ -15,7 +15,10 @@
  *   4. Regression: no inner limit lowers to the existing OPTIONAL left-join
  */
 import {describe, expect, test, beforeAll, afterAll} from '@jest/globals';
-import {Person, tmpEntityBase} from '../test-helpers/query-fixtures';
+import {Person, tmpEntityBase,
+  personClass,
+  propBase,
+} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {selectToSparql} from '../sparql/irToAlgebra';
 import {mapSparqlSelectResult} from '../sparql/resultMapping';
@@ -39,6 +42,11 @@ setQueryContext('user', {id: `${tmpEntityBase}pp1`}, Person);
 // ---------------------------------------------------------------------------
 
 const P = 'https://linked.cm/shape/core/Person';
+// Property predicates are the declared `sh:path`, not derived from the shape IRI.
+const PROP = propBase;
+// The separate class node Person declares as targetClass — the only thing that
+// appears as an rdf:type. (Temporary IRI in these fixtures.)
+const PT = personClass.id;
 const ENT = tmpEntityBase;
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
@@ -51,34 +59,34 @@ const ref = (suffix: string) => ({id: `${ENT}${suffix}`});
 // ---------------------------------------------------------------------------
 
 const TEST_DATA = `
-<${ENT}pp1> <${RDF_TYPE}> <${P}> .
-<${ENT}pp1> <${P}/name> "Parent1" .
-<${ENT}pp1> <${P}/friends> <${ENT}f1> .
-<${ENT}pp1> <${P}/friends> <${ENT}f2> .
-<${ENT}pp1> <${P}/friends> <${ENT}f3> .
-<${ENT}pp1> <${P}/friends> <${ENT}f4> .
+<${ENT}pp1> <${RDF_TYPE}> <${PT}> .
+<${ENT}pp1> <${PROP}name> "Parent1" .
+<${ENT}pp1> <${PROP}hasFriend> <${ENT}f1> .
+<${ENT}pp1> <${PROP}hasFriend> <${ENT}f2> .
+<${ENT}pp1> <${PROP}hasFriend> <${ENT}f3> .
+<${ENT}pp1> <${PROP}hasFriend> <${ENT}f4> .
 
-<${ENT}f1> <${RDF_TYPE}> <${P}> .
-<${ENT}f1> <${P}/name> "A" .
-<${ENT}f2> <${RDF_TYPE}> <${P}> .
-<${ENT}f2> <${P}/name> "B" .
-<${ENT}f3> <${RDF_TYPE}> <${P}> .
-<${ENT}f3> <${P}/name> "C" .
-<${ENT}f4> <${RDF_TYPE}> <${P}> .
-<${ENT}f4> <${P}/name> "D" .
+<${ENT}f1> <${RDF_TYPE}> <${PT}> .
+<${ENT}f1> <${PROP}name> "A" .
+<${ENT}f2> <${RDF_TYPE}> <${PT}> .
+<${ENT}f2> <${PROP}name> "B" .
+<${ENT}f3> <${RDF_TYPE}> <${PT}> .
+<${ENT}f3> <${PROP}name> "C" .
+<${ENT}f4> <${RDF_TYPE}> <${PT}> .
+<${ENT}f4> <${PROP}name> "D" .
 
-<${ENT}pp2> <${RDF_TYPE}> <${P}> .
-<${ENT}pp2> <${P}/name> "Parent2" .
-<${ENT}pp2> <${P}/friends> <${ENT}g1> .
-<${ENT}pp2> <${P}/friends> <${ENT}g2> .
+<${ENT}pp2> <${RDF_TYPE}> <${PT}> .
+<${ENT}pp2> <${PROP}name> "Parent2" .
+<${ENT}pp2> <${PROP}hasFriend> <${ENT}g1> .
+<${ENT}pp2> <${PROP}hasFriend> <${ENT}g2> .
 
-<${ENT}g1> <${RDF_TYPE}> <${P}> .
-<${ENT}g1> <${P}/name> "G1" .
-<${ENT}g2> <${RDF_TYPE}> <${P}> .
-<${ENT}g2> <${P}/name> "G2" .
+<${ENT}g1> <${RDF_TYPE}> <${PT}> .
+<${ENT}g1> <${PROP}name> "G1" .
+<${ENT}g2> <${RDF_TYPE}> <${PT}> .
+<${ENT}g2> <${PROP}name> "G2" .
 
-<${ENT}lonely> <${RDF_TYPE}> <${P}> .
-<${ENT}lonely> <${P}/name> "Lonely" .
+<${ENT}lonely> <${RDF_TYPE}> <${PT}> .
+<${ENT}lonely> <${PROP}name> "Lonely" .
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -130,15 +138,15 @@ describe('nested-select pagination — IR → SPARQL golden', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     {
       SELECT ?a1 WHERE {
-        <${ENT}pp1> <${P}/friends> ?a1 .
+        <${ENT}pp1> <${PROP}hasFriend> ?a1 .
       } ORDER BY ASC(?a1) LIMIT 2
     }
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
   FILTER(?a0 = <${ENT}pp1>)
@@ -155,15 +163,15 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     {
       SELECT ?a1 WHERE {
-        <${ENT}pp1> <${P}/friends> ?a1 .
+        <${ENT}pp1> <${PROP}hasFriend> ?a1 .
       } ORDER BY ASC(?a1) OFFSET 1
     }
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
   FILTER(?a0 = <${ENT}pp1>)
@@ -179,16 +187,16 @@ WHERE {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
     {
       SELECT ?a1 WHERE {
-        <${ENT}pp1> <${P}/friends> ?a1 .
-        ?a1 <${P}/name> ?a1_name .
+        <${ENT}pp1> <${PROP}hasFriend> ?a1 .
+        ?a1 <${PROP}name> ?a1_name .
       } ORDER BY DESC(?a1_name) LIMIT 2
     }
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
   FILTER(?a0 = <${ENT}pp1>)
@@ -248,11 +256,11 @@ describe('nested-select pagination — regression (no inner limit)', () => {
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 SELECT DISTINCT ?a0 ?a1_name ?a1
 WHERE {
-  ?a0 rdf:type <${P}> .
+  ?a0 rdf:type <${PT}> .
   OPTIONAL {
-    ?a0 <${P}/friends> ?a1 .
+    ?a0 <${PROP}hasFriend> ?a1 .
     OPTIONAL {
-      ?a1 <${P}/name> ?a1_name .
+      ?a1 <${PROP}name> ?a1_name .
     }
   }
   FILTER(?a0 = <${ENT}pp1>)
@@ -369,12 +377,12 @@ describe('nested-select pagination — Fuseki execution', () => {
 describe('nested-select pagination — Option B reference (multi-parent rank rewrite, raw SPARQL)', () => {
   const topNPerParentSparql = (n: number) => `
 SELECT ?p ?cname WHERE {
-  ?p <${P}/friends> ?c .
-  ?c <${P}/name> ?cname .
+  ?p <${PROP}hasFriend> ?c .
+  ?c <${PROP}name> ?cname .
   {
     SELECT ?p ?c (COUNT(?hi) AS ?rank) WHERE {
-      ?p <${P}/friends> ?c .
-      ?p <${P}/friends> ?hi .
+      ?p <${PROP}hasFriend> ?c .
+      ?p <${PROP}hasFriend> ?hi .
       FILTER(STR(?hi) <= STR(?c))
     } GROUP BY ?p ?c
   }
