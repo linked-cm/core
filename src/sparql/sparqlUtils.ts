@@ -77,8 +77,8 @@ export function assertSafeCallName(name: string): void {
 
 /**
  * Format a URI for SPARQL output.
- * Returns prefixed form (e.g. `rdf:type`) if a prefix is registered and the
- * suffix doesn't contain `/`. Otherwise returns `<full-uri>`.
+ * Returns prefixed form (e.g. `rdf:type`) if a prefix is registered AND the
+ * resulting local part is a legal SPARQL `PN_LOCAL`. Otherwise `<full-uri>`.
  * Throws if the IRI contains characters that could break out of the IRIREF.
  */
 export function formatUri(uri: string): string {
@@ -127,19 +127,20 @@ export function formatLiteral(
 
 /**
  * Collect the minimal set of prefix→URI mappings needed for a set of URIs.
- * Only includes prefixes that are actually used (i.e. `Prefix.toPrefixed`
- * returns a value for at least one URI in the list).
+ * Only includes prefixes that are actually used.
+ *
+ * The prefixable rule lives in `Prefix.toPrefixed` and is asked here, never
+ * re-implemented: this block and the terms it serves must agree, or a query
+ * declares a prefix nothing uses — or worse, uses one it never declared.
  */
 export function collectPrefixes(usedUris: string[]): Record<string, string> {
   const result: Record<string, string> = {};
   for (const uri of usedUris) {
+    if (!Prefix.toPrefixed(uri)) continue;
     const match = Prefix.findMatch(uri);
     if (match.length > 0) {
-      const [ontologyUri, prefix, postFix] = match;
-      // Only include if the postfix is actually prefixable (no `/`)
-      if (!postFix.includes('/')) {
-        result[prefix] = ontologyUri;
-      }
+      const [ontologyUri, prefix] = match;
+      result[prefix] = ontologyUri;
     }
   }
   return result;
