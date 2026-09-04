@@ -1,12 +1,13 @@
 import {describe, expect, test, beforeAll} from '@jest/globals';
 import {Person, tmpEntityBase} from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
+import {existsFactories} from '../test-helpers/query-fixtures';
 import {entity, captureDslIR, sanitize} from '../test-helpers/test-utils';
 import {QueryBuilder} from '../queries/QueryBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
 import {walkPropertyPath} from '../queries/PropertyPath';
 import {FieldSet} from '../queries/FieldSet';
-import {setQueryContext, getQueryContext, PendingQueryContext} from '../queries/QueryContext';
+import {setQueryContext, getQueryContext, PendingQueryContext, UnresolvedContextError} from '../queries/QueryContext';
 import {lower} from '../queries/lower';
 
 const personShape = Person.shape;
@@ -885,5 +886,146 @@ describe('undecorated property access in a query', () => {
     expect(() =>
       Person.select((p: any) => [p.friends.size()]).toJSON(),
     ).not.toThrow();
+  });
+});
+
+
+// =============================================================================
+// .exists() — boolean existence checks
+// =============================================================================
+
+describe('SelectBuilder — .exists()', () => {
+  test('Person.exists(id) lowers to a bare, single-row, subject-filtered query', async () => {
+    const ir = await captureQuery(existsFactories.existsById);
+    expect(ir.subjectId).toBe(entity('p1').id);
+    expect(ir.singleResult).toBe(true);
+    expect(ir.limit).toBe(1);
+    // Nothing is projected — the root alias alone answers the question.
+    expect(ir.projection).toHaveLength(0);
+    expect(ir.resultMap).toHaveLength(0);
+    expect(ir.sortBy).toBeUndefined();
+  });
+
+  test('.exists() normalises away projection, preloads and sorting', async () => {
+    const bare = await captureQuery(existsFactories.existsById);
+    const decorated = await captureQuery(existsFactories.existsNormalised);
+    // A chained .select(...).orderBy(...) costs exactly the same as a bare exists.
+    expect(sanitize(decorated)).toEqual(sanitize(bare));
+  });
+
+  test('.exists() drops pagination — offset and limit do not survive', async () => {
+    // OFFSET skips rows of the solution sequence, whose cardinality depends on the
+    // projection exists() just dropped. Honouring offset while dropping the
+    // projection would let the same chain answer true before normalisation and
+    // false after; exists() answers about the match set, not a page of it.
+    const paginated = await captureQuery(existsFactories.existsPaginated);
+    const bare = await captureQuery(existsFactories.existsById);
+    expect(paginated.offset).toBeUndefined();
+    expect(paginated.limit).toBe(1);
+    expect(sanitize(paginated)).toEqual(sanitize(bare));
+  });
+
+  test('.exists() keeps minus entries — they decide whether a match exists', async () => {
+    const ir = await captureQuery(() =>
+      Person.select((p) => p.name)
+        .minus((p) => p.name.equals('Semmy'))
+        .exists(),
+    );
+    expect(ir.limit).toBe(1);
+    expect(ir.projection).toHaveLength(0);
+    // The minus survives normalisation: the IR is not the same as a bare exists.
+    const bare = await captureQuery(() => Person.select().exists());
+    expect(JSON.stringify(ir)).toContain('minus');
+    expect(sanitize(ir)).not.toEqual(sanitize(bare));
+  });
+
+  test('.forAll(ids).exists() keeps the subject list and stays multi-row-capable', async () => {
+    const ir = await captureQuery(() =>
+      Person.selectAll().forAll([entity('p1'), entity('p2')]).exists(),
+    );
+    expect(ir.subjectIds).toEqual([entity('p1').id, entity('p2').id]);
+    expect(ir.projection).toHaveLength(0);
+    expect(ir.limit).toBe(1);
+  });
+
+  test('.exists() keeps the where clause — it decides whether a row exists', async () => {
+    const ir = await captureQuery(existsFactories.existsWhere);
+    expect(ir.limit).toBe(1);
+    expect(ir.projection).toHaveLength(0);
+    expect(ir.where).toBeDefined();
+    expect(ir.subjectId).toBeUndefined();
+  });
+
+  test('resolves true when a row comes back, false when none does', async () => {
+    const found = {selectQuery: async () => [{id: entity('p1').id}] as any};
+    const empty = {selectQuery: async () => [] as any};
+    await expect(Person.select().exists(found as any)).resolves.toBe(true);
+    await expect(Person.select().exists(empty as any)).resolves.toBe(false);
+  });
+
+  test('single-result form maps a row to true and null to false', async () => {
+    const found = {selectQuery: async () => ({id: entity('p1').id}) as any};
+    const missing = {selectQuery: async () => null as any};
+    await expect(Person.select().for(entity('p1')).exists(found as any)).resolves.toBe(true);
+    await expect(Person.select().for(entity('p1')).exists(missing as any)).resolves.toBe(false);
+  });
+
+  test('a null/undefined id resolves false without dispatching a query', async () => {
+    const ir = await captureQuery(() => Person.exists(null));
+    expect(ir).toBeUndefined();
+    await expect(Person.exists(null)).resolves.toBe(false);
+    await expect(Person.exists(undefined)).resolves.toBe(false);
+  });
+
+  test('a store failure REJECTS — it is never reported as false', async () => {
+    // The bug this API replaces: `.catch(() => null)` around a select made an
+    // unreachable store indistinguishable from a missing node, so every
+    // `exists ? update : create` silently became an unconditional create.
+    const broken = {
+      selectQuery: async () => {
+        throw new Error('fuseki is down');
+      },
+    };
+    await expect(Person.exists(entity('p1'), broken as any)).rejects.toThrow(
+      /fuseki is down/,
+    );
+    await expect(
+      Person.select().where((p) => p.name.equals('Semmy')).exists(broken as any),
+    ).rejects.toThrow(/fuseki is down/);
+  });
+
+  test('an unresolved where-clause context REJECTS — it is not "not ready" → false', async () => {
+    // exec() deliberately reports UnresolvedContextError as null ("not ready", a
+    // reactive layer re-runs). exists() must not flatten that into a boolean:
+    // "could not ask" is not "does not exist".
+    const unresolving = {
+      selectQuery: async () => {
+        throw new UnresolvedContextError('user');
+      },
+    };
+    await expect(Person.select().exists(unresolving as any)).rejects.toThrow();
+    // …while exec() keeps its existing, documented null behaviour.
+    await expect(Person.select().exec(unresolving as any)).resolves.toBeNull();
+  });
+
+  test('a malformed string id rejects rather than throwing synchronously', async () => {
+    // Shape.exists is declared Promise<boolean>, so callers may only have a
+    // .catch() — a sync throw out of resolveUriOrThrow would escape it.
+    let threwSynchronously = false;
+    let promise: Promise<boolean> | undefined;
+    try {
+      promise = Person.exists('not-a-known-prefix:oops');
+    } catch {
+      threwSynchronously = true;
+    }
+    expect(threwSynchronously).toBe(false);
+    await expect(promise).rejects.toThrow();
+  });
+
+  test('.exists() is terminal — it returns a promise, not a builder', () => {
+    const result = Person.select().exists({selectQuery: async () => [] as any} as any);
+    expect(result).toBeInstanceOf(Promise);
+    expect((result as any).where).toBeUndefined();
+    return expect(result).resolves.toBe(false);
   });
 });
