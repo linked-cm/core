@@ -1057,3 +1057,63 @@ describe('coverage — .exists() against Fuseki', () => {
     await expect(Person.exists({id: `${ENT}p1`}, broken)).rejects.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Expression traversals in an `update().where()`.
+//
+// A golden alone would not have caught the defect these cover: the emitted
+// SPARQL parsed and ran. Only counting what landed in the store shows it.
+// ---------------------------------------------------------------------------
+
+describe('coverage — update(expr).where() with a traversal', () => {
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  const hobbiesOf = async (id: string): Promise<string[]> => {
+    const json = await executeSparqlQuery(
+      `SELECT ?h WHERE { <${id}> <${P}/hobby> ?h }`,
+    );
+    return json.results.bindings.map((b: any) => b.h.value).sort();
+  };
+
+  test('writes exactly one value, taken from the traversed node', async () => {
+    if (!fusekiAvailable) return;
+    // p2 ("Moa") has bestFriend p3 ("Jinx"). hobby is maxCount 1.
+    await store.updateQuery(
+      Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).where(
+        (p: any) => p.name.equals('Moa'),
+      ) as any,
+    );
+    expect(await hobbiesOf(`${ENT}p2`)).toEqual(['JINX']);
+  });
+
+  test('the traversal does not range over unrelated nodes', async () => {
+    if (!fusekiAvailable) return;
+    // The defect emitted the leaf property OPTIONAL before the edge bound its
+    // subject, making it a cartesian product over every node with a name — so
+    // p2 ended up with one hobby per named person in the store.
+    await store.updateQuery(
+      Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).where(
+        (p: any) => p.name.equals('Moa'),
+      ) as any,
+    );
+    const hobbies = await hobbiesOf(`${ENT}p2`);
+    expect(hobbies).toHaveLength(1);
+    for (const foreign of ['SEMMY', 'MOA', 'QUINN']) {
+      expect(hobbies).not.toContain(foreign);
+    }
+  });
+
+  test('a subject whose traversal edge is absent gets no value, and others are untouched', async () => {
+    if (!fusekiAvailable) return;
+    // p1 ("Semmy") has no bestFriend, so the computed value is unbound.
+    await store.updateQuery(
+      Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).where(
+        (p: any) => p.name.equals('Semmy'),
+      ) as any,
+    );
+    expect(await hobbiesOf(`${ENT}p1`)).toEqual([]);
+    // p2 was never targeted — the where clause scopes the write.
+    expect(await hobbiesOf(`${ENT}p2`)).toEqual(['Jogging']);
+  });
+});
+

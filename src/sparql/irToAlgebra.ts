@@ -2604,7 +2604,27 @@ export function updateWhereToAlgebra(
     whereAlgebra = {type: 'filter', expression: filterExpr, inner: whereAlgebra};
   }
 
-  whereAlgebra = wrapOldValueOptionals(whereAlgebra, result.oldValueTriples);
+  // Old-value triples anchored on a traversal *target* belong INSIDE that
+  // traversal's OPTIONAL group, not beside it. Emitted beside it, the leaf's
+  // subject variable is introduced by an OPTIONAL that shares no variable with
+  // anything to its left — a left join with no join condition, i.e. a cartesian
+  // product over every node in the store carrying that predicate. The following
+  // OPTIONAL cannot repair it: the variable is already bound, and OPTIONAL never
+  // removes rows. `updateToAlgebra` performs the same split; this path did not.
+  const travTos = new Set((query.traversalPatterns ?? []).map((t) => t.to));
+  const travAnchoredByTo = new Map<string, SparqlTriple[]>();
+  const subjectAnchored: SparqlTriple[] = [];
+  for (const triple of result.oldValueTriples) {
+    if (triple.subject.kind === 'variable' && travTos.has(triple.subject.name)) {
+      const list = travAnchoredByTo.get(triple.subject.name) ?? [];
+      list.push(triple);
+      travAnchoredByTo.set(triple.subject.name, list);
+    } else {
+      subjectAnchored.push(triple);
+    }
+  }
+
+  whereAlgebra = wrapOldValueOptionals(whereAlgebra, subjectAnchored);
 
   // Add traversal OPTIONAL patterns (for multi-segment expression refs)
   // These must come BEFORE expression BINDs since the BINDs reference traversal variables.
@@ -2617,11 +2637,18 @@ export function updateWhereToAlgebra(
         iriTerm(trav.property),
         varTerm(trav.to),
       );
-      whereAlgebra = {
-        type: 'left_join',
-        left: whereAlgebra,
-        right: {type: 'bgp', triples: [traversalTriple]},
-      };
+      // The edge binds the target variable; each dependent leaf property is a
+      // nested OPTIONAL within that scope, so a missing leaf does not drop the
+      // group while an absent edge leaves every leaf variable unbound.
+      let travNode: SparqlAlgebraNode = {type: 'bgp', triples: [traversalTriple]};
+      for (const leaf of travAnchoredByTo.get(trav.to) ?? []) {
+        travNode = {
+          type: 'left_join',
+          left: travNode,
+          right: {type: 'bgp', triples: [leaf]},
+        };
+      }
+      whereAlgebra = {type: 'left_join', left: whereAlgebra, right: travNode};
     }
   }
 
