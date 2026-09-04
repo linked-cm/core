@@ -41,6 +41,7 @@ import {
   executeSparqlQuery,
   executeSparqlUpdate,
   clearAllData,
+  DATASET_NAME,
 } from '../test-helpers/fuseki-test-store';
 import {FusekiStore} from '../test-helpers/FusekiStore';
 
@@ -1964,7 +1965,7 @@ describe('Fuseki mutations — DELETE', () => {
 // =========================================================================
 
 const FUSEKI_BASE_URL = process.env.FUSEKI_BASE_URL || 'http://localhost:3939';
-const FUSEKI_DATASET = 'nashville-test';
+const FUSEKI_DATASET = DATASET_NAME;
 
 describe('SparqlDataset (via FusekiStore)', () => {
   const store = new FusekiStore(FUSEKI_BASE_URL, FUSEKI_DATASET);

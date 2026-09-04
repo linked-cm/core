@@ -17,7 +17,12 @@ import {resolve} from 'node:path';
 
 export const FUSEKI_BASE_URL = process.env.FUSEKI_BASE_URL || 'http://localhost:3939';
 const FUSEKI_ADMIN_PASSWORD = process.env.FUSEKI_ADMIN_PASSWORD || 'admin';
-const DATASET_NAME = 'nashville-test';
+// One dataset per jest worker. The Fuseki suites each seed and clear the whole
+// dataset, so a single shared one makes them clobber each other whenever two run
+// concurrently — which is why the suite needed `--runInBand`. A worker only ever
+// runs one suite at a time, so per-worker isolation is sufficient, and it is
+// `'1'` under `--runInBand` (and outside jest), preserving today's behaviour.
+export const DATASET_NAME = `nashville-test-${process.env.JEST_WORKER_ID ?? '1'}`;
 
 /** Whether this process started Fuseki (so we know whether to stop it). */
 let startedByUs = false;

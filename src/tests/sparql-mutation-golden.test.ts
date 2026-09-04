@@ -12,6 +12,7 @@ import {describe, expect, test} from '@jest/globals';
 import {queryFactories, tmpEntityBase,
   personClass,
   propBase,
+  Person,
 } from '../test-helpers/query-fixtures';
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {
@@ -568,3 +569,57 @@ describe('SPARQL golden — expression WHERE mutations', () => {
     expect(sparql).toContain('DELETE');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Expression traversals inside an `update().where()`
+// ---------------------------------------------------------------------------
+
+describe('SPARQL golden — update(expr).where() traversal scoping', () => {
+  const traversalUpdate = () =>
+    (Person as any)
+      .update((p: any) => ({hobby: p.bestFriend.name.ucase()}))
+      .where((p: any) => p.name.equals('Moa'));
+
+  test('the leaf property is nested INSIDE the traversal OPTIONAL', async () => {
+    const ir = (await captureQuery(traversalUpdate)) as IRUpdateWhereMutation;
+    const sparql = updateWhereToSparql(ir);
+
+    // The edge must bind ?__trav_0__ before anything reads from it. Emitted
+    // beside the edge instead of inside it, the leaf's OPTIONAL shares no
+    // variable with its left side — a cartesian product over every node in the
+    // store carrying that predicate.
+    expect(sparql).toContain(
+      `OPTIONAL {
+    ?a0 <${PROP}bestFriend> ?__trav_0__ .
+    OPTIONAL {
+      ?__trav_0__ <${PROP}name> ?__trav_0___name .
+    }
+  }`,
+    );
+  });
+
+  test('the edge is never preceded by a bare leaf OPTIONAL', async () => {
+    const ir = (await captureQuery(traversalUpdate)) as IRUpdateWhereMutation;
+    const sparql = updateWhereToSparql(ir);
+    const leafAt = sparql.indexOf('?__trav_0__ <');
+    const edgeAt = sparql.indexOf('?__trav_0__ .');
+    expect(edgeAt).toBeGreaterThan(-1);
+    expect(edgeAt).toBeLessThan(leafAt);
+  });
+
+  test('matches the shape `.for(id)` already emits for the same expression', async () => {
+    // The two mutation paths lower the same expression; only the subject differs.
+    const whereSparql = updateWhereToSparql(
+      (await captureQuery(traversalUpdate)) as IRUpdateWhereMutation,
+    );
+    const forSparql = updateToSparql(
+      (await captureQuery(queryFactories.updateExprTraversal)) as IRUpdateMutation,
+    );
+    const nesting = (q: string) =>
+      q.includes(`?__trav_0__ .
+    OPTIONAL {`);
+    expect(nesting(whereSparql)).toBe(true);
+    expect(nesting(forSparql)).toBe(true);
+  });
+});
+
