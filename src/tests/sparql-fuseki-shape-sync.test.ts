@@ -16,6 +16,7 @@ import {
   executeSparqlQuery,
   executeSparqlUpdate,
   FUSEKI_BASE_URL,
+  DATASET_NAME,
 } from '../test-helpers/fuseki-test-store';
 import {FusekiStore} from '../test-helpers/FusekiStore';
 import {setQueryDispatch} from '../queries/queryDispatch';
@@ -95,7 +96,7 @@ beforeAll(async () => {
   if (!available) return;
   await createTestDataset();
   await clearAllData();
-  setQueryDispatch(new FusekiStore(FUSEKI_BASE_URL, 'nashville-test') as any);
+  setQueryDispatch(new FusekiStore(FUSEKI_BASE_URL, DATASET_NAME) as any);
   await runSync(); // Phase A
 });
 

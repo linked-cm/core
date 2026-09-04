@@ -24,6 +24,7 @@ import {
   executeSparqlQuery,
   executeSparqlUpdate,
   clearAllData,
+  DATASET_NAME,
 } from '../test-helpers/fuseki-test-store';
 import {setQueryContext, getQueryContext} from '../queries/QueryContext';
 import {Expr} from '../expressions/Expr';
@@ -126,7 +127,7 @@ const BASE_DATA = `
 let fusekiAvailable = false;
 const store = new FusekiStore(
   process.env.FUSEKI_BASE_URL || 'http://localhost:3939',
-  'nashville-test',
+  DATASET_NAME,
 );
 
 async function reloadBase(): Promise<void> {
