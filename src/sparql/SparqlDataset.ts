@@ -15,6 +15,7 @@ import {
   askToSparql,
   createToSparql,
   updateToSparql,
+  upsertToSparql,
   updateWhereToSparql,
   deleteToSparql,
   deleteAllToSparql,
@@ -125,7 +126,10 @@ export abstract class SparqlDataset implements IDataset {
       await this.executeSparqlUpdate(sparql);
       return {id: ''} as UpdateResult;
     }
-    const sparql = updateToSparql(ir, this.options);
+    const sparql =
+      ir.kind === 'upsert'
+        ? upsertToSparql(ir, this.options)
+        : updateToSparql(ir, this.options);
     await this.executeSparqlUpdate(sparql);
     return mapSparqlUpdateResult(ir);
   }

@@ -17,6 +17,7 @@ export {
   askToAlgebra,
   createToAlgebra,
   updateToAlgebra,
+  upsertToAlgebra,
   deleteToAlgebra,
 } from './irToAlgebra.js';
 
@@ -26,6 +27,7 @@ export {
   askToSparql,
   createToSparql,
   updateToSparql,
+  upsertToSparql,
   deleteToSparql,
 } from './irToAlgebra.js';
 

@@ -256,6 +256,15 @@ export abstract class Shape {
    * old edge and writes a fresh node, so the value replaces cleanly. (Use `Shape.create`
    * for `__id` at creation; use `.delete()` or `{remove: […]}` for full owned-node cleanup.)
    */
+  /**
+   * **On a node that does not exist, this still writes — untyped.** `update`'s WHERE is a
+   * bare `OPTIONAL`, so it matches whether or not the subject exists, and the INSERT fires
+   * either way. What it never writes is `rdf:type`, so the result is an id carrying
+   * properties that no shape-scoped select can find, and the call reports success. If the
+   * node may be absent, use {@link Shape.upsert} instead, which asserts the type. (Whether
+   * `update` should instead no-op on an absent node is an open semantic question — core
+   * backlog 039.)
+   */
   static update<S extends Shape>(
     this: ShapeConstructor<S>,
     data: (p: ExpressionUpdateProxy<S>) => ExpressionUpdateResult<S>,
@@ -269,6 +278,47 @@ export abstract class Shape {
     data: any,
   ): UpdateBuilder<S, any> {
     return UpdateBuilder.from(this).set(data) as unknown as UpdateBuilder<S, any>;
+  }
+
+  /**
+   * Create the node if it is absent, replace the named properties if it is present —
+   * in one request.
+   *
+   * ```ts
+   * await SourceDocument.upsert(values).for({id});
+   * ```
+   *
+   * This replaces the branch callers otherwise hand-roll:
+   *
+   * ```ts
+   * if (await S.exists({id})) await S.update(values).for({id});
+   * else                      await S.create({id, ...values});
+   * ```
+   *
+   * which costs two round-trips, races between them, and — if the check is wrong in the
+   * `false` direction — takes the `create` branch silently, duplicating single-valued
+   * properties rather than erroring.
+   *
+   * Semantics:
+   * - Replaces **only the properties named**; others on an existing node are untouched.
+   *   It is not a whole-node replace.
+   * - Always asserts the node's type, which `update().for({id})` does not — an update
+   *   against an absent id writes its properties onto an untyped node.
+   * - Returns what `update` returns. It deliberately does **not** report whether it
+   *   created or replaced: knowing that needs the extra read this avoids.
+   * - `.where()` / `.forAll()` are rejected — an upsert targets one known id.
+   * - **The id goes in `.for(id)`, not in the data object** — unlike `create`, where an
+   *   `id`/`__id` in the data names the node being created. Here the data object is
+   *   properties only; an `id` in it is rejected.
+   * - Expression-valued fields are rejected: an expression reads the node's current
+   *   value, which does not exist when upsert creates it, and the property would be
+   *   silently skipped.
+   */
+  static upsert<S extends Shape, U extends UpdatePartial<S>>(
+    this: ShapeConstructor<S>,
+    data: U,
+  ): UpdateBuilder<S, U> {
+    return UpdateBuilder.upsertFrom(this).set(data) as unknown as UpdateBuilder<S, U>;
   }
 
   static create<S extends Shape, U extends UpdatePartial<S>>(

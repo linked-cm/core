@@ -11,6 +11,7 @@ export type IRQuery =
   | IRAskQuery
   | IRCreateMutation
   | IRUpdateMutation
+  | IRUpsertMutation
   | IRDeleteMutation
   | IRDeleteAllMutation
   | IRDeleteWhereMutation
@@ -263,6 +264,27 @@ export type IRTraversalPattern = {
 
 export type IRUpdateMutation = {
   kind: 'update';
+  shape: string;
+  id: string;
+  data: IRNodeData;
+  traversalPatterns?: IRTraversalPattern[];
+};
+
+/**
+ * Create-or-replace against a known id, in one request.
+ *
+ * Structurally identical to {@link IRUpdateMutation} — it lowers through the same
+ * DELETE/INSERT/WHERE body — and differs in exactly one emitted triple: upsert also
+ * asserts `?id rdf:type <targetClass>`, which the update path never writes.
+ *
+ * That single triple is the whole difference between the two, because `update`'s WHERE
+ * is a bare `OPTIONAL` and so already matches when the node is absent. It is a distinct
+ * IR kind rather than a flag on the update mutation so that a consumer which does not
+ * know about upsert fails loudly, instead of quietly writing an untyped node and
+ * reporting success.
+ */
+export type IRUpsertMutation = {
+  kind: 'upsert';
   shape: string;
   id: string;
   data: IRNodeData;

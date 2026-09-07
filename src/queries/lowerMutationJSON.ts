@@ -34,6 +34,7 @@ import {lowerWhereToIR} from './IRLower.js';
 import {
   buildCanonicalCreateMutationIR,
   buildCanonicalUpdateMutationIR,
+  buildCanonicalUpsertMutationIR,
   buildCanonicalUpdateWhereMutationIR,
   buildCanonicalDeleteMutationIR,
   buildCanonicalDeleteAllMutationIR,
@@ -209,6 +210,18 @@ export function lowerMutationJSON(
         shape,
         description: decodeNodeData(json.data, shape),
       });
+    }
+    case 'upsert': {
+      const shape = requireShape(json.shape);
+      assertInboundDataValid(json.data, shape, 'partial');
+      const updates = decodeNodeData(json.data, shape);
+      const id = isContextRefJSON(json.targetId)
+        ? resolveContextId(json.targetId['@ctx'], true)
+        : json.targetId;
+      if (!id) {
+        throw new Error('upsert requires a targetId');
+      }
+      return buildCanonicalUpsertMutationIR({id, shape, updates});
     }
     case 'update': {
       const shape = requireShape(json.shape);

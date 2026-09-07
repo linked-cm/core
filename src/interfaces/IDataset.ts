@@ -48,6 +48,12 @@ export interface IDataset {
    * API was built to remove.
    */
   askQuery(query: AskQuery): Promise<boolean>;
+  /**
+   * Receives update AND upsert mutations — `lower(query)` yields `kind: 'update'`,
+   * `'update_where'` or `'upsert'`. An implementation that does not handle `'upsert'`
+   * should throw rather than fall through to the update path: an upsert lowered as a
+   * plain update writes an untyped node and reports success.
+   */
   updateQuery?(query: UpdateQuery): Promise<UpdateResult>;
   createQuery?(query: CreateQuery): Promise<CreateResult>;
   deleteQuery?(query: DeleteQuery): Promise<DeleteResponse>;
