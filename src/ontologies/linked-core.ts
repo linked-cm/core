@@ -25,6 +25,19 @@ const contains = ns('contains');
 const dependent = ns('dependent');
 const PathNode = ns('PathNode');
 
+// Display vocabulary. SHACL has `sh:order` and `sh:group`, which say how properties
+// are arranged; it has no way to say how *important* a property is, which is what a
+// renderer needs when it can only show one, three or six of them. `displayRank` is
+// that: a single linear rank per property, lower = more important, from which every
+// truncated context ("show the top 3") derives. `displayHidden` removes a property
+// from generic rendering without changing its cardinality or its meaning.
+//
+// Placement is deliberate (backlog-029): this is an ecosystem SHACL extension that
+// materializes onto the pure `sh:NodeShape` and therefore travels with an ejected
+// app — NOT the CN-proprietary `code:` vocab, which describes source-code structure.
+const displayRank = ns('displayRank');
+const displayHidden = ns('displayHidden');
+
 export const coreOntology = {
   Package,
   ShapeClass,
@@ -36,4 +49,6 @@ export const coreOntology = {
   contains,
   dependent,
   PathNode,
+  displayRank,
+  displayHidden,
 };

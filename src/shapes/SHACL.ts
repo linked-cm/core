@@ -264,6 +264,13 @@ export interface PropertyShapeConfig {
   order?: number;
   group?: string;
   /**
+   * Display importance, lower = more important (`linked_core:displayRank`).
+   * A renderer that can show only N properties shows the N lowest ranks.
+   */
+  displayRank?: number;
+  /** Omit this property from generic rendering (`linked_core:displayHidden`). */
+  displayHidden?: boolean;
+  /**
    * should correlate to the given datatype or class
    */
   defaultValue?: unknown;
@@ -559,6 +566,15 @@ export function createPropertyShape<
   if (config.sortBy) {
     propertyShape.sortBy = normalizePropertyPath(config.sortBy);
   }
+  // Arrangement + display metadata. `order` and `group` were declared on the config
+  // but never copied onto the property shape, so a declared `sh:order` was silently
+  // dropped and every renderer fell back to array position. Carried now, alongside
+  // the two display terms.
+  if (config.order !== undefined) propertyShape.order = config.order;
+  if (config.group !== undefined) propertyShape.group = config.group;
+  if (config.displayRank !== undefined) propertyShape.displayRank = config.displayRank;
+  if (config.displayHidden !== undefined)
+    propertyShape.displayHidden = config.displayHidden;
 
   propertyShape.nodeKind = normalizeNodeKind(config.nodeKind, defaultNodeKind);
   (propertyShape as unknown as ExplicitFlags)[EXPLICIT_NODE_KIND_SYMBOL] =

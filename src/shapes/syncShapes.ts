@@ -37,6 +37,8 @@ function buildPropertyShapeData(ps: PropertyShapeData, shapeIri: string): Record
   if (ps.description) d.description = ps.description;
   if (typeof ps.order === 'number') d.order = ps.order;
   if (ps.group) d.group = ps.group;
+  if (typeof ps.displayRank === 'number') d.displayRank = ps.displayRank;
+  if (ps.displayHidden !== undefined) d.displayHidden = ps.displayHidden;
   if (ps.class) d.class = ps.class;
   if (ps.in) d.in = rdfList(ps.in, {base: `${psIri}/in`});
   if (ps.equalsConstraint) d.equals = ps.equalsConstraint;
