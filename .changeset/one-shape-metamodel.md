@@ -40,3 +40,9 @@ lowering and predicate resolution work for both kinds of shape;
 Cache invalidation moves from a `setTimeout` plus registry-size comparison to a monotonic
 version counter — the old scheme silently reused a stale cache when a registration and a
 removal coincided, or when a shape was re-registered in place.
+
+Adds `registerRuntimeShape` / `registerRuntimeShapes`: register a shape that exists only
+as data, taking metadata (`NodeShapeData` or its wire form) rather than a bespoke DTO.
+`registerRuntimeShapes` orders a batch parents-first, because inheritance resolves
+`extends` through the registry and a child registered ahead of its parent would resolve an
+empty chain. Neither shadows a compiled class.

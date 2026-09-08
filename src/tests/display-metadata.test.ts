@@ -17,6 +17,10 @@ import {
   registerNodeShape,
 } from '../utils/ShapeClass';
 import {toWire} from '../shapes/nodeShapeWire';
+import {
+  registerRuntimeShape,
+  registerRuntimeShapes,
+} from '../shapes/registerRuntimeShape';
 import {coreOntology} from '../ontologies/linked-core';
 import {xsd} from '../ontologies/xsd';
 
@@ -245,5 +249,50 @@ describe('backlog-040 — the singular lookup uses the same walk as the plural o
     for (const label of listed) {
       expect(getPropertyShapeByLabel(adapter!, label)?.label).toBe(label);
     }
+  });
+});
+
+describe('registerRuntimeShape — data in, queryable shape out', () => {
+  test('registers parents before children regardless of input order', () => {
+    const base = 'https://example.org/dm/batch/';
+    const mk = (name: string, parent?: string) => {
+      const shape = createNodeShapeData(`${base}${name}`);
+      shape.label = name;
+      if (parent) shape.extends = {id: `${base}${parent}`};
+      const prop = createPropertyShapeData();
+      Object.assign(prop, {
+        id: `${base}${name}/${name}Field`,
+        label: `${name}Field`,
+        path: ns(`${name}Field`),
+      });
+      shape.propertyShapes = [prop];
+      return shape;
+    };
+
+    // Deliberately worst-case order: deepest first.
+    const registered = registerRuntimeShapes([
+      mk('Grandchild', 'Child'),
+      mk('Child', 'Root'),
+      mk('Root'),
+    ]);
+    expect(registered).toBe(3);
+
+    expect(getSuperShapes(`${base}Grandchild`).map((s) => s.label)).toEqual([
+      'Child',
+      'Root',
+    ]);
+    const labels = getPropertyShapes(
+      getNodeShape(`${base}Grandchild`)!,
+      true,
+    ).map((p) => p.label);
+    expect(labels).toEqual(
+      expect.arrayContaining(['GrandchildField', 'ChildField', 'RootField']),
+    );
+  });
+
+  test('accepts the wire form and never shadows a compiled class', () => {
+    // Article is a real @linkedShape class declared at the top of this file.
+    expect(registerRuntimeShape(toWire(Article.shape))).toBe(false);
+    expect(getPropertyShapeByLabel(Article, 'title')?.displayRank).toBe(1);
   });
 });
