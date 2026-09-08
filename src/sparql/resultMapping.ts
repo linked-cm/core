@@ -57,6 +57,7 @@ export type SparqlBinding = Record<
 >;
 
 import {xsd} from '../ontologies/xsd.js';
+import {sanitizeVarName} from './sparqlUtils.js';
 
 // ---------------------------------------------------------------------------
 // XSD constants (derived from ontology module)
@@ -107,7 +108,14 @@ function localName(uri: string): string {
 function sparqlVarName(expression: IRExpression, projectionAlias: string): string {
   switch (expression.kind) {
     case 'property_expr':
-      return `${expression.sourceAlias}_${localName(expression.property)}`;
+      // SANITIZED, because `algebraToString` sanitizes when it WRITES the variable and this
+      // reads the same variable back. A SPARQL variable may hold only letters, digits and `_`,
+      // so a property named by a person — "Volume share", "Avg. basket" — is emitted as
+      // `?a0_Volume_share` while this returned `a0_Volume share`, which matches no binding.
+      // The lookup then yielded undefined, the value became null, and the CMS drew the column
+      // with an empty cell and no error anywhere. Single-word names were unaffected, which is
+      // what made it look like missing data rather than a naming mismatch.
+      return sanitizeVarName(`${expression.sourceAlias}_${localName(expression.property)}`);
     case 'alias_expr':
       return expression.alias;
     case 'aggregate_expr':
