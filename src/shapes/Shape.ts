@@ -255,8 +255,7 @@ export abstract class Shape {
    * (breaks `sh:maxCount 1`). For a replace, **omit `__id`** — the engine drops the
    * old edge and writes a fresh node, so the value replaces cleanly. (Use `Shape.create`
    * for `__id` at creation; use `.delete()` or `{remove: […]}` for full owned-node cleanup.)
-   */
-  /**
+   *
    * **On a node that does not exist, this still writes — untyped.** `update`'s WHERE is a
    * bare `OPTIONAL`, so it matches whether or not the subject exists, and the INSERT fires
    * either way. What it never writes is `rdf:type`, so the result is an id carrying

@@ -648,15 +648,15 @@ describe('SPARQL golden — upsert mutations', () => {
     expect(sparql).toBe(
 `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 DELETE {
-  <${ENT}p1> <${P}/hobby> ?old_hobby .
+  <${ENT}p1> <${PROP}hobby> ?old_hobby .
 }
 INSERT {
-  <${ENT}p1> rdf:type <${P}> .
-  <${ENT}p1> <${P}/hobby> "Chess" .
+  <${ENT}p1> rdf:type <${PT}> .
+  <${ENT}p1> <${PROP}hobby> "Chess" .
 }
 WHERE {
   OPTIONAL {
-    <${ENT}p1> <${P}/hobby> ?old_hobby .
+    <${ENT}p1> <${PROP}hobby> ?old_hobby .
   }
 }`);
   });
@@ -672,7 +672,7 @@ WHERE {
     // Two added lines: the type triple, and the PREFIX header it needs.
     expect(added).toEqual([
       'PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>',
-      `  <${ENT}p1> rdf:type <${P}> .`,
+      `  <${ENT}p1> rdf:type <${PT}> .`,
     ]);
     expect(removed).toEqual([]);
   });
@@ -709,7 +709,7 @@ WHERE {
     const sparql = upsertToSparql(asUpsert(ir));
     const insertBlock = sparql.slice(sparql.indexOf('INSERT {'), sparql.indexOf('WHERE {'));
     const firstTriple = insertBlock.split('\n')[1];
-    expect(firstTriple).toBe(`  <${ENT}p1> rdf:type <${P}> .`);
+    expect(firstTriple).toBe(`  <${ENT}p1> rdf:type <${PT}> .`);
   });
 });
 
