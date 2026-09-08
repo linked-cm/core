@@ -16,7 +16,7 @@ the given shapes.
 ENVELOPE   select:   { "v":"1.0", "shape":<iri>, "fields":[…], "where":<cond>,
                        "sortBy":[{path:"ASC"|"DESC"}], "limit":n, "offset":n,
                        "subject":<id|{"@ctx":"user"}>, "one":true }
-           mutate:   { "v":"1.0", "op":"create|update|delete", "shape":<iri>, … }
+           mutate:   { "v":"1.0", "op":"create|update|upsert|delete", "shape":<iri>, … }
 
 PATH       "a.b.c"                 dotted labels; "rel.fn()" trailing call; "x.as(Shape).y" cast
 

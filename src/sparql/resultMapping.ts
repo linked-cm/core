@@ -5,6 +5,7 @@ import type {
   IRNodeData,
   IRSelectQuery,
   IRUpdateMutation,
+  IRUpsertMutation,
   CreateResult,
   ResultFieldValue,
   ResultRow,
@@ -726,10 +727,6 @@ function fieldValueToResult(value: IRFieldValue): ResultFieldValue {
 // ---------------------------------------------------------------------------
 
 /**
- * Constructs an `UpdateResult` from the IR update mutation.
- * Echoes back the updated fields as an `UpdateResult` with the target node's `id`.
- */
-/**
  * Maps a SPARQL `ASK` response to the boolean it carries.
  *
  * Throws on a SELECT result set rather than coercing one. A result set is not a
@@ -751,7 +748,16 @@ export function mapSparqlAskResult(json: SparqlQueryResults): boolean {
   return value;
 }
 
-export function mapSparqlUpdateResult(query: IRUpdateMutation): UpdateResult {
+/**
+ * Constructs an `UpdateResult` from the IR update mutation.
+ * Echoes back the updated fields as an `UpdateResult` with the target node's `id`.
+ */
+export function mapSparqlUpdateResult(
+  // Upsert returns exactly what update returns — the caller deliberately does not learn
+  // whether the node was created or replaced (that would cost the extra read the single
+  // round-trip exists to avoid). Only `id` and `data.fields` are read, which both carry.
+  query: IRUpdateMutation | IRUpsertMutation,
+): UpdateResult {
   const result: UpdateResult = {id: query.id};
 
   for (const field of query.data.fields) {

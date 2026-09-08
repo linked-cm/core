@@ -24,6 +24,7 @@ import {resolveContextId} from './ContextRef.js';
 import {
   buildCanonicalCreateMutationIR,
   buildCanonicalUpdateMutationIR,
+  buildCanonicalUpsertMutationIR,
   buildCanonicalUpdateWhereMutationIR,
   buildCanonicalDeleteMutationIR,
   buildCanonicalDeleteAllMutationIR,
@@ -115,7 +116,9 @@ function lowerUpdate(spec: UpdateLowerSpec): IRUpdateQuery {
     new MutationQueryFactory().describe(shape, spec.data, {validate: 'partial'}),
   );
   if (spec.mode === 'for') {
-    return buildCanonicalUpdateMutationIR({id: spec.targetId!, shape, updates});
+    return spec.upsert
+      ? buildCanonicalUpsertMutationIR({id: spec.targetId!, shape, updates})
+      : buildCanonicalUpdateMutationIR({id: spec.targetId!, shape, updates});
   }
   // forAll / where
   const lowered = spec.wherePath ? lowerWherePath(spec.wherePath) : undefined;

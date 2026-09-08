@@ -19,6 +19,7 @@ import type {
   IRFieldUpdate,
   IRSetModificationValue,
   IRUpdateMutation,
+  IRUpsertMutation,
   IRExpression,
   IRGraphPattern,
   IRTraversalPattern,
@@ -34,6 +35,34 @@ type UpdateMutationInput = {
   id: string;
   shape: NodeShapeData;
   updates: NodeDescriptionValue;
+};
+
+type UpsertMutationInput = {
+  id: string;
+  shape: NodeShapeData;
+  updates: NodeDescriptionValue;
+};
+
+/**
+ * Throws if any field of an upsert carries an expression. Named per offending property so
+ * the caller is not left decoding an unbound-variable mystery further down the pipeline.
+ */
+const assertNoExpressionFields = (
+  updates: NodeDescriptionValue,
+  shapeId: string,
+): void => {
+  for (const field of updates?.fields ?? []) {
+    // Mirrors how `toSingleFieldValue` recognises an expression, so the guard cannot
+    // drift from the lowering it is protecting.
+    if (isExpressionNode(field.val)) {
+      throw new Error(
+        `upsert does not support expression-valued fields (property "${field.prop.id}" of ${shapeId}). ` +
+          `An expression reads the node's current value, which does not exist when upsert creates it, ` +
+          `and the property would be silently skipped. Pass a concrete value, or use ` +
+          `update().for({id}) if the node is known to exist.`,
+      );
+    }
+  }
 };
 
 type DeleteMutationInput = {
@@ -172,6 +201,33 @@ export const buildCanonicalUpdateMutationIR = (
   const data = toNodeData(query.updates, collector);
   return {
     kind: 'update',
+    shape: query.shape.id,
+    id: query.id,
+    data,
+    ...(collector.patterns.length > 0
+      ? {traversalPatterns: collector.patterns}
+      : {}),
+  };
+};
+
+/**
+ * Builds an IRUpsertMutation — an update that also asserts the node's type, so it is
+ * correct whether or not the node exists.
+ *
+ * Rejects expression-valued fields. An expression such as `age: p.age.plus(1)` lowers to
+ * a BIND over the node's current value; when the node does not exist that ref is unbound,
+ * and SPARQL drops any INSERT triple containing an unbound variable. The write would
+ * report success and store nothing for that property — precisely the silent-wrong-write
+ * this primitive exists to remove, so it is refused rather than documented.
+ */
+export const buildCanonicalUpsertMutationIR = (
+  query: UpsertMutationInput,
+): IRUpsertMutation => {
+  assertNoExpressionFields(query.updates, query.shape.id);
+  const collector = createTraversalCollector();
+  const data = toNodeData(query.updates, collector);
+  return {
+    kind: 'upsert',
     shape: query.shape.id,
     id: query.id,
     data,

@@ -21,6 +21,7 @@ import {
   selectToSparql,
   createToSparql,
   updateToSparql,
+  upsertToSparql,
   deleteToSparql,
 } from '../sparql/irToAlgebra';
 import {mapSparqlSelectResult} from '../sparql/resultMapping';
@@ -29,6 +30,7 @@ import type {
   IRSelectQuery,
   IRCreateMutation,
   IRUpdateMutation,
+  IRUpsertMutation,
   IRDeleteMutation,
   ResultRow,
 } from '../queries/IntermediateRepresentation';
@@ -1845,6 +1847,94 @@ describe('Fuseki mutations — UPDATE', () => {
 // =========================================================================
 // MUTATION — DELETE
 // =========================================================================
+
+describe('Fuseki mutations — UPSERT', () => {
+  // A node id that does not exist in the fixture graph, so the first upsert must create it.
+  const NEW = `${ENT}upsert_new`;
+
+  const upsertIr = (id: string, fields: Record<string, string>): IRUpsertMutation => ({
+    kind: 'upsert',
+    shape: P,
+    id,
+    data: {
+      shape: P,
+      // The field carries the shape-scoped property IRI; lowering resolves it to the
+      // declared `sh:path`, which is what the readbacks below query for.
+      fields: Object.entries(fields).map(([prop, value]) => ({
+        property: `${P}/${prop}`,
+        value,
+      })),
+    },
+  } as unknown as IRUpsertMutation);
+
+  afterAll(async () => {
+    if (!fusekiAvailable) return;
+    await executeSparqlUpdate(`DELETE WHERE { <${NEW}> ?p ?o . }`);
+  });
+
+  test('creates the node — and types it — when the id is absent', async () => {
+    if (!fusekiAvailable) return;
+
+    await executeSparqlUpdate(upsertToSparql(upsertIr(NEW, {hobby: 'Chess'})));
+
+    const result = await executeSparqlQuery(`
+      SELECT ?type ?hobby WHERE {
+        <${NEW}> a ?type .
+        <${NEW}> <${PROP}hobby> ?hobby .
+      }
+    `);
+    expect(result.results.bindings.length).toBe(1);
+    // The type triple is the whole difference from `update`: without it the node exists
+    // but is untyped, and every shape-scoped select misses it. The type is the shape's
+    // declared `sh:targetClass`, not the shape IRI — the same node `create` asserts.
+    expect(result.results.bindings[0].type.value).toBe(PT);
+    expect(result.results.bindings[0].hobby.value).toBe('Chess');
+  });
+
+  test('replaces the property on a second upsert, without duplicating it', async () => {
+    if (!fusekiAvailable) return;
+
+    await executeSparqlUpdate(upsertToSparql(upsertIr(NEW, {hobby: 'Chess'})));
+    await executeSparqlUpdate(upsertToSparql(upsertIr(NEW, {hobby: 'Reading'})));
+
+    const result = await executeSparqlQuery(`
+      SELECT ?hobby WHERE { <${NEW}> <${PROP}hobby> ?hobby . }
+    `);
+    // Exactly one value — this is the failure mode of the branch upsert replaces, where a
+    // wrong existence check took `create` and INSERT DATA duplicated a single-valued property.
+    expect(result.results.bindings.length).toBe(1);
+    expect(result.results.bindings[0].hobby.value).toBe('Reading');
+  });
+
+  test('re-asserting the type on an existing node does not duplicate it', async () => {
+    if (!fusekiAvailable) return;
+
+    await executeSparqlUpdate(upsertToSparql(upsertIr(NEW, {hobby: 'Chess'})));
+    await executeSparqlUpdate(upsertToSparql(upsertIr(NEW, {hobby: 'Reading'})));
+
+    const result = await executeSparqlQuery(`SELECT ?type WHERE { <${NEW}> a ?type . }`);
+    // RDF graphs are sets, which is why the type triple needs no NOT EXISTS guard.
+    expect(result.results.bindings.length).toBe(1);
+  });
+
+  test('leaves properties it does not name alone', async () => {
+    if (!fusekiAvailable) return;
+
+    await executeSparqlUpdate(upsertToSparql(upsertIr(NEW, {hobby: 'Chess', name: 'Ada'})));
+    await executeSparqlUpdate(upsertToSparql(upsertIr(NEW, {hobby: 'Reading'})));
+
+    const result = await executeSparqlQuery(`
+      SELECT ?name ?hobby WHERE {
+        <${NEW}> <${PROP}name> ?name .
+        <${NEW}> <${PROP}hobby> ?hobby .
+      }
+    `);
+    // Named-property replace, not whole-node replace (D1).
+    expect(result.results.bindings.length).toBe(1);
+    expect(result.results.bindings[0].name.value).toBe('Ada');
+    expect(result.results.bindings[0].hobby.value).toBe('Reading');
+  });
+});
 
 describe('Fuseki mutations — DELETE', () => {
   test('deleteSingle — delete and verify', async () => {

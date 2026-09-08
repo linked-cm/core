@@ -3,6 +3,7 @@ import type {
   IRAskQuery,
   IRCreateMutation,
   IRUpdateMutation,
+  IRUpsertMutation,
   IRDeleteMutation,
   IRDeleteAllMutation,
   IRDeleteWhereMutation,
@@ -2129,6 +2130,39 @@ export function updateToAlgebra(
   query: IRUpdateMutation,
   options?: SparqlOptions,
 ): SparqlDeleteInsertPlan {
+  return buildDeleteInsertPlan(query, options);
+}
+
+/**
+ * Converts an IRUpsertMutation to a SparqlDeleteInsertPlan.
+ *
+ * The same plan `update` produces, plus `<id> a <targetClass>` in the INSERT. Nothing else
+ * differs: `update`'s WHERE is already a bare OPTIONAL, so it matches — and therefore
+ * inserts — whether or not the node exists. The type triple is what turns that into a
+ * create. Re-asserting it on an existing node is a no-op, RDF graphs being sets, so it
+ * needs no guard.
+ */
+export function upsertToAlgebra(
+  query: IRUpsertMutation,
+  options?: SparqlOptions,
+): SparqlDeleteInsertPlan {
+  return buildDeleteInsertPlan(query, options, {
+    // Must match the IRI `create` asserts and `select` scans for; the raw shape id is
+    // not the same thing, and a node typed with it would be invisible to queries.
+    ensureType: resolveShapeScanIri(query.shape),
+  });
+}
+
+/**
+ * Shared body of the id-targeted DELETE/INSERT/WHERE plans. `ensureType` is the only
+ * difference between `update` and `upsert`; when absent the output is exactly what the
+ * update path has always emitted.
+ */
+function buildDeleteInsertPlan(
+  query: IRUpdateMutation | IRUpsertMutation,
+  options?: SparqlOptions,
+  opts?: {ensureType?: string},
+): SparqlDeleteInsertPlan {
   const subjectTerm = iriTerm(query.id);
   const result = processUpdateFields(query.data, subjectTerm, options);
 
@@ -2204,10 +2238,18 @@ export function updateToAlgebra(
     };
   }
 
+  // The type triple leads the INSERT, mirroring `create`'s triple order.
+  const insertPatterns = opts?.ensureType
+    ? [
+        tripleOf(subjectTerm, iriTerm(RDF_TYPE), iriTerm(opts.ensureType)),
+        ...result.insertPatterns,
+      ]
+    : result.insertPatterns;
+
   return {
     type: 'delete_insert',
     deletePatterns: result.deletePatterns,
-    insertPatterns: result.insertPatterns,
+    insertPatterns,
     whereAlgebra,
   };
 }
@@ -2807,6 +2849,15 @@ export function updateToSparql(
   options?: SparqlOptions,
 ): string {
   const plan = updateToAlgebra(query, options);
+  return deleteInsertPlanToSparql(plan, options);
+}
+
+/** Lowers an IRUpsertMutation all the way to a SPARQL update string. */
+export function upsertToSparql(
+  query: IRUpsertMutation,
+  options?: SparqlOptions,
+): string {
+  const plan = upsertToAlgebra(query, options);
   return deleteInsertPlanToSparql(plan, options);
 }
 

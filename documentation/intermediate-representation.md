@@ -54,7 +54,7 @@ import {lower} from '@_linked/core';
 const ir = lower(query);   // builder (or closed *Query) → IR; the SPARQL store calls this internally
 ```
 
-Intermediate types (`DesugaredSelectQuery`, `CanonicalDesugaredSelectQuery`, `RawSelectInput`, etc.) are internal to the pipeline. The lowered IR types are `IRSelectQuery`, `IRCreateMutation`, `IRUpdateMutation`, `IRDeleteMutation` (exported from `@_linked/core/queries/IntermediateRepresentation`). Note: `SelectQuery`/`CreateQuery`/`UpdateQuery`/`DeleteQuery` are the **closed, read-only query interfaces a dataset receives** (the live query) — *not* the IR; `lower()` turns one into the corresponding `IR*` type.
+Intermediate types (`DesugaredSelectQuery`, `CanonicalDesugaredSelectQuery`, `RawSelectInput`, etc.) are internal to the pipeline. The lowered IR types are `IRSelectQuery`, `IRCreateMutation`, `IRUpdateMutation`, `IRUpsertMutation`, `IRDeleteMutation` (exported from `@_linked/core/queries/IntermediateRepresentation`). Note: `SelectQuery`/`CreateQuery`/`UpdateQuery`/`DeleteQuery` are the **closed, read-only query interfaces a dataset receives** (the live query) — *not* the IR; `lower()` turns one into the corresponding `IR*` type.
 
 ## Select query IR
 
@@ -419,7 +419,7 @@ class MyStore implements IDataset {
 ```
 
 `SelectQuery`/`CreateQuery`/`UpdateQuery`/`DeleteQuery` are the **closed query interfaces** (the live
-query). The corresponding lowered IR types are `IRSelectQuery`/`IRCreateMutation`/`IRUpdateMutation`/
+query). The corresponding lowered IR types are `IRSelectQuery`/`IRCreateMutation`/`IRUpdateMutation`/`IRUpsertMutation`/
 `IRDeleteMutation`, which `lower()` returns.
 
 ### Imports
@@ -432,6 +432,7 @@ import type {
   IRSelectQuery,
   IRCreateMutation,
   IRUpdateMutation,
+  IRUpsertMutation,
   IRDeleteMutation,
   IRExpression,
   IRGraphPattern,

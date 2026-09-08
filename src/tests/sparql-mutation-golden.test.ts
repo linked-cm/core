@@ -18,6 +18,7 @@ import {captureQuery} from '../test-helpers/query-capture-store';
 import {
   createToSparql,
   updateToSparql,
+  upsertToSparql,
   updateWhereToSparql,
   deleteToSparql,
   deleteAllToSparql,
@@ -26,6 +27,7 @@ import {
 import type {
   IRCreateMutation,
   IRUpdateMutation,
+  IRUpsertMutation,
   IRDeleteMutation,
   IRDeleteAllMutation,
   IRDeleteWhereMutation,
@@ -620,6 +622,94 @@ describe('SPARQL golden — update(expr).where() traversal scoping', () => {
     OPTIONAL {`);
     expect(nesting(whereSparql)).toBe(true);
     expect(nesting(forSparql)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Upsert mutation tests
+//
+// The contract is deliberately narrow: an upsert is the update plan plus the one
+// `rdf:type` triple the update path never writes. These tests assert that difference
+// exactly — anything else changing between the two is a regression in one of them.
+// ---------------------------------------------------------------------------
+
+describe('SPARQL golden — upsert mutations', () => {
+  /** Re-kind a captured update IR as an upsert; the two carry identical fields. */
+  const asUpsert = (ir: IRUpdateMutation): IRUpsertMutation => ({
+    ...ir,
+    kind: 'upsert',
+  });
+
+  test('upsertSimple — update plan plus the type triple', async () => {
+    const ir = (await captureQuery(queryFactories.updateSimple)) as IRUpdateMutation;
+    const sparql = upsertToSparql(asUpsert(ir));
+    // `rdf:type` + its PREFIX header, matching what `create` emits — not the `a`
+    // shorthand — so both write paths assert the type in one recognisable form.
+    expect(sparql).toBe(
+`PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+DELETE {
+  <${ENT}p1> <${PROP}hobby> ?old_hobby .
+}
+INSERT {
+  <${ENT}p1> rdf:type <${PT}> .
+  <${ENT}p1> <${PROP}hobby> "Chess" .
+}
+WHERE {
+  OPTIONAL {
+    <${ENT}p1> <${PROP}hobby> ?old_hobby .
+  }
+}`);
+  });
+
+  test('the ONLY difference from update is one INSERT triple', async () => {
+    const ir = (await captureQuery(queryFactories.updateSimple)) as IRUpdateMutation;
+    const update = updateToSparql(ir).split('\n');
+    const upsert = upsertToSparql(asUpsert(ir)).split('\n');
+
+    const added = upsert.filter((l) => !update.includes(l));
+    const removed = update.filter((l) => !upsert.includes(l));
+
+    // Two added lines: the type triple, and the PREFIX header it needs.
+    expect(added).toEqual([
+      'PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>',
+      `  <${ENT}p1> rdf:type <${PT}> .`,
+    ]);
+    expect(removed).toEqual([]);
+  });
+
+  test('the WHERE is a bare OPTIONAL, so the INSERT fires when the node is absent', async () => {
+    // This is what makes a single-request upsert possible at all: a WHERE consisting
+    // only of OPTIONALs yields one solution even when nothing matches.
+    const ir = (await captureQuery(queryFactories.updateSimple)) as IRUpdateMutation;
+    const sparql = upsertToSparql(asUpsert(ir));
+    const where = sparql.slice(sparql.indexOf('WHERE {'));
+    expect(where).toContain('OPTIONAL {');
+    // No non-optional pattern that would require the subject to already exist.
+    expect(where.replace(/OPTIONAL \{[\s\S]*?\n  \}/g, '')).not.toMatch(/<[^>]+> <[^>]+>/);
+  });
+
+  test('a nested object value keeps its own type; the subject gets exactly one', async () => {
+    // The nested node was never the gap — it already carries rdf:type from the create path
+    // inside processUpdateFields. Only the SUBJECT lacked one, which is what upsert adds.
+    const ir = (await captureQuery(queryFactories.updateOverwriteNested)) as IRUpdateMutation;
+    const sparql = upsertToSparql(asUpsert(ir));
+    const insertBlock = sparql.slice(sparql.indexOf('INSERT {'), sparql.indexOf('WHERE {'));
+
+    const subjectTypeTriples = insertBlock
+      .split('\n')
+      .filter((l) => l.includes(`<${ENT}p1>`) && l.includes('rdf:type'));
+    expect(subjectTypeTriples).toHaveLength(1);
+
+    // The nested node still gets its own, from the create path — not from the upsert.
+    expect(insertBlock).toMatch(/<http:\/\/example\.org\/data\/person_[0-9A-Z]{26}> rdf:type/);
+  });
+
+  test('multi-valued replace keeps the type triple first', async () => {
+    const ir = (await captureQuery(queryFactories.updateOverwriteSet)) as IRUpdateMutation;
+    const sparql = upsertToSparql(asUpsert(ir));
+    const insertBlock = sparql.slice(sparql.indexOf('INSERT {'), sparql.indexOf('WHERE {'));
+    const firstTriple = insertBlock.split('\n')[1];
+    expect(firstTriple).toBe(`  <${ENT}p1> rdf:type <${PT}> .`);
   });
 });
 

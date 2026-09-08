@@ -3,10 +3,16 @@ summary: >
   `Shape.upsert()` — one round-trip write that creates or replaces. Userland is currently
   hand-rolling it out of `exists()` + a branch, which is two round-trips, a race between them, and
   a boolean that can be got wrong. It has already been got wrong in production.
-status: Backlog
+status: Done — implemented, see docs/plans/002-shape-upsert.md
 ---
 
 # 038 — `Shape.upsert()`
+
+> **Implemented.** `Shape.upsert(values).for({id})` — see `docs/plans/002-shape-upsert.md`.
+> The design questions below were answered as: replace named properties (not whole node); one
+> request, since `update`'s WHERE is already a bare OPTIONAL and only the `rdf:type` triple was
+> missing; `upsert`; and no created-vs-updated return value, because knowing would cost the read
+> the single round-trip exists to avoid.
 
 ## The shape of the problem
 

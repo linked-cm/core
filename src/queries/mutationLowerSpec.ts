@@ -30,6 +30,8 @@ export interface UpdateLowerSpec<S extends Shape = Shape> {
   targetId?: string;
   /** A pre-evaluated where path (where-mode). */
   wherePath?: WherePath;
+  /** Create-or-replace: lowers to an upsert mutation. Only valid with mode 'for'. */
+  upsert?: boolean;
 }
 
 export interface DeleteLowerSpec<S extends Shape = Shape> {

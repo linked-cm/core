@@ -35,6 +35,8 @@ export function fromJSON(
       case 'create':
         return CreateBuilder.fromJSON(json);
       case 'update':
+      case 'upsert':
+        // Both reconstruct an UpdateBuilder; the op selects upsert mode inside.
         return UpdateBuilder.fromJSON(json);
       case 'delete':
         return DeleteBuilder.fromJSON(json);

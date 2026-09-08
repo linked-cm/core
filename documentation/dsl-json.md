@@ -56,7 +56,7 @@ Every envelope carries a wire-format version under `v`:
 
 Two families, distinguished structurally:
 
-- **Mutations** carry an `op` discriminator: `"create"`, `"update"`, or `"delete"`.
+- **Mutations** carry an `op` discriminator: `"create"`, `"update"`, `"upsert"`, or `"delete"`.
 - **Selects** carry no `op`.
 
 `fromJSON(json)` routes on `op` (and throws on an unrecognized `op` rather than silently
@@ -331,6 +331,12 @@ predefined id (and `__shape` records a concrete subclass — see mutation node d
 `mode` is `"for"` (single target — `targetId` is an id or `{@ctx}`), `"forAll"` (every instance),
 or `"where"` (a `where` condition, same as select's).
 
+**An `update` against an id that does not exist still writes — untyped.** The lowered `WHERE` is a
+bare `OPTIONAL`, so it matches either way and the `INSERT` fires; what it never emits is
+`rdf:type`. The result is an id carrying properties that no shape-scoped select can find, reported
+as a success. Use `upsert` when the node may be absent. (Whether `update` should no-op instead is
+open — core backlog 039.)
+
 **`__id` in `update` — only for *new* nodes.** Use `__id` to fix the id of a node being
 **created**: in a `create` `data`, or when **adding** a node to a relation
 (`{ "someRel": { "@add": { "__id": "…", … } } }` — the added node self-identifies). Do **not**
@@ -340,6 +346,40 @@ value instead of replacing (violating `sh:maxCount 1`, so reads become ambiguous
 **omit `__id`** — the engine drops the old edge and writes a fresh node, so the value replaces
 cleanly. (For a `contains`/owned relation the old node's own triples are currently left behind on
 replace — see core backlog 032; use `delete()` or `{ "@remove": … }` for full cleanup.)
+
+### Upsert
+
+Create the node if absent, replace the named properties if present — one request.
+
+```json
+{
+  "v": "1.0", "op": "upsert", "shape": "…/Person",
+  "mode": "for", "targetId": "https://ex.org/p1",
+  "data": { "hobby": "Go" }
+}
+```
+
+`mode` is always `"for"` — an upsert targets one known id. There is no `forAll`/`where` form:
+those select existing nodes, and there is nothing to create when they match nothing.
+
+The target id is `targetId`, never a field of `data` — unlike `create`, where an `id`/`__id` in
+`data` names the node being created. In an upsert, `data` is properties only.
+
+It lowers to the same `DELETE/INSERT/WHERE` an `update` does, **plus** `?id rdf:type <targetClass>`.
+That one triple is the entire difference. `update`'s `WHERE` is a bare `OPTIONAL`, so it already
+matches — and therefore inserts — when the node is absent; what it never writes is the type, which
+is why an `update` against a missing id leaves an *untyped* node that shape-scoped selects cannot
+see.
+
+Expression-valued fields are **rejected**. An expression reads the node's current value; when the
+upsert is creating the node that reference is unbound, and SPARQL drops any `INSERT` triple
+containing an unbound variable — the write would report success and store nothing for that
+property.
+
+A distinct `op` rather than `"update"` with a new `mode` is deliberate: a consumer that did not
+know about upsert would fall past `mode === "for"` and `mode === "where"` into the update-where
+path with no condition — an update applied to *every instance of the shape*. A distinct `op` hits
+the unknown-op guard instead and throws.
 
 ### Delete
 

@@ -98,6 +98,26 @@ export type UpdateMutationJSON = {
   data: MutationNodeDataJSON;
 };
 
+/**
+ * Create-or-replace against a known id.
+ *
+ * A distinct `op` rather than `op: 'update'` with a new `mode`. An unaware consumer that
+ * received `{op: 'update', mode: 'upsert'}` would fall past its `mode === 'for'` and
+ * `mode === 'where'` branches into the update-where path with no where clause — an update
+ * applied to *every instance of the shape*. A distinct op instead hits `fromJSON`'s
+ * existing `default:` and throws "Unknown query op": loud, and safe.
+ */
+export type UpsertMutationJSON = {
+  v?: string;
+  op: 'upsert';
+  shape: string;
+  /** Upsert targets one known id; there is no `forAll`/`where` form. */
+  mode: 'for';
+  /** A node id, or a `{@ctx: name}` context reference resolved at lowering. */
+  targetId?: string | ContextRefJSON;
+  data: MutationNodeDataJSON;
+};
+
 export type DeleteMutationJSON =
   | {v?: string; op: 'delete'; shape: string; mode: 'ids'; ids: (string | ContextRefJSON)[]}
   | {v?: string; op: 'delete'; shape: string; mode: 'all'}
@@ -106,6 +126,7 @@ export type DeleteMutationJSON =
 export type MutationJSON =
   | CreateMutationJSON
   | UpdateMutationJSON
+  | UpsertMutationJSON
   | DeleteMutationJSON;
 
 // =============================================================================

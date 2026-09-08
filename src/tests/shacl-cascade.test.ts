@@ -19,10 +19,15 @@ import {UpdateBuilder} from '../queries/UpdateBuilder';
 import {
   deleteToSparql,
   updateToSparql,
+  upsertToSparql,
   buildOwnedCascade,
   buildOwnedSelfDelete,
 } from '../sparql/irToAlgebra';
-import type {IRDeleteMutation, IRUpdateMutation} from '../queries/IntermediateRepresentation';
+import type {
+  IRDeleteMutation,
+  IRUpdateMutation,
+  IRUpsertMutation,
+} from '../queries/IntermediateRepresentation';
 // Ensure List/PathNode (dependent shapes) are registered so the cascade has targets.
 import '../shapes/List';
 import '../shapes/PathNode';
@@ -128,6 +133,41 @@ describe('owned-subtree cascade', () => {
       'https://linked.cm/ont/linked-core/PathNode',
       'http://example.org/c#TCell',
     ]));
+  });
+
+  test('upsert cascades identically to update, plus the type triple', () => {
+    // The cascade is computed in the body `update` and `upsert` share, so it should ride
+    // along untouched — but "untouched by construction" is the claim worth checking, since
+    // this governs whether replaced owned nodes orphan.
+    const build = (b: any) =>
+      b.for('http://example.org/c#bag1')
+        .set({items: {remove: [{id: 'http://example.org/c#oldcell'}]}} as any);
+
+    const updateSparql = updateToSparql(
+      lower(build(UpdateBuilder.from(TBag))) as unknown as IRUpdateMutation,
+    );
+    const upsertSparql = upsertToSparql(
+      lower(build(UpdateBuilder.upsertFrom(TBag))) as unknown as IRUpsertMutation,
+    );
+
+    // Cascade markers still present under upsert.
+    expect(upsertSparql).toContain('http://example.org/c#oldcell');
+    expect(upsertSparql).toMatch(/\)\+ /);
+    expect(upsertSparql).toContain('http://example.org/c#TCell');
+
+    // And the only difference from the update is the type triple. This particular update
+    // only removes, so it has no INSERT block at all — the upsert grows one to hold it.
+    const added = upsertSparql.split('\n').filter((l) => !updateSparql.split('\n').includes(l));
+    expect(added).toEqual([
+      'INSERT {',
+      '  <http://example.org/c#bag1> rdf:type <http://example.org/c#TBag> .',
+    ]);
+
+    // The asserted type is the shape's targetClass, NOT its shape id. Getting this wrong
+    // would type upserted nodes with an IRI the select path never scans for, making every
+    // upserted node invisible — the exact failure upsert exists to prevent.
+    expect(TBag.shape.id).not.toBe('http://example.org/c#TBag');
+    expect(upsertSparql).toContain('rdf:type <http://example.org/c#TBag>');
   });
 
   test('update set-modification remove on a contains property cascades the removed subtree', () => {
