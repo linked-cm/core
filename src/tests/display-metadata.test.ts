@@ -1,13 +1,17 @@
-import {describe, expect, test} from '@jest/globals';
+import {beforeAll, describe, expect, test} from '@jest/globals';
 import {linkedPackage} from '../utils/Package';
 import {Shape} from '../shapes/Shape';
 import {literalProperty} from '../shapes/SHACL';
 import {
   createNodeShapeData,
   createPropertyShapeData,
+  getPropertyShape,
   getPropertyShapes,
 } from '../shapes/nodeShapeData';
 import {
+  getNodeShape,
+  getOrCreateShapeAdapter,
+  getPropertyShapeByLabel,
   getSuperShapes,
   isSubShapeOf,
   registerNodeShape,
@@ -178,5 +182,68 @@ describe('inheritance for a shape that exists only as data', () => {
     registerNodeShape(b);
     expect(() => getSuperShapes(a)).not.toThrow();
     expect(getSuperShapes(a).map((s) => s.id)).toEqual([bIri]);
+  });
+});
+
+describe('backlog-040 — the singular lookup uses the same walk as the plural one', () => {
+  const parentIri = 'https://example.org/dm/lookup/Parent';
+  const childIri = 'https://example.org/dm/lookup/Child';
+
+  beforeAll(() => {
+    const parent = createNodeShapeData(parentIri);
+    parent.label = 'LookupParent';
+    const inherited = createPropertyShapeData();
+    Object.assign(inherited, {
+      id: `${parentIri}/title`,
+      label: 'title',
+      path: ns('title'),
+    });
+    parent.propertyShapes = [inherited];
+
+    const child = createNodeShapeData(childIri);
+    child.label = 'LookupChild';
+    child.extends = {id: parentIri};
+    const own = createPropertyShapeData();
+    Object.assign(own, {
+      id: `${childIri}/slug`,
+      label: 'slug',
+      path: ns('slug'),
+    });
+    child.propertyShapes = [own];
+
+    registerNodeShape(parent);
+    registerNodeShape(child);
+  });
+
+  test('getPropertyShape resolves an inherited property on a data-only shape', () => {
+    const child = getNodeShape(childIri)!;
+    expect(child).toBeDefined();
+
+    expect(getPropertyShape(child, 'slug', true)?.label).toBe('slug');
+
+    // The regression: previously this returned undefined, because with no compiled
+    // class the lookup stopped at the shape's own property shapes.
+    expect(getPropertyShape(child, 'title', true)?.label).toBe('title');
+  });
+
+  test('checkSubShapes=false still means own-properties-only', () => {
+    const child = getNodeShape(childIri)!;
+    expect(getPropertyShape(child, 'title', false)).toBeUndefined();
+    expect(getPropertyShape(child, 'slug', false)?.label).toBe('slug');
+  });
+
+  test('getPropertyShapeByLabel agrees with getPropertyShapes for a data-only shape', () => {
+    // getPropertyShapeByLabel (PR #211) delegates to getPropertyShape, so the two must
+    // not disagree — a caller that lists labels from one and resolves through the other
+    // is exactly how an inherited property became unresolvable.
+    const adapter = getOrCreateShapeAdapter(childIri);
+    expect(adapter).toBeDefined();
+
+    const listed = getPropertyShapes(adapter!.shape, true).map((p) => p.label);
+    expect(listed).toEqual(expect.arrayContaining(['slug', 'title']));
+
+    for (const label of listed) {
+      expect(getPropertyShapeByLabel(adapter!, label)?.label).toBe(label);
+    }
   });
 });
