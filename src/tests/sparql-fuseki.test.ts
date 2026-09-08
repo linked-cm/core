@@ -1858,6 +1858,8 @@ describe('Fuseki mutations — UPSERT', () => {
     id,
     data: {
       shape: P,
+      // The field carries the shape-scoped property IRI; lowering resolves it to the
+      // declared `sh:path`, which is what the readbacks below query for.
       fields: Object.entries(fields).map(([prop, value]) => ({
         property: `${P}/${prop}`,
         value,
@@ -1878,13 +1880,14 @@ describe('Fuseki mutations — UPSERT', () => {
     const result = await executeSparqlQuery(`
       SELECT ?type ?hobby WHERE {
         <${NEW}> a ?type .
-        <${NEW}> <${P}/hobby> ?hobby .
+        <${NEW}> <${PROP}hobby> ?hobby .
       }
     `);
     expect(result.results.bindings.length).toBe(1);
     // The type triple is the whole difference from `update`: without it the node exists
-    // but is untyped, and every shape-scoped select misses it.
-    expect(result.results.bindings[0].type.value).toBe(P);
+    // but is untyped, and every shape-scoped select misses it. The type is the shape's
+    // declared `sh:targetClass`, not the shape IRI — the same node `create` asserts.
+    expect(result.results.bindings[0].type.value).toBe(PT);
     expect(result.results.bindings[0].hobby.value).toBe('Chess');
   });
 
@@ -1895,7 +1898,7 @@ describe('Fuseki mutations — UPSERT', () => {
     await executeSparqlUpdate(upsertToSparql(upsertIr(NEW, {hobby: 'Reading'})));
 
     const result = await executeSparqlQuery(`
-      SELECT ?hobby WHERE { <${NEW}> <${P}/hobby> ?hobby . }
+      SELECT ?hobby WHERE { <${NEW}> <${PROP}hobby> ?hobby . }
     `);
     // Exactly one value — this is the failure mode of the branch upsert replaces, where a
     // wrong existence check took `create` and INSERT DATA duplicated a single-valued property.
@@ -1922,8 +1925,8 @@ describe('Fuseki mutations — UPSERT', () => {
 
     const result = await executeSparqlQuery(`
       SELECT ?name ?hobby WHERE {
-        <${NEW}> <${P}/name> ?name .
-        <${NEW}> <${P}/hobby> ?hobby .
+        <${NEW}> <${PROP}name> ?name .
+        <${NEW}> <${PROP}hobby> ?hobby .
       }
     `);
     // Named-property replace, not whole-node replace (D1).
