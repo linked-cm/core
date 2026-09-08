@@ -40,6 +40,7 @@ const Shape = ns('Shape');
 const equals = ns('equals');
 const disjoint = ns('disjoint');
 const hasValue = ns('hasValue');
+const defaultValue = ns('defaultValue');
 const order = ns('order');
 const group = ns('group');
 const closed = ns('closed');
@@ -138,6 +139,7 @@ export const shacl = {
   equals,
   disjoint,
   hasValue,
+  defaultValue,
   order,
   group,
   closed,

@@ -15,6 +15,12 @@ import {
   Metric,
   PathNode,
   tmpEntityBase,
+  personClass,
+  dogClass,
+  petClass,
+  employeeClass,
+  metricClass,
+  propBase,
 } from '../test-helpers/query-fixtures';
 import {FusekiStore} from '../test-helpers/FusekiStore';
 import {
@@ -24,10 +30,13 @@ import {
   executeSparqlQuery,
   executeSparqlUpdate,
   clearAllData,
+  DATASET_NAME,
 } from '../test-helpers/fuseki-test-store';
 import {setQueryContext, getQueryContext} from '../queries/QueryContext';
+import {Shape} from '../shapes/Shape';
 import {Expr} from '../expressions/Expr';
 import {fromJSON} from '../queries/fromJSON';
+import {WIRE_VERSION} from '../queries/wireVersion';
 import {createHash} from 'node:crypto';
 
 import '../ontologies/rdf';
@@ -37,78 +46,89 @@ setQueryContext('user', {id: `${tmpEntityBase}p3`}, Person);
 
 // Shape URIs (SHACL-generated)
 const P = 'https://linked.cm/shape/core/Person';
+// Property predicates are the declared `sh:path`, not derived from the shape IRI.
+const PROP = propBase;
 const D = 'https://linked.cm/shape/core/Dog';
 const PET = 'https://linked.cm/shape/core/Pet';
 const E = 'https://linked.cm/shape/core/Employee';
 const M = 'https://linked.cm/shape/core/Metric';
 const PP = 'linked://pp/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+// Class IRIs — the separate node each shape declares as its `targetClass`.
+// Only these appear as an rdf:type; the shape IRIs above identify the
+// SHACL descriptions and are what property predicates derive from.
+const PT = personClass.id;
+const DT = dogClass.id;
+const PETT = petClass.id;
+const ET = employeeClass.id;
+const MT = metricClass.id;
+
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const ENT = tmpEntityBase;
 
 // Base graph: identical to sparql-fuseki.test.ts so expectations are well
 // understood, plus a Dog `d1` (guardDogLevel) for updateExprCallback.
 const BASE_DATA = `
-<${ENT}p1> <${RDF_TYPE}> <${P}> .
-<${ENT}p1> <${P}/name> "Semmy" .
-<${ENT}p1> <${P}/hobby> "Reading" .
-<${ENT}p1> <${P}/birthDate> "1990-01-01T13:45:30.000Z"^^<${XSD}dateTime> .
-<${ENT}p1> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
-<${ENT}p1> <${P}/friends> <${ENT}p2> .
-<${ENT}p1> <${P}/friends> <${ENT}p3> .
-<${ENT}p1> <${P}/pets> <${ENT}dog1> .
-<${ENT}p1> <${P}/firstPet> <${ENT}dog1> .
-<${ENT}p1> <${P}/nickNames> "Sem1" .
-<${ENT}p1> <${P}/nickNames> "Sem" .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p1> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p2> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p3> .
-<${ENT}p1> <${P}/pluralTestProp> <${ENT}p4> .
-<${ENT}p2> <${RDF_TYPE}> <${P}> .
-<${ENT}p2> <${P}/name> "Moa" .
-<${ENT}p2> <${P}/hobby> "Jogging" .
-<${ENT}p2> <${P}/isRealPerson> "false"^^<${XSD}boolean> .
-<${ENT}p2> <${P}/bestFriend> <${ENT}p3> .
-<${ENT}p2> <${P}/friends> <${ENT}p3> .
-<${ENT}p2> <${P}/friends> <${ENT}p4> .
-<${ENT}p2> <${P}/pets> <${ENT}dog2> .
-<${ENT}p2> <${P}/firstPet> <${ENT}dog2> .
-<${ENT}p3> <${RDF_TYPE}> <${P}> .
-<${ENT}p3> <${P}/name> "Jinx" .
-<${ENT}p3> <${P}/isRealPerson> "true"^^<${XSD}boolean> .
-<${ENT}p4> <${RDF_TYPE}> <${P}> .
-<${ENT}p4> <${P}/name> "Quinn" .
-<${ENT}p5> <${RDF_TYPE}> <${P}> .
-<${ENT}p5> <${P}/name> "Maximilian" .
-<${ENT}dog1> <${RDF_TYPE}> <${D}> .
-<${ENT}dog1> <${RDF_TYPE}> <${PET}> .
-<${ENT}dog1> <${D}/guardDogLevel> "2"^^<${XSD}integer> .
-<${ENT}dog1> <${PET}/bestFriend> <${ENT}dog2> .
-<${ENT}dog2> <${RDF_TYPE}> <${D}> .
-<${ENT}dog2> <${RDF_TYPE}> <${PET}> .
-<${ENT}d1> <${RDF_TYPE}> <${D}> .
-<${ENT}d1> <${RDF_TYPE}> <${PET}> .
-<${ENT}d1> <${D}/guardDogLevel> "5"^^<${XSD}integer> .
-<${ENT}e1> <${RDF_TYPE}> <${E}> .
-<${ENT}e1> <${E}/name> "Alice" .
-<${ENT}e1> <${E}/department> "Engineering" .
-<${ENT}e1> <${E}/bestFriend> <${ENT}e2> .
-<${ENT}e2> <${RDF_TYPE}> <${E}> .
-<${ENT}e2> <${E}/name> "Bob" .
-<${ENT}e2> <${E}/department> "Sales" .
-<${ENT}m1> <${RDF_TYPE}> <${M}> .
-<${ENT}m1> <${M}/score> "3.14"^^<${XSD}decimal> .
-<${ENT}m1> <${M}/rating> "2.5"^^<${XSD}double> .
-<${ENT}m1> <${M}/views> "1000000"^^<${XSD}long> .
-<${ENT}m1> <${M}/count> "42"^^<${XSD}integer> .
-<${ENT}m1> <${M}/joinedOn> "2020-06-15"^^<${XSD}date> .
-<${ENT}m1> <${M}/scores> "1.5"^^<${XSD}decimal> .
-<${ENT}m1> <${M}/scores> "2.5"^^<${XSD}decimal> .
-<${ENT}m1> <${M}/scores> "2.5"^^<${XSD}decimal> .
-<${ENT}m1> <${M}/scores> "3.5"^^<${XSD}decimal> .
-<${ENT}m2> <${RDF_TYPE}> <${M}> .
-<${ENT}m2> <${M}/score> "-7.25"^^<${XSD}decimal> .
-<${ENT}m2> <${M}/count> "-3"^^<${XSD}integer> .
+<${ENT}p1> <${RDF_TYPE}> <${PT}> .
+<${ENT}p1> <${PROP}name> "Semmy" .
+<${ENT}p1> <${PROP}hobby> "Reading" .
+<${ENT}p1> <${PROP}birthDate> "1990-01-01T13:45:30.000Z"^^<${XSD}dateTime> .
+<${ENT}p1> <${PROP}isRealPerson> "true"^^<${XSD}boolean> .
+<${ENT}p1> <${PROP}hasFriend> <${ENT}p2> .
+<${ENT}p1> <${PROP}hasFriend> <${ENT}p3> .
+<${ENT}p1> <${PROP}hasPet> <${ENT}dog1> .
+<${ENT}p1> <${PROP}hasPet> <${ENT}dog1> .
+<${ENT}p1> <${PROP}nickName> "Sem1" .
+<${ENT}p1> <${PROP}nickName> "Sem" .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p1> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p2> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p3> .
+<${ENT}p1> <${PROP}pluralTestProp> <${ENT}p4> .
+<${ENT}p2> <${RDF_TYPE}> <${PT}> .
+<${ENT}p2> <${PROP}name> "Moa" .
+<${ENT}p2> <${PROP}hobby> "Jogging" .
+<${ENT}p2> <${PROP}isRealPerson> "false"^^<${XSD}boolean> .
+<${ENT}p2> <${PROP}bestFriend> <${ENT}p3> .
+<${ENT}p2> <${PROP}hasFriend> <${ENT}p3> .
+<${ENT}p2> <${PROP}hasFriend> <${ENT}p4> .
+<${ENT}p2> <${PROP}hasPet> <${ENT}dog2> .
+<${ENT}p2> <${PROP}hasPet> <${ENT}dog2> .
+<${ENT}p3> <${RDF_TYPE}> <${PT}> .
+<${ENT}p3> <${PROP}name> "Jinx" .
+<${ENT}p3> <${PROP}isRealPerson> "true"^^<${XSD}boolean> .
+<${ENT}p4> <${RDF_TYPE}> <${PT}> .
+<${ENT}p4> <${PROP}name> "Quinn" .
+<${ENT}p5> <${RDF_TYPE}> <${PT}> .
+<${ENT}p5> <${PROP}name> "Maximilian" .
+<${ENT}dog1> <${RDF_TYPE}> <${DT}> .
+<${ENT}dog1> <${RDF_TYPE}> <${PETT}> .
+<${ENT}dog1> <${PROP}guardDogLevel> "2"^^<${XSD}integer> .
+<${ENT}dog1> <${PROP}bestFriend> <${ENT}dog2> .
+<${ENT}dog2> <${RDF_TYPE}> <${DT}> .
+<${ENT}dog2> <${RDF_TYPE}> <${PETT}> .
+<${ENT}d1> <${RDF_TYPE}> <${DT}> .
+<${ENT}d1> <${RDF_TYPE}> <${PETT}> .
+<${ENT}d1> <${PROP}guardDogLevel> "5"^^<${XSD}integer> .
+<${ENT}e1> <${RDF_TYPE}> <${ET}> .
+<${ENT}e1> <${PROP}employeeName> "Alice" .
+<${ENT}e1> <${PROP}employeeDepartment> "Engineering" .
+<${ENT}e1> <${PROP}bestFriend> <${ENT}e2> .
+<${ENT}e2> <${RDF_TYPE}> <${ET}> .
+<${ENT}e2> <${PROP}employeeName> "Bob" .
+<${ENT}e2> <${PROP}employeeDepartment> "Sales" .
+<${ENT}m1> <${RDF_TYPE}> <${MT}> .
+<${ENT}m1> <${PROP}metricScore> "3.14"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricRating> "2.5"^^<${XSD}double> .
+<${ENT}m1> <${PROP}metricViews> "1000000"^^<${XSD}long> .
+<${ENT}m1> <${PROP}metricCount> "42"^^<${XSD}integer> .
+<${ENT}m1> <${PROP}metricJoinedOn> "2020-06-15"^^<${XSD}date> .
+<${ENT}m1> <${PROP}metricScores> "1.5"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricScores> "2.5"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricScores> "2.5"^^<${XSD}decimal> .
+<${ENT}m1> <${PROP}metricScores> "3.5"^^<${XSD}decimal> .
+<${ENT}m2> <${RDF_TYPE}> <${MT}> .
+<${ENT}m2> <${PROP}metricScore> "-7.25"^^<${XSD}decimal> .
+<${ENT}m2> <${PROP}metricCount> "-3"^^<${XSD}integer> .
 <${ENT}pna> <${RDF_TYPE}> <${PP}Node> .
 <${ENT}pna> <${PP}name> "A" .
 <${ENT}pna> <${PP}knows> <${ENT}pnb> .
@@ -126,7 +146,7 @@ const BASE_DATA = `
 let fusekiAvailable = false;
 const store = new FusekiStore(
   process.env.FUSEKI_BASE_URL || 'http://localhost:3939',
-  'nashville-test',
+  DATASET_NAME,
 );
 
 async function reloadBase(): Promise<void> {
@@ -207,7 +227,7 @@ describe('coverage tails — DSL-JSON delete & {$ctx} mutations', () => {
   test('delete round-trips via fromJSON (deleteWhere)', async () => {
     if (!fusekiAvailable) return;
     // give p2 hobby=Chess, then delete-where(hobby=Chess) over the wire
-    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${P}/hobby> ?o } INSERT { <${ENT}p2> <${P}/hobby> "Chess" } WHERE { <${ENT}p2> <${P}/hobby> ?o }`);
+    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${PROP}hobby> ?o } INSERT { <${ENT}p2> <${PROP}hobby> "Chess" } WHERE { <${ENT}p2> <${PROP}hobby> ?o }`);
     const dq = queryFactories.deleteWhere();
     await store.deleteQuery(fromJSON((dq as any).toJSON()) as any);
     expect(ids((await store.selectQuery(queryFactories.selectName())) as Row[]))
@@ -217,14 +237,14 @@ describe('coverage tails — DSL-JSON delete & {$ctx} mutations', () => {
   test('{$ctx} as update target (user = p3)', async () => {
     if (!fusekiAvailable) return;
     await store.updateQuery(Person.update({hobby: 'CtxHobby'}).for(getQueryContext('user')));
-    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p3> <${P}/hobby> ?h }`);
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p3> <${PROP}hobby> ?h }`);
     expect(r.results.bindings.map((b: any) => b.h.value)).toEqual(['CtxHobby']);
   });
 
   test('{$ctx} as mutation field value (p1.bestFriend := user p3)', async () => {
     if (!fusekiAvailable) return;
     await store.updateQuery(Person.update({bestFriend: getQueryContext('user')} as any).for({id: `${ENT}p1`}));
-    const r = await executeSparqlQuery(`SELECT ?b WHERE { <${ENT}p1> <${P}/bestFriend> ?b }`);
+    const r = await executeSparqlQuery(`SELECT ?b WHERE { <${ENT}p1> <${PROP}bestFriend> ?b }`);
     expect(r.results.bindings.map((b: any) => b.b.value)).toEqual([`${ENT}p3`]);
   });
 });
@@ -263,11 +283,11 @@ describe('coverage §5 — builder features', () => {
 describe('coverage §6 — DSL-JSON round-trip', () => {
   beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
 
-  test('select round-trips losslessly (v:1.0) and yields identical results', async () => {
+  test('select round-trips losslessly (versioned) and yields identical results', async () => {
     if (!fusekiAvailable) return;
     const q = Person.select((p: any) => [p.name, p.friends.name]);
     const json = (q as any).toJSON();
-    expect(json.v).toBe('1.0');
+    expect(json.v).toBe(WIRE_VERSION);
     const direct = await store.selectQuery(q);
     const viaJson = await store.selectQuery(fromJSON(json) as any);
     expect(viaJson).toEqual(direct);
@@ -278,7 +298,7 @@ describe('coverage §6 — DSL-JSON round-trip', () => {
     const cq = Person.create({name: 'JsonRoundTrip'} as any);
     const created = (await store.createQuery(fromJSON((cq as any).toJSON()) as any)) as Row;
     expect(created.name).toBe('JsonRoundTrip');
-    const verify = await executeSparqlQuery(`SELECT ?n WHERE { <${created.id}> <${P}/name> ?n }`);
+    const verify = await executeSparqlQuery(`SELECT ?n WHERE { <${created.id}> <${PROP}name> ?n }`);
     expect(verify.results.bindings[0].n.value).toBe('JsonRoundTrip');
     await executeSparqlUpdate(`DELETE WHERE { <${created.id}> ?p ?o }`);
   });
@@ -287,7 +307,7 @@ describe('coverage §6 — DSL-JSON round-trip', () => {
     if (!fusekiAvailable) return;
     const uq = Person.update({hobby: 'JsonHobby'}).for({id: `${ENT}p1`});
     await store.updateQuery(fromJSON((uq as any).toJSON()) as any);
-    const verify = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${P}/hobby> ?h }`);
+    const verify = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${PROP}hobby> ?h }`);
     expect(verify.results.bindings.map((b: any) => b.h.value)).toEqual(['JsonHobby']);
   });
 });
@@ -835,14 +855,14 @@ describe('coverage §1 — expression updates', () => {
   test('updateExprCallback — guardDogLevel + 1 (d1: 5 → 6)', async () => {
     if (!fusekiAvailable) return;
     await store.updateQuery(queryFactories.updateExprCallback());
-    const r = await executeSparqlQuery(`SELECT ?v WHERE { <${ENT}d1> <${D}/guardDogLevel> ?v }`);
+    const r = await executeSparqlQuery(`SELECT ?v WHERE { <${ENT}d1> <${PROP}guardDogLevel> ?v }`);
     expect(r.results.bindings.map((b: any) => b.v.value)).toEqual(['6']);
   });
 
   test('updateExprNow — birthDate := now() (single, current year)', async () => {
     if (!fusekiAvailable) return;
     await store.updateQuery(queryFactories.updateExprNow());
-    const r = await executeSparqlQuery(`SELECT ?v WHERE { <${ENT}p1> <${P}/birthDate> ?v }`);
+    const r = await executeSparqlQuery(`SELECT ?v WHERE { <${ENT}p1> <${PROP}birthDate> ?v }`);
     expect(r.results.bindings.length).toBe(1);
     const yr = new Date(r.results.bindings[0].v.value).getFullYear();
     expect(yr).toBeGreaterThanOrEqual(2026);
@@ -857,7 +877,7 @@ describe('coverage §1 — expression updates', () => {
     await store.updateQuery(
       Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).for({id: `${ENT}p2`}),
     );
-    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p2> <${P}/hobby> ?h }`);
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p2> <${PROP}hobby> ?h }`);
     expect(r.results.bindings.map((b: any) => b.h.value)).toEqual(['JINX']);
   });
 
@@ -866,7 +886,7 @@ describe('coverage §1 — expression updates', () => {
     // p1 has no bestFriend: old hobby is removed, nothing is inserted — and
     // crucially the hobby must NOT be filled with every entity's UCASE(name).
     await store.updateQuery(queryFactories.updateExprTraversal());
-    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${P}/hobby> ?h }`);
+    const r = await executeSparqlQuery(`SELECT ?h WHERE { <${ENT}p1> <${PROP}hobby> ?h }`);
     const vals = r.results.bindings.map((b: any) => b.h.value);
     expect(vals).not.toContain('SEMMY');
     expect(vals.length).toBeLessThanOrEqual(1);
@@ -881,7 +901,7 @@ describe('coverage §1 — expression updates', () => {
         hobby: p.bestFriend.hobby.lcase(),
       })).for({id: `${ENT}p2`}),
     );
-    const n = await executeSparqlQuery(`SELECT ?n WHERE { <${ENT}p2> <${P}/name> ?n }`);
+    const n = await executeSparqlQuery(`SELECT ?n WHERE { <${ENT}p2> <${PROP}name> ?n }`);
     expect(n.results.bindings.map((b: any) => b.n.value)).toEqual(['JINX']);
   });
 });
@@ -894,10 +914,10 @@ describe('coverage §1 — bulk/conditional mutations', () => {
 
   const personCount = async () =>
     Number((await executeSparqlQuery(
-      `SELECT (COUNT(?s) AS ?c) WHERE { ?s <${RDF_TYPE}> <${P}> }`,
+      `SELECT (COUNT(?s) AS ?c) WHERE { ?s <${RDF_TYPE}> <${PT}> }`,
     )).results.bindings[0].c.value);
   const hobbies = async () =>
-    (await executeSparqlQuery(`SELECT ?s ?h WHERE { ?s <${P}/hobby> ?h }`)).results.bindings
+    (await executeSparqlQuery(`SELECT ?s ?h WHERE { ?s <${PROP}hobby> ?h }`)).results.bindings
       .map((b: any) => `${b.s.value.replace(ENT, '')}=${b.h.value}`).sort();
 
   test('updateForAll — set hobby=Chess on all persons', async () => {
@@ -908,14 +928,14 @@ describe('coverage §1 — bulk/conditional mutations', () => {
 
   test('updateWhere — hobby:=Archived where hobby=Chess (set one Chess first)', async () => {
     if (!fusekiAvailable) return;
-    await executeSparqlUpdate(`DELETE { <${ENT}p1> <${P}/hobby> ?o } INSERT { <${ENT}p1> <${P}/hobby> "Chess" } WHERE { <${ENT}p1> <${P}/hobby> ?o }`);
+    await executeSparqlUpdate(`DELETE { <${ENT}p1> <${PROP}hobby> ?o } INSERT { <${ENT}p1> <${PROP}hobby> "Chess" } WHERE { <${ENT}p1> <${PROP}hobby> ?o }`);
     await store.updateQuery(queryFactories.updateWhere());
     expect(await hobbies()).toEqual(['p1=Archived', 'p2=Jogging']);
   });
 
   test('deleteWhere — delete persons with hobby=Chess (set p2 Chess first)', async () => {
     if (!fusekiAvailable) return;
-    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${P}/hobby> ?o } INSERT { <${ENT}p2> <${P}/hobby> "Chess" } WHERE { <${ENT}p2> <${P}/hobby> ?o }`);
+    await executeSparqlUpdate(`DELETE { <${ENT}p2> <${PROP}hobby> ?o } INSERT { <${ENT}p2> <${PROP}hobby> "Chess" } WHERE { <${ENT}p2> <${PROP}hobby> ?o }`);
     await store.deleteQuery(queryFactories.deleteWhere());
     const remaining = (await store.selectQuery(queryFactories.selectName())) as Row[];
     expect(ids(remaining)).toEqual(['p1', 'p3', 'p4', 'p5']);
@@ -950,3 +970,260 @@ describe('coverage §1 — bulk/conditional mutations', () => {
     expect(ids(remaining)).toEqual(['p2']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Existence checks against a live store.
+// ---------------------------------------------------------------------------
+
+describe('coverage — .exists() against Fuseki', () => {
+  // Re-seed: the mutation suites above leave the dataset emptied.
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  test('Shape.exists(id) → true for a node that is there', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.exists({id: `${ENT}p1`}, store)).toBe(true);
+  });
+
+  test('Shape.exists(id) → false for a node that is not', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.exists({id: `${ENT}nobody`}, store)).toBe(false);
+    expect(await Person.exists('https://does.not/exist', store)).toBe(false);
+  });
+
+  test('Shape.exists(id) accepts a plain string IRI', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.exists(`${ENT}p2`, store)).toBe(true);
+  });
+
+  test('existence is shape-scoped — a Dog iri is not a Person', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Dog.exists({id: `${ENT}dog1`}, store)).toBe(true);
+    expect(await Person.exists({id: `${ENT}dog1`}, store)).toBe(false);
+  });
+
+  test('.exists() with a where clause — matching and non-matching', async () => {
+    if (!fusekiAvailable) return;
+    expect(
+      await Person.select().where((p: any) => p.name.equals('Semmy')).exists(store),
+    ).toBe(true);
+    expect(
+      await Person.select().where((p: any) => p.name.equals('Nobody')).exists(store),
+    ).toBe(false);
+  });
+
+  test('.exists() ignores projection and sorting but honours the subject', async () => {
+    if (!fusekiAvailable) return;
+    // hobby is unset on p3 — a projected property must not gate existence.
+    expect(
+      await Person.select((p: any) => p.hobby)
+        .orderBy((p: any) => p.name)
+        .for({id: `${ENT}p3`})
+        .exists(store),
+    ).toBe(true);
+  });
+
+  test('.exists() drops pagination — offset does not flip the answer', async () => {
+    if (!fusekiAvailable) return;
+    // p1 has two friends, so this projection yields 2 solution rows per subject.
+    // If exists() dropped the projection but kept OFFSET 1, the normalised query
+    // would produce 1 row, skip it, and wrongly answer false.
+    expect(
+      await Person.select((p: any) => p.friends.name)
+        .for({id: `${ENT}p1`})
+        .offset(1)
+        .exists(store),
+    ).toBe(true);
+    // An offset past the end of the *un-normalised* result set must not read as absent.
+    expect(
+      await Person.select((p: any) => p.name).offset(500).exists(store),
+    ).toBe(true);
+  });
+
+  test('.exists() ignores a previously set limit, including limit(0)', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.select().limit(0).exists(store)).toBe(true);
+  });
+
+  test('.forAll(ids).exists() — true if any of the ids is there', async () => {
+    if (!fusekiAvailable) return;
+    expect(
+      await Person.selectAll().forAll([`${ENT}nobody`, `${ENT}p2`]).exists(store),
+    ).toBe(true);
+    expect(
+      await Person.selectAll().forAll([`${ENT}nobody`, `${ENT}no-one`]).exists(store),
+    ).toBe(false);
+  });
+
+  test('.exists() answers "any at all" when nothing is targeted', async () => {
+    if (!fusekiAvailable) return;
+    expect(await Person.select().exists(store)).toBe(true);
+    await clearAllData();
+    try {
+      expect(await Person.select().exists(store)).toBe(false);
+      expect(await Person.exists({id: `${ENT}p1`}, store)).toBe(false);
+    } finally {
+      // All fuseki suites share one dataset — restore it here rather than relying
+      // on the next beforeEach, so a failure above cannot strand an empty store.
+      await reloadBase();
+    }
+  });
+
+  test('a real store failure rejects rather than resolving false', async () => {
+    if (!fusekiAvailable) return;
+    const broken = new FusekiStore(
+      process.env.FUSEKI_BASE_URL || 'http://localhost:3939',
+      'no-such-dataset-here',
+    );
+    await expect(Person.exists({id: `${ENT}p1`}, broken)).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The existence check is an ASK against a live store — and agrees with the
+// SELECT degradation it replaces.
+// ---------------------------------------------------------------------------
+
+describe('coverage — .exists() emits ASK against Fuseki', () => {
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  /** Wraps the live store, recording the SPARQL it actually sends. */
+  const spyStore = () => {
+    const sent: string[] = [];
+    const spy = Object.create(store) as FusekiStore & {
+      executeSparqlSelect(sparql: string): Promise<any>;
+    };
+    spy.executeSparqlSelect = function (sparql: string) {
+      sent.push(sparql);
+      return (store as any).executeSparqlSelect(sparql);
+    };
+    return {spy, sent};
+  };
+
+  test('the query on the wire is an ASK, not a SELECT', async () => {
+    if (!fusekiAvailable) return;
+    const {spy, sent} = spyStore();
+    expect(await Person.exists({id: `${ENT}p1`}, spy)).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('ASK WHERE {');
+    expect(sent[0]).not.toContain('SELECT');
+    expect(sent[0]).not.toContain('LIMIT');
+  });
+
+  test('Fuseki answers ASK with the boolean shape the mapper expects', async () => {
+    if (!fusekiAvailable) return;
+    // Guards the SparqlAskResults type against the real endpoint: an ASK
+    // response carries `boolean` and no `results` key at all.
+    const present = await executeSparqlQuery(
+      `ASK WHERE { <${ENT}p1> ?p ?o }`,
+    );
+    expect(present).toEqual({head: {}, boolean: true});
+    const absent = await executeSparqlQuery(
+      `ASK WHERE { <${ENT}nobody> ?p ?o }`,
+    );
+    expect(absent).toEqual({head: {}, boolean: false});
+  });
+
+  test('ASK answers correctly across every pattern the builder can express', async () => {
+    if (!fusekiAvailable) return;
+    const cases: Array<[string, () => Promise<boolean>, boolean]> = [
+      ['present', () => Person.select().for(`${ENT}p1`).exists(store), true],
+      ['absent', () => Person.select().for(`${ENT}nobody`).exists(store), false],
+      ['where match', () =>
+        Person.select().where((p: any) => p.name.equals('Semmy')).exists(store), true],
+      ['where miss', () =>
+        Person.select().where((p: any) => p.name.equals('Nobody')).exists(store), false],
+      ['wrong shape', () => Person.select().for(`${ENT}dog1`).exists(store), false],
+      ['any at all', () => Person.select().exists(store), true],
+      ['forAll partial', () =>
+        Person.selectAll().forAll([`${ENT}nobody`, `${ENT}p2`]).exists(store), true],
+      ['projected + sorted', () =>
+        Person.select((p: any) => p.hobby)
+          .orderBy((p: any) => p.name)
+          .for(`${ENT}p3`)
+          .exists(store), true],
+    ];
+    for (const [label, run, expected] of cases) {
+      expect(`${label}=${await run()}`).toBe(`${label}=${expected}`);
+    }
+  });
+
+  test('a shapeless Shape.exists(uri) ignores type entirely', async () => {
+    if (!fusekiAvailable) return;
+    const {spy, sent} = spyStore();
+    // dog1 is a Dog, not a Person: shape-scoped asks say false, shapeless says true.
+    expect(await Person.exists({id: `${ENT}dog1`}, spy)).toBe(false);
+    expect(await Shape.exists(`${ENT}dog1`, spy)).toBe(true);
+    expect(await Shape.exists(`${ENT}nobody`, spy)).toBe(false);
+    expect(sent[1]).toContain('ASK WHERE {');
+    expect(sent[1]).not.toContain('rdf:type');
+  });
+
+  test('a shape-scoped ASK still excludes a node of another type', async () => {
+    if (!fusekiAvailable) return;
+    // ASK drops the projection, not the rdf:type scan — Person.exists() still
+    // means "exists as a Person". (Type-free existence is backlog 036.)
+    const {spy, sent} = spyStore();
+    expect(await Person.exists({id: `${ENT}dog1`}, spy)).toBe(false);
+    expect(sent[0]).toContain('rdf:type');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expression traversals in an `update().where()`.
+//
+// A golden alone would not have caught the defect these cover: the emitted
+// SPARQL parsed and ran. Only counting what landed in the store shows it.
+// ---------------------------------------------------------------------------
+
+describe('coverage — update(expr).where() with a traversal', () => {
+  beforeEach(async () => { if (fusekiAvailable) await reloadBase(); });
+
+  const hobbiesOf = async (id: string): Promise<string[]> => {
+    const json = await executeSparqlQuery(
+      `SELECT ?h WHERE { <${id}> <${PROP}hobby> ?h }`,
+    );
+    return json.results.bindings.map((b: any) => b.h.value).sort();
+  };
+
+  test('writes exactly one value, taken from the traversed node', async () => {
+    if (!fusekiAvailable) return;
+    // p2 ("Moa") has bestFriend p3 ("Jinx"). hobby is maxCount 1.
+    await store.updateQuery(
+      Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).where(
+        (p: any) => p.name.equals('Moa'),
+      ) as any,
+    );
+    expect(await hobbiesOf(`${ENT}p2`)).toEqual(['JINX']);
+  });
+
+  test('the traversal does not range over unrelated nodes', async () => {
+    if (!fusekiAvailable) return;
+    // The defect emitted the leaf property OPTIONAL before the edge bound its
+    // subject, making it a cartesian product over every node with a name — so
+    // p2 ended up with one hobby per named person in the store.
+    await store.updateQuery(
+      Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).where(
+        (p: any) => p.name.equals('Moa'),
+      ) as any,
+    );
+    const hobbies = await hobbiesOf(`${ENT}p2`);
+    expect(hobbies).toHaveLength(1);
+    for (const foreign of ['SEMMY', 'MOA', 'QUINN']) {
+      expect(hobbies).not.toContain(foreign);
+    }
+  });
+
+  test('a subject whose traversal edge is absent gets no value, and others are untouched', async () => {
+    if (!fusekiAvailable) return;
+    // p1 ("Semmy") has no bestFriend, so the computed value is unbound.
+    await store.updateQuery(
+      Person.update((p: any) => ({hobby: p.bestFriend.name.ucase()})).where(
+        (p: any) => p.name.equals('Semmy'),
+      ) as any,
+    );
+    expect(await hobbiesOf(`${ENT}p1`)).toEqual([]);
+    // p2 was never targeted — the where clause scopes the write.
+    expect(await hobbiesOf(`${ENT}p2`)).toEqual(['Jogging']);
+  });
+});
+

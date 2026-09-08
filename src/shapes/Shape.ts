@@ -13,6 +13,9 @@ import type {
 import type {NodeReferenceValue, UpdatePartial} from '../queries/QueryFactory.js';
 import type {NodeId} from '../queries/MutationQuery.js';
 import {QueryBuilder} from '../queries/QueryBuilder.js';
+import {AskBuilder} from '../queries/AskBuilder.js';
+import type {PendingQueryContext} from '../queries/QueryContext.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import {CreateBuilder} from '../queries/CreateBuilder.js';
 import {UpdateBuilder} from '../queries/UpdateBuilder.js';
 import {DeleteBuilder, type DeleteId} from '../queries/DeleteBuilder.js';
@@ -174,6 +177,67 @@ export abstract class Shape {
     this: ShapeConstructor<S>,
   ): QueryBuilder<S, any, ResultType> {
     return QueryBuilder.from(this).selectAll() as QueryBuilder<S, any, ResultType>;
+  }
+
+  /**
+   * Whether a node with this id exists as an instance of this shape.
+   *
+   * On the base class — `Shape.exists(uri)` — it means something different and
+   * weaker: does a node with this IRI exist **at all**, under any type or none.
+   * There is no shape to constrain by, so no `rdf:type` triple is emitted and the
+   * query is `ASK { <uri> ?p ?o }`. (`Shape` is free to mean this because the
+   * shapes themselves are described by `NodeShape` and `PropertyShape`, so
+   * `Shape.exists` is not needed for "is this a shape?".) Because a shapeless ask
+   * has no shape to route on, a router asks every dataset it knows — see
+   * `LinkedStorage.askQuery`.
+   *
+   * ```typescript
+   * if (await SourceDocument.exists({id})) {
+   *   await SourceDocument.update(values).for({id});
+   * } else {
+   *   await SourceDocument.create({id, ...values});
+   * }
+   * ```
+   *
+   * Resolves to a real `boolean` — unlike `select().where(…).one()`, which resolves
+   * to a row or `null` and leaves the conversion (and the failure modes) to the
+   * caller. Runs the cheapest correct query: against a SPARQL store, an
+   * `ASK WHERE { ?a0 rdf:type <ShapeClass> . FILTER(?a0 = <id>) }` — the shape's
+   * type triple and an equality filter on the subject, nothing else.
+   *
+   * Note the type triple: this asks whether the node exists **as an instance of
+   * this shape**. A node with that IRI and a different type answers `false`.
+   *
+   * A `null`/`undefined` id resolves to `false` without touching the store — as does
+   * a `PendingQueryContext` whose value has not landed yet, since there is no subject
+   * to ask about. (An unresolved context inside a *where clause* rejects instead; see
+   * {@link QueryBuilder.exists}.)
+   *
+   * **Errors reject — they are never reported as `false`.** Do not wrap this in a
+   * `.catch(() => false)`: that is exactly how a broken existence check hides,
+   * turning every `exists ? update : create` into an unconditional `create`.
+   *
+   * For "does *anything* match?", compose on the builder instead:
+   * `await Person.select().where(p => p.name.equals('Semmy')).exists()`.
+   *
+   * @param id The node id: a string IRI, a `{id}` reference, or a `PendingQueryContext`.
+   *   A malformed string IRI rejects (it does not throw synchronously).
+   * @param target Optional explicit dataset to run against; omitted uses the
+   *   global query dispatch.
+   */
+  static async exists<S extends Shape>(
+    this: ShapeConstructor<S> | typeof Shape,
+    id: string | NodeReferenceValue | PendingQueryContext | null | undefined,
+    target?: IDataset,
+  ): Promise<boolean> {
+    // `async`, so that a bad string IRI (resolveUriOrThrow) rejects rather than
+    // throwing synchronously past the caller's .catch().
+    if ((this as unknown) === Shape) {
+      // Called on the base class: no shape to constrain by, so no rdf:type triple.
+      // `ASK { <iri> ?p ?o }` — does this node exist at all?
+      return AskBuilder.forNode(id).exec(target);
+    }
+    return QueryBuilder.from(this as ShapeConstructor<S>).for(id).exists(target);
   }
 
   /**

@@ -7,6 +7,7 @@ import {CreateBuilder} from '../queries/CreateBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
 import {lower} from '../queries/lower';
 import {fromJSON} from '../queries/fromJSON';
+import {WIRE_VERSION} from '../queries/wireVersion';
 import {
   getQueryContext,
   setQueryContext,
@@ -274,7 +275,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
 
   test('wire version is stamped and an unknown major is rejected', () => {
     const json: any = queryFactories.createSimple().toJSON();
-    expect(json.v).toBe('1.0');
+    expect(json.v).toBe(WIRE_VERSION);
     expect(() => fromJSON({...json, v: '2.0'})).toThrow(/wire version/i);
     // missing v is tolerated
     const {v, ...noV} = json;

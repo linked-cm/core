@@ -50,4 +50,11 @@ describe('meta-model serialization', () => {
     expect(getPropertyShape(PropertyShape.shape, 'in', false).contains).toBe(true);
     expect(PropertyShape.shape.dependent).toBe(true);
   });
+
+  test('PropertyShape.defaultValue is registered as queryable', () => {
+    // Regression: getResult() emitted `defaultValue` and the wire type declared
+    // it, but the property was never registered — so any query referencing it
+    // threw before executing. Registration is what makes it queryable.
+    expect(getPropertyShape(PropertyShape.shape, 'defaultValue', false)).toBeDefined();
+  });
 });

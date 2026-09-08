@@ -1,5 +1,6 @@
 import type {
   IRSelectQuery,
+  IRAskQuery,
   IRCreateMutation,
   IRUpdateMutation,
   IRDeleteMutation,
@@ -19,6 +20,7 @@ import {pathExprToSparql, collectPathUris} from '../paths/pathExprToSparql.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import type {
   SparqlSelectPlan,
+  SparqlAskPlan,
   SparqlInsertDataPlan,
   SparqlDeleteInsertPlan,
   SparqlAlgebraNode,
@@ -35,6 +37,7 @@ import type {
 import {type SparqlOptions, generateEntityUri} from './sparqlUtils.js';
 import {
   selectPlanToSparql,
+  askPlanToSparql,
   insertDataPlanToSparql,
   deleteInsertPlanToSparql,
 } from './algebraToString.js';
@@ -84,14 +87,36 @@ function tripleOf(
   return {subject, predicate, object};
 }
 
-function shouldResolveShapeOrPropertyId(resolvedId: string | null | undefined): boolean {
-  return !!resolvedId && !resolvedId.startsWith('linked://tmp/');
-}
-
+/**
+ * Resolve the shape a query scans to the IRI written and matched as its `rdf:type`.
+ *
+ * That IRI is the shape's declared `targetClass` — a node in its own right, which in
+ * a real dataset carries `rdf:type rdfs:Class`. `targetClass` is read off the shape
+ * *class*, so JavaScript static inheritance already walks the superclass chain: a
+ * subclass that declares none inherits its parent's.
+ *
+ * A temporary (`linked://tmp/`) targetClass is honoured like any other. It is a real,
+ * separate node — just one whose IRI has not been finalised — and it round-trips
+ * consistently through both the scan and the create side.
+ *
+ * **A shape with no targetClass anywhere in its chain throws.** It used to fall back
+ * to the shape's *own* IRI, which typed instances as the shape that describes them —
+ * conflating a class with its description, and silently disagreeing with the declared
+ * `targetClass` whenever that was still temporary.
+ */
 function resolveShapeScanIri(shapeId: string): string {
   const shapeClass = getShapeClass(shapeId);
   const targetClassId = shapeClass?.targetClass?.id;
-  return shouldResolveShapeOrPropertyId(targetClassId) ? targetClassId! : shapeId;
+  if (!targetClassId) {
+    throw new Error(
+      `Cannot resolve an rdf:type for shape "${shapeId}": no targetClass is declared ` +
+      'on it or on any shape it extends. Declare one — `static targetClass = ' +
+      "{id: 'https://example.org/Person'}` — pointing at the class node instances are " +
+      'typed with. The shape\'s own IRI is not a substitute: it identifies the ' +
+      'description, not the class being described.',
+    );
+  }
+  return targetClassId;
 }
 
 /**
@@ -102,7 +127,8 @@ function resolveShapeScanIri(shapeId: string): string {
  *   shape's `sh:path`, reusing the same `pathExprToSparql` / `collectPathUris` machinery as the
  *   inline-`pathExpr` branches. Without this, structured named-property paths collapsed to a shadow IRI
  *   that matched nothing.
- * - No matching shape / unresolvable → `{kind:'iri'}` of the property id itself (unchanged shadow fallback).
+ * - No matching property shape at all → `{kind:'iri'}` of the id as given (nothing
+ *   better is knowable; the caller passed an id no registered shape declares).
  */
 // Memoizes resolved predicate terms across the many call sites that resolve the
 // same property. Guarded by the shape-registry size so it self-invalidates when
@@ -163,9 +189,10 @@ function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
     const simplePathId = getSimplePathId(propertyShape.path);
     let term: SparqlTerm;
     if (simplePathId !== null) {
-      // Simple single-IRI path: resolve to the IRI, or fall back to the property id
-      // (e.g. unresolvable `linked://tmp/` ids) — unchanged from before.
-      term = iriTerm(shouldResolveShapeOrPropertyId(simplePathId) ? simplePathId : propertyId);
+      // Simple single-IRI path: the declared `sh:path` IS the predicate. There is
+      // no fallback to the property shape's own IRI — that identifies the
+      // *description* of the property, not the property itself.
+      term = iriTerm(simplePathId);
     } else {
       // Structured sh:path — emit a property-path predicate instead of a shadow IRI.
       term = {
@@ -2141,7 +2168,9 @@ export function updateToAlgebra(
         trav.from === '__mutation_subject__' ? subjectTerm : varTerm(trav.from);
       const traversalTriple = tripleOf(
         fromTerm,
-        iriTerm(trav.property),
+        // The declared `sh:path`, like every other predicate — not the property
+        // shape's own IRI, which identifies the description of the property.
+        resolvePropertyPredicateTerm(trav.property),
         varTerm(trav.to),
       );
       // The traversal edge binds the target var; each dependent leaf property is
@@ -2604,7 +2633,27 @@ export function updateWhereToAlgebra(
     whereAlgebra = {type: 'filter', expression: filterExpr, inner: whereAlgebra};
   }
 
-  whereAlgebra = wrapOldValueOptionals(whereAlgebra, result.oldValueTriples);
+  // Old-value triples anchored on a traversal *target* belong INSIDE that
+  // traversal's OPTIONAL group, not beside it. Emitted beside it, the leaf's
+  // subject variable is introduced by an OPTIONAL that shares no variable with
+  // anything to its left — a left join with no join condition, i.e. a cartesian
+  // product over every node in the store carrying that predicate. The following
+  // OPTIONAL cannot repair it: the variable is already bound, and OPTIONAL never
+  // removes rows. `updateToAlgebra` performs the same split; this path did not.
+  const travTos = new Set((query.traversalPatterns ?? []).map((t) => t.to));
+  const travAnchoredByTo = new Map<string, SparqlTriple[]>();
+  const subjectAnchored: SparqlTriple[] = [];
+  for (const triple of result.oldValueTriples) {
+    if (triple.subject.kind === 'variable' && travTos.has(triple.subject.name)) {
+      const list = travAnchoredByTo.get(triple.subject.name) ?? [];
+      list.push(triple);
+      travAnchoredByTo.set(triple.subject.name, list);
+    } else {
+      subjectAnchored.push(triple);
+    }
+  }
+
+  whereAlgebra = wrapOldValueOptionals(whereAlgebra, subjectAnchored);
 
   // Add traversal OPTIONAL patterns (for multi-segment expression refs)
   // These must come BEFORE expression BINDs since the BINDs reference traversal variables.
@@ -2614,14 +2663,23 @@ export function updateWhereToAlgebra(
         trav.from === '__mutation_subject__' ? varTerm('a0') : varTerm(trav.from);
       const traversalTriple = tripleOf(
         fromTerm,
-        iriTerm(trav.property),
+        // The declared `sh:path`, like every other predicate — not the property
+        // shape's own IRI, which identifies the description of the property.
+        resolvePropertyPredicateTerm(trav.property),
         varTerm(trav.to),
       );
-      whereAlgebra = {
-        type: 'left_join',
-        left: whereAlgebra,
-        right: {type: 'bgp', triples: [traversalTriple]},
-      };
+      // The edge binds the target variable; each dependent leaf property is a
+      // nested OPTIONAL within that scope, so a missing leaf does not drop the
+      // group while an absent edge leaves every leaf variable unbound.
+      let travNode: SparqlAlgebraNode = {type: 'bgp', triples: [traversalTriple]};
+      for (const leaf of travAnchoredByTo.get(trav.to) ?? []) {
+        travNode = {
+          type: 'left_join',
+          left: travNode,
+          right: {type: 'bgp', triples: [leaf]},
+        };
+      }
+      whereAlgebra = {type: 'left_join', left: whereAlgebra, right: travNode};
     }
   }
 
@@ -2649,6 +2707,60 @@ export function updateWhereToAlgebra(
 }
 
 // ---------------------------------------------------------------------------
+// Ask conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts an {@link IRAskQuery} to a {@link SparqlAskPlan}.
+ *
+ * Two cases:
+ *
+ * - **Rootless** (no shape scan) — a bare subject, emitted as `<iri> ?p ?o`. This
+ *   is "does a node with this IRI exist at all", with no `rdf:type` constraint.
+ * - **Shaped** — the pattern is built by {@link selectToAlgebra}, so shape scans,
+ *   traversals, filters and `MINUS` have exactly one implementation. Only the
+ *   pattern is kept; the select plan's projection is discarded.
+ *
+ * There is nothing here to guard against. `IRAskQuery` has no projection,
+ * `orderBy`, `limit` or `offset` to ignore or reject — an `ASK` cannot express
+ * them, so the IR cannot carry them.
+ */
+export function askToAlgebra(
+  query: IRAskQuery,
+  options?: SparqlOptions,
+): SparqlAskPlan {
+  if (!query.root) {
+    if (!query.subjectId) {
+      throw new Error(
+        'askToAlgebra: a shapeless ask needs a subject — there is no shape to scan ' +
+        'and no subject to test, so the query matches every node in the store.',
+      );
+    }
+    // ASK { <iri> ?p ?o } — existence of the node itself, under any type or none.
+    const bgp: SparqlBGP = {
+      type: 'bgp',
+      triples: [
+        tripleOf(iriTerm(query.subjectId), varTerm('p'), varTerm('o')),
+      ],
+    };
+    return {type: 'ask', algebra: bgp};
+  }
+  const {algebra} = selectToAlgebra(
+    {
+      kind: 'select',
+      root: query.root,
+      patterns: query.patterns,
+      projection: [],
+      where: query.where,
+      subjectId: query.subjectId,
+      subjectIds: query.subjectIds,
+    },
+    options,
+  );
+  return {type: 'ask', algebra};
+}
+
+// ---------------------------------------------------------------------------
 // Convenience wrappers: IR → algebra → SPARQL string in one call
 // ---------------------------------------------------------------------------
 
@@ -2661,6 +2773,17 @@ export function selectToSparql(
 ): string {
   const plan = selectToAlgebra(query, options);
   return selectPlanToSparql(plan, options);
+}
+
+/**
+ * Converts an {@link IRAskQuery} to a SPARQL `ASK` string.
+ */
+export function askToSparql(
+  query: IRAskQuery,
+  options?: SparqlOptions,
+): string {
+  const plan = askToAlgebra(query, options);
+  return askPlanToSparql(plan, options);
 }
 
 /**

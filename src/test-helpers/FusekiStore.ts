@@ -1,5 +1,5 @@
 import {SparqlDataset} from '../sparql/SparqlDataset.js';
-import type {SparqlJsonResults} from '../sparql/resultMapping.js';
+import type {SparqlQueryResults} from '../sparql/resultMapping.js';
 import type {SparqlOptions} from '../sparql/sparqlUtils.js';
 
 /**
@@ -54,7 +54,7 @@ export class FusekiStore extends SparqlDataset {
 
   protected async executeSparqlSelect(
     sparql: string,
-  ): Promise<SparqlJsonResults> {
+  ): Promise<SparqlQueryResults> {
     const response = await fetch(this.queryEndpoint, {
       method: 'POST',
       headers: {

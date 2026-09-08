@@ -760,6 +760,11 @@ createPropertyShape(
 // PropertyShape.hasValue (literal or IRI — generic)
 createPropertyShape({path: shacl.hasValue, maxCount: 1}, 'hasValue', null, PropertyShape);
 
+// PropertyShape.defaultValue (literal or IRI — generic, mirrors hasValue).
+// getResult() already emits `defaultValue`, but without this registration the
+// property is not queryable and a query referencing it throws before executing.
+createPropertyShape({path: shacl.defaultValue, maxCount: 1}, 'defaultValue', null, PropertyShape);
+
 // PropertyShape value-range / string-length / pattern constraints (report 021 §3, G5).
 // The range constraints carry no fixed datatype — the literal is typed from the JS value
 // (integer/double), mirroring the constrained property's own datatype. Length is an integer;

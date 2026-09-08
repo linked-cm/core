@@ -35,6 +35,10 @@ setQueryDispatch({
     _lastQuery = toIR(query);
     return [] as any;
   },
+  askQuery: async (query) => {
+    _lastQuery = toIR(query);
+    return false;
+  },
   createQuery: async (query) => {
     _lastQuery = toIR(query);
     return {} as any;
