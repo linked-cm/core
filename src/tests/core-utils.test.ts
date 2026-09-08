@@ -117,6 +117,23 @@ describe('ShapeClass utilities', () => {
     expect(property?.parentNodeShape).toBe(BaseShape.shape);
   });
 
+  test('getPropertyShapeByLabel safely resolves runtime metadata', () => {
+    const runtimeName = {
+      id: 'linked://tmp/runtime/name',
+      label: 'name',
+      path: {id: 'http://schema.org/name'},
+    };
+    class RuntimeLikeShape extends Shape {
+      static shape = {
+        id: 'linked://tmp/runtime',
+        propertyShapes: [runtimeName],
+      } as any;
+    }
+
+    expect(getPropertyShapeByLabel(RuntimeLikeShape, 'name')).toBe(runtimeName);
+    expect(getPropertyShapeByLabel(RuntimeLikeShape, 'unknown')).toBeUndefined();
+  });
+
   test('getMostSpecificSubShapes returns only leaves', () => {
     const mostSpecific = getMostSpecificSubShapes(BaseShape);
     expect(mostSpecific).toEqual(
