@@ -1,6 +1,6 @@
 import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
 import {
-  getPropertyShapes,
+  getPropertyShape,
   type NodeShapeData,
   type PropertyShapeData,
 } from '../shapes/nodeShapeData.js';
@@ -132,24 +132,9 @@ export function getSuperShapesClasses(
 export function getPropertyShapeByLabel(
   shapeClass: typeof Shape,
   label: string,
-): PropertyShapeData {
-  //get all the shapes that this shape extends
-  let shapeChain: (typeof Shape)[] = getSuperShapesClasses(
-    shapeClass as typeof Shape,
-  );
-  //include the shape itself as the first shape in the array
-  shapeChain.unshift(shapeClass as typeof Shape);
-
-  let propertyShape: PropertyShapeData;
-  for (let sClass of shapeChain) {
-    propertyShape = getPropertyShapes(sClass.shape).find(
-      (ps) => ps.label === label,
-    );
-    if (propertyShape) {
-      break;
-    }
-  }
-  return propertyShape;
+): PropertyShapeData | undefined {
+  if (!shapeClass.shape) return undefined;
+  return getPropertyShape(shapeClass.shape, label, true);
 }
 
 export function hasSuperClass(a: Function, b: Function) {
@@ -247,4 +232,3 @@ function getShapeKey(shape: typeof Shape) {
     shape.name + shape.prototype.constructor.toString().substring(0, 80)
   );
 }
-
