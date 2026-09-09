@@ -46,3 +46,11 @@ as data, taking metadata (`NodeShapeData` or its wire form) rather than a bespok
 `registerRuntimeShapes` orders a batch parents-first, because inheritance resolves
 `extends` through the registry and a child registered ahead of its parent would resolve an
 empty chain. Neither shadows a compiled class.
+
+Query lowering, containment resolution, blank-node deletion and mutation lowering all read
+the shape registry rather than the class registry, so a shape that exists only as data
+lowers to the same SPARQL a compiled one does — with its declared `targetClass` (walking
+`extends` where it is inherited) and its declared `sh:path` as the predicate. `validate()`
+accepts such a shape as registered. The three lowering caches key on the registration
+version instead of the class registry's size, which did not change when a shape was
+re-registered in place.
