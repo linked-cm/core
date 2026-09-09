@@ -46,7 +46,13 @@ import {rdf} from '../ontologies/rdf.js';
 import {shacl} from '../ontologies/shacl.js';
 import {xsd} from '../ontologies/xsd.js';
 import {getSimplePathId} from '../paths/normalizePropertyPath.js';
-import {getAllShapeClasses, getShapeClass} from '../utils/ShapeClass.js';
+import {
+  getAllNodeShapes,
+  getNodeShape,
+  getRegistryVersion,
+  getShapeClass,
+  getSuperShapes,
+} from '../utils/ShapeClass.js';
 import {UnresolvedContextError} from '../queries/QueryContext.js';
 
 // ---------------------------------------------------------------------------
@@ -106,8 +112,16 @@ function tripleOf(
  * `targetClass` whenever that was still temporary.
  */
 function resolveShapeScanIri(shapeId: string): string {
-  const shapeClass = getShapeClass(shapeId);
-  const targetClassId = shapeClass?.targetClass?.id;
+  // The METAMODEL registry, not the class registry. A shape that exists only as data has
+  // no class — that is the whole point of it — and reading `getShapeClass(...)` here made
+  // `SelectBuilder.from(dataOnlyIri)` resolve, build an IR, and then die at this line.
+  //
+  // A class's `targetClass` is inherited through the prototype chain for free; a data-only
+  // shape's is not, so walk `extends` explicitly.
+  const targetClassId =
+    getShapeClass(shapeId)?.targetClass?.id ??
+    getNodeShape(shapeId)?.targetClass?.id ??
+    getSuperShapes(shapeId).find((s) => s.targetClass?.id)?.targetClass?.id;
   if (!targetClassId) {
     throw new Error(
       `Cannot resolve an rdf:type for shape "${shapeId}": no targetClass is declared ` +
@@ -146,18 +160,26 @@ const propertyShapeCache = new Map<string, PropertyShapeData>();
 let propertyShapeCacheSize = -1;
 
 function findPropertyShapeById(propertyId: string): PropertyShapeData | undefined {
-  const shapeClasses = getAllShapeClasses();
-  if (shapeClasses.size !== propertyShapeCacheSize) {
+  // Scans the METAMODEL registry, which holds every shape — authored or data-only.
+  // Scanning the class registry meant a data-only property was never found, and the
+  // caller then fell through to emitting the PROPERTY SHAPE's IRI as the SPARQL
+  // predicate: a silently wrong query that matched nothing, with no error.
+  //
+  // Cache keyed on the registration version rather than the registry SIZE. Size does not
+  // change when a shape is re-registered in place, which is exactly what happens when a
+  // shape is edited and its metadata replaced.
+  const version = getRegistryVersion();
+  if (version !== propertyShapeCacheSize) {
     propertyShapeCache.clear();
-    propertyShapeCacheSize = shapeClasses.size;
+    propertyShapeCacheSize = version;
   }
   const cached = propertyShapeCache.get(propertyId);
   if (cached) return cached;
 
-  for (const shapeClass of shapeClasses.values()) {
-    const propertyShape = (
-      shapeClass.shape ? getPropertyShapes(shapeClass.shape, true) : []
-    ).find((prop: {id?: string}) => prop.id === propertyId);
+  for (const nodeShape of getAllNodeShapes().values()) {
+    const propertyShape = getPropertyShapes(nodeShape, true).find(
+      (prop: {id?: string}) => prop.id === propertyId,
+    );
     if (propertyShape) {
       propertyShapeCache.set(propertyId, propertyShape);
       return propertyShape;
@@ -177,10 +199,10 @@ function resolvePropertyDatatype(propertyId: string): string | undefined {
 }
 
 function resolvePropertyPredicateTerm(propertyId: string): SparqlTerm {
-  const registrySize = getAllShapeClasses().size;
-  if (registrySize !== predicateTermCacheSize) {
+  const version = getRegistryVersion();
+  if (version !== predicateTermCacheSize) {
     predicateTermCache.clear();
-    predicateTermCacheSize = registrySize;
+    predicateTermCacheSize = version;
   }
   const cached = predicateTermCache.get(propertyId);
   if (cached) return cached;
@@ -2269,7 +2291,7 @@ function buildDeleteInsertPlan(
 
 /** True when the shape (or an ancestor) declares at least one `contains` property. */
 function shapeHasContainsProperty(shapeId: string): boolean {
-  const nodeShape = getShapeClass(shapeId)?.shape;
+  const nodeShape = getShapeClass(shapeId)?.shape ?? getNodeShape(shapeId);
   if (!nodeShape) return false;
   return getPropertyShapes(nodeShape, true)
     .some((ps) => (ps as {contains?: boolean}).contains);
@@ -2283,14 +2305,13 @@ let containmentCacheSize = -1;
 
 /** Gather contains-predicate IRIs and dependent targetClass IRIs from the registry. */
 function collectContainment(): {containsPreds: string[]; dependentTypes: string[]} {
-  const shapeClasses = getAllShapeClasses();
-  if (containmentCache && shapeClasses.size === containmentCacheSize) {
+  const version = getRegistryVersion();
+  if (containmentCache && version === containmentCacheSize) {
     return containmentCache;
   }
   const containsPreds = new Set<string>();
   const dependentTypes = new Set<string>();
-  for (const [, shapeClass] of shapeClasses) {
-    const nodeShape = shapeClass?.shape;
+  for (const nodeShape of getAllNodeShapes().values()) {
     if (!nodeShape) continue;
     if ((nodeShape as {dependent?: boolean}).dependent && nodeShape.targetClass?.id) {
       dependentTypes.add(nodeShape.targetClass.id);
@@ -2304,7 +2325,7 @@ function collectContainment(): {containsPreds: string[]; dependentTypes: string[
     }
   }
   containmentCache = {containsPreds: [...containsPreds], dependentTypes: [...dependentTypes]};
-  containmentCacheSize = shapeClasses.size;
+  containmentCacheSize = version;
   return containmentCache;
 }
 
@@ -2473,12 +2494,12 @@ function walkBlankNodeTree(
   depth: number,
   deletePatterns: SparqlTriple[],
 ): SparqlAlgebraNode | null {
-  const shapeClass = getShapeClass(shapeId);
-  if (!shapeClass?.shape) return null;
+  const nodeShape = getShapeClass(shapeId)?.shape ?? getNodeShape(shapeId);
+  if (!nodeShape) return null;
 
   let optionals: SparqlAlgebraNode | null = null;
 
-  const props = shapeClass.shape ? getPropertyShapes(shapeClass.shape, true) : [];
+  const props = getPropertyShapes(nodeShape, true);
   for (const prop of props) {
     if (!isBlankNodeProperty(prop)) continue;
 

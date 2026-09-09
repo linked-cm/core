@@ -23,7 +23,7 @@ import {
   type UpdateNodePropertyValue,
 } from './QueryFactory.js';
 import {ExpressionNode} from '../expressions/ExpressionNode.js';
-import {getShapeClass} from '../utils/ShapeClass.js';
+import {getNodeShape, getShapeClass} from '../utils/ShapeClass.js';
 import type {IRExpression, IRGraphPattern} from './IntermediateRepresentation.js';
 import {
   deserializeWherePath,
@@ -57,7 +57,9 @@ import {decodeValueExpr, type DslJsonValue} from './DslJsonExpression.js';
 import type {PropertyShapeData} from '../shapes/SHACL.js';
 
 function requireShape(shapeId: string): NodeShapeData {
-  const shape = getShapeClass(shapeId)?.shape;
+  // Either registry: a project-authored shape arrives as metadata with no class, and
+  // requiring a class here made every mutation against one fail at the boundary.
+  const shape = getShapeClass(shapeId)?.shape ?? getNodeShape(shapeId);
   if (!shape) {
     throw new Error(
       `Shape '${shapeId}' is not registered. The receiving side must have the shape registered to lower mutation DSL-JSON.`,
