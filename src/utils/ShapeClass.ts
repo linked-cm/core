@@ -17,8 +17,266 @@ const resolveTargetClassId = (
 let subShapesCache: Map<string, (typeof Shape)[]> = new Map();
 let mostSpecificSubShapesCache: Map<string, (typeof Shape)[]> = new Map();
 let nodeShapeToShapeClass: Map<string, typeof Shape> = new Map();
-let shouldResetCache = false;
 const warnedDuplicateBases = new Set<string>();
+
+/**
+ * The PRIMARY shape registry: node-shape IRI → its metadata.
+ *
+ * Every shape is here — those declared by a `@linkedShape` class and those known only
+ * as data (a project-authored shape read from the graph). `nodeShapeToShapeClass` above
+ * is the SECONDARY registry, holding only the shapes that have a TypeScript class, and
+ * exists for the few callers that genuinely need a class (a `ShapeProvider` lookup, a
+ * typed accessor). Query lowering, predicate resolution and containment all read
+ * metadata, so they use this map and work identically for both kinds of shape.
+ */
+let nodeShapeRegistry: Map<string, NodeShapeData> = new Map();
+
+/** Version the sub-shape caches above were filled at. */
+let subShapesCacheVersion = -1;
+
+/**
+ * Monotonic registration counter. Every derived cache in this module (and in
+ * `irToAlgebra`) is keyed on it.
+ *
+ * It replaces two earlier invalidation strategies that were both unsound: a
+ * `setTimeout(…, 0)` cache clear (which missed anything registered later in the same
+ * session) and comparing the registry SIZE (which silently reuses a stale cache when a
+ * registration and a removal coincide, or when a shape is re-registered in place).
+ */
+let registryVersion = 0;
+
+/** The current registration version — bump-on-write, for cache invalidation. */
+export function getRegistryVersion(): number {
+  return registryVersion;
+}
+
+/** Reverse index parentIri → direct child IRIs, rebuilt when the registry changes. */
+let childIndex: Map<string, string[]> | null = null;
+let childIndexVersion = -1;
+
+function getChildIndex(): Map<string, string[]> {
+  if (childIndex && childIndexVersion === registryVersion) return childIndex;
+  const index = new Map<string, string[]>();
+  nodeShapeRegistry.forEach((shape, id) => {
+    const parent = shape.extends?.id;
+    if (!parent) return;
+    const siblings = index.get(parent);
+    if (siblings) siblings.push(id);
+    else index.set(parent, [id]);
+  });
+  childIndex = index;
+  childIndexVersion = registryVersion;
+  return index;
+}
+
+function invalidateRegistryCaches() {
+  registryVersion++;
+  subShapesCache.clear();
+  mostSpecificSubShapesCache.clear();
+  childIndex = null;
+}
+
+/** Drop the adapter for a shape whose metadata was replaced. */
+function invalidateShapeAdapter(id: string) {
+  shapeAdapters.delete(id);
+}
+
+/**
+ * Register a shape known only as data — no TypeScript class is created.
+ *
+ * This is the return leg of the round trip: `@linkedShape` is class → metadata,
+ * `syncShapes` is metadata → RDF, and this is RDF → metadata. Idempotent: re-registering
+ * the same IRI replaces the metadata (a shape edited in the builder), which is why cache
+ * invalidation cannot be keyed on registry size.
+ */
+export function registerNodeShape(nodeShape: NodeShapeData): void {
+  if (!nodeShape?.id) return;
+  nodeShapeRegistry.set(nodeShape.id, nodeShape);
+  invalidateShapeAdapter(nodeShape.id);
+  invalidateRegistryCaches();
+}
+
+/** The metadata for a node-shape IRI, whether or not it has a TypeScript class. */
+export function getNodeShape(
+  nodeShape: NodeReferenceValue | {id: string} | string,
+): NodeShapeData | undefined {
+  const id = typeof nodeShape === 'string' ? nodeShape : nodeShape?.id;
+  if (!id) return undefined;
+  return nodeShapeRegistry.get(id);
+}
+
+/** Every registered shape's metadata, keyed by node-shape IRI. */
+export function getAllNodeShapes(): ReadonlyMap<string, NodeShapeData> {
+  return nodeShapeRegistry;
+}
+
+/**
+ * Lazily-built constructors for shapes that exist only as data.
+ *
+ * The builder entry points (`QueryBuilder`, `CreateBuilder`, `UpdateBuilder`,
+ * `DeleteBuilder` via `resolveShape`) take a `ShapeConstructor` and instantiate result
+ * proxies from it, so they need *a* class. Rather than have every caller hand-roll one —
+ * which is what `create-now-js`'s `registerRuntimeShape` used to do, losing `extends` and
+ * every value constraint on the way — core derives one on demand from the registered
+ * metadata and caches it.
+ *
+ * These adapters are deliberately NOT in `nodeShapeToShapeClass`: `getShapeClass` keeps
+ * telling the truth about which shapes have a real, authored class. An adapter carries
+ * the metadata verbatim, so nothing is lost, and inheritance is read from
+ * `nodeShape.extends` (not from the adapter's prototype, which is always `Shape`).
+ */
+const shapeAdapters: Map<string, typeof Shape> = new Map();
+
+/**
+ * A constructor for a shape known only as data, created on first use.
+ *
+ * Returns undefined when the IRI is not registered at all. Prefer `getShapeClass` when
+ * you specifically need an authored class; use this when you need *something*
+ * constructor-shaped to drive the query builders.
+ */
+export function getOrCreateShapeAdapter(
+  nodeShape: NodeShapeData | string,
+): typeof Shape | undefined {
+  const data =
+    typeof nodeShape === 'string' ? nodeShapeRegistry.get(nodeShape) : nodeShape;
+  if (!data?.id) return undefined;
+
+  const authored = nodeShapeToShapeClass.get(data.id);
+  if (authored) return authored;
+
+  const cached = shapeAdapters.get(data.id);
+  // Re-registering a shape replaces its metadata, so an adapter built from the old
+  // object must not be reused.
+  if (cached && cached.shape === data) return cached;
+
+  class RuntimeShape extends Shape {
+    static shape = data as NodeShapeData;
+    static targetClass = (data as NodeShapeData).targetClass ?? null;
+  }
+  Object.defineProperty(RuntimeShape, 'name', {
+    value: (data as NodeShapeData).label || 'RuntimeShape',
+  });
+  shapeAdapters.set(data.id, RuntimeShape);
+  return RuntimeShape;
+}
+
+/** Anything that can identify a shape: its metadata, its class, or its IRI. */
+export type ShapeLike = NodeShapeData | typeof Shape | Function | string;
+
+/** Resolve a ShapeLike to node-shape metadata, or undefined if it isn't a shape. */
+function toNodeShapeData(shape: ShapeLike): NodeShapeData | undefined {
+  if (!shape) return undefined;
+  if (typeof shape === 'string') return nodeShapeRegistry.get(shape);
+  const asData = shape as NodeShapeData;
+  // NodeShapeData is a plain object with an id; a Shape class is a function.
+  if (typeof shape === 'object' && typeof asData.id === 'string') {
+    return nodeShapeRegistry.get(asData.id) ?? asData;
+  }
+  const asClass = shape as typeof Shape;
+  const shapeData = asClass?.shape;
+  if (shapeData?.id) return nodeShapeRegistry.get(shapeData.id) ?? shapeData;
+  return undefined;
+}
+
+const warnedUnresolvedExtends = new Set<string>();
+
+/**
+ * Every shape the given shape extends, most specific first.
+ *
+ * THE canonical inheritance walk — `getPropertyShapes(shape, true)` delegates to it, so
+ * there is exactly one answer to "what does this shape extend". Two earlier walks
+ * disagreed (one over the prototype chain, one over `extends`) and that divergence, not
+ * either strategy, was the bug: `selectAll` listed labels from one and resolved them
+ * through the other, so an inherited property became unresolvable and the query proxy
+ * threw.
+ *
+ * Strategy is chosen by what is available:
+ *
+ * - **A class-backed shape walks its prototype chain.** This is authoritative and
+ *   includes the framework `Shape` root, whose own property shapes (`label`, `type`) are
+ *   genuinely inherited. `applyLinkedShape` deliberately does NOT record `extends` for
+ *   that root — it is not a domain shape and must not appear as an `extends` triple in
+ *   materialized SHACL — so the data alone cannot see it.
+ * - **A shape known only as data walks `extends` through the registry.** This is what
+ *   makes inheritance work for a project-authored shape with no class, which the
+ *   prototype chain cannot express.
+ *
+ * `extends` is a REFERENCE, so a parent that was never registered ends the walk. The
+ * prototype chain has no such failure mode, so it warns once per shape rather than
+ * throwing — this runs on read paths.
+ */
+export function getSuperShapes(shape: ShapeLike): NodeShapeData[] {
+  const start = toNodeShapeData(shape);
+  const chain: NodeShapeData[] = [];
+  if (!start) return chain;
+
+  // Class-backed: the prototype chain is the authority.
+  const startClass = nodeShapeToShapeClass.get(start.id);
+  if (startClass) {
+    let current: typeof Shape | undefined = startClass;
+    while (current) {
+      const parent = Object.getPrototypeOf(current) as typeof Shape | undefined;
+      if (!parent?.shape) break;
+      chain.push(parent.shape);
+      if ((parent as unknown) === (Shape as unknown)) break;
+      current = parent;
+    }
+    return chain;
+  }
+
+  const seen = new Set<string>([start.id]);
+  let current: NodeShapeData | undefined = start;
+  while (current?.extends?.id) {
+    const parentId = current.extends.id;
+    if (seen.has(parentId)) break; // cycle guard — malformed data must not hang a read
+    seen.add(parentId);
+    const parent = nodeShapeRegistry.get(parentId);
+    if (!parent) {
+      if (!warnedUnresolvedExtends.has(current.id)) {
+        warnedUnresolvedExtends.add(current.id);
+        console.warn(
+          `[linked] Shape '${current.id}' extends '${parentId}', which is not registered. ` +
+            `Inherited properties from it are unavailable. Register the parent shape first ` +
+            `(import its module, or register its metadata before the child).`,
+        );
+      }
+      break;
+    }
+    chain.push(parent);
+    current = parent;
+  }
+  return chain;
+}
+
+/** Every shape that extends the given shape, transitively. Most specific last. */
+export function getSubShapes(shape: ShapeLike): NodeShapeData[] {
+  const start = toNodeShapeData(shape);
+  if (!start) return [];
+  const index = getChildIndex();
+  const out: NodeShapeData[] = [];
+  const seen = new Set<string>([start.id]);
+  const queue = [start.id];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const childId of index.get(current) ?? []) {
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      const child = nodeShapeRegistry.get(childId);
+      if (child) {
+        out.push(child);
+        queue.push(childId);
+      }
+    }
+  }
+  return out;
+}
+
+/** True when `a` extends `b` (strictly — a shape is not a sub-shape of itself). */
+export function isSubShapeOf(a: ShapeLike, b: ShapeLike): boolean {
+  const target = toNodeShapeData(b);
+  if (!target) return false;
+  return getSuperShapes(a).some((superShape) => superShape.id === target.id);
+}
 
 export function addNodeShapeToShapeClass(
   nodeShape: NodeShapeData,
@@ -56,15 +314,10 @@ export function addNodeShapeToShapeClass(
     }
   }
   nodeShapeToShapeClass.set(nodeShape.id, shapeClass);
-  //make sure that the cache is reset after the next event loop
-  if (!shouldResetCache) {
-    shouldResetCache = true;
-    setTimeout(() => {
-      subShapesCache.clear();
-      mostSpecificSubShapesCache.clear();
-      shouldResetCache = false;
-    }, 0);
-  }
+  // The class-backed shape goes into the primary registry too, so metadata consumers
+  // see one map regardless of how a shape was declared. This also bumps the version,
+  // which invalidates every derived cache immediately rather than on a next-tick timer.
+  registerNodeShape(nodeShape);
 }
 
 export function getShapeClass(
@@ -97,6 +350,11 @@ export function getSubShapesClasses(
   _internalKey?: string,
 ): (typeof Shape)[] {
   let key = _internalKey || getKey(shape);
+  if (subShapesCacheVersion !== registryVersion) {
+    subShapesCache.clear();
+    mostSpecificSubShapesCache.clear();
+    subShapesCacheVersion = registryVersion;
+  }
   if (!subShapesCache.has(key)) {
     //apply the hasSuperclass function to the shape
     let filterFunction = applyFnToShapeOrArray(shape, hasSubClass);
@@ -137,12 +395,28 @@ export function getPropertyShapeByLabel(
   return getPropertyShape(shapeClass.shape, label, true);
 }
 
-export function hasSuperClass(a: Function, b: Function) {
-  return (a as Function).prototype instanceof b;
+/**
+ * True when `a` extends `b`.
+ *
+ * Inheritance is read from `nodeShape.extends` (data), not from the JS prototype chain.
+ * `applyLinkedShape` derives `extends` FROM the prototype chain, so for a class-backed
+ * shape the two agree — but only the data form also works for a shape that has no
+ * class, which is the whole point. The prototype comparison is kept as a fallback for
+ * classes that are not registered as shapes at all (an abstract intermediate class).
+ */
+export function hasSuperClass(a: ShapeLike, b: ShapeLike) {
+  if (!a || !b) return false;
+  const aData = toNodeShapeData(a);
+  const bData = toNodeShapeData(b);
+  if (aData && bData) return isSubShapeOf(aData, bData);
+  return typeof a === 'function' && typeof b === 'function'
+    ? (a as Function).prototype instanceof (b as Function)
+    : false;
 }
 
-export function hasSubClass(a: Function, b: Function) {
-  return (b as Function).prototype instanceof a;
+/** True when `b` extends `a` — the mirror of {@link hasSuperClass}. */
+export function hasSubClass(a: ShapeLike, b: ShapeLike) {
+  return hasSuperClass(b, a);
 }
 
 function applyFnToShapeOrArray(shape, filterFn) {
@@ -183,6 +457,11 @@ export function getMostSpecificSubShapes(
   }
   //get the subshapes of the given shapes
   let key = shape.map((s) => s.name).join(',');
+  if (subShapesCacheVersion !== registryVersion) {
+    subShapesCache.clear();
+    mostSpecificSubShapesCache.clear();
+    subShapesCacheVersion = registryVersion;
+  }
   if (!mostSpecificSubShapesCache.has(key)) {
     //get the subshapes of the given shapes
     let subShapes: (typeof Shape)[] = getSubShapesClasses(shape, key);

@@ -4,10 +4,17 @@ summary: >
   prototype chain and fall back to own-properties-only when a shape has no class. A shape
   registered from data therefore cannot resolve an inherited property — the failure #211 set
   out to fix, for the sub-case where there is no compiled class.
-status: Backlog
+status: Done
 ---
 
 # 040 — inheritance walks that ignore `nodeShape.extends`
+
+> **Done.** `getSuperShapes` is now the single canonical walk; `getPropertyShapes` and
+> `getPropertyShape` both delegate to it, so the singular and plural lookups cannot
+> disagree and a shape known only as data resolves what it inherits through `extends`.
+> Because `getPropertyShapeByLabel` delegates to `getPropertyShape` (PR #211), the query
+> proxies get the fix for free. The description below is kept as the record of what was
+> wrong.
 
 ## The behaviour
 
@@ -71,9 +78,9 @@ cannot drift apart.
 ## Related
 
 - The Create Now plan that surfaced this: `docs/plans/042-shape-metamodel-collapse-and-data-manager.md`
-  in the Create Now repo. Its metamodel branch already unifies `getSuperShapes` with
-  `getPropertyShapes`; **`getPropertyShape` (singular) is not yet covered** and needs the same
-  treatment before this item can close.
+  in the Create Now repo. Its metamodel work unified `getSuperShapes` with `getPropertyShapes`;
+  the follow-up commit here brought `getPropertyShape` (singular) onto the same walk, which is
+  what closed this item.
 - [#211](https://github.com/linked-cm/core/pull/211) — removed the duplicated walk at the
   `getPropertyShapeByLabel` call site.
 - Both call sites of `getPropertyShapeByLabel` (`queries/SelectQuery.ts`, `shapes/Shape.ts`) do

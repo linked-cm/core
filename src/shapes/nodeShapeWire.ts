@@ -1,0 +1,109 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/**
+ * JSON-safe transport form of the shape metamodel.
+ *
+ * `NodeShapeData` is the one shape metamodel (see `nodeShapeData.ts`). It is
+ * *almost* JSON-safe already — `PathExpr` is a plain discriminated union, and every
+ * constraint field holds a primitive or a `{id}` reference. Exactly two things stop
+ * it crossing a wire:
+ *
+ *   1. `PropertyShapeData.parentNodeShape` is a back-reference to the owning node
+ *      shape, so the object graph is circular and `JSON.stringify` throws.
+ *   2. `PropertyShapeData.pattern` is a live `RegExp`, which serializes to `{}`.
+ *
+ * So the wire form is defined *by subtraction* from the metamodel rather than as a
+ * parallel type: drop the back-reference, carry the pattern as its source string,
+ * change nothing else. Every field added to `PropertyShapeData` is therefore carried
+ * automatically — the single biggest maintenance failure of the `ShapeDetails` type
+ * this replaces was that it enumerated a subset by hand and silently fell behind.
+ *
+ * `fromWire` restores the back-reference and recompiles the pattern, so
+ * `fromWire(toWire(shape))` is structurally equal to `shape`.
+ */
+
+import type {NodeShapeData, PropertyShapeData} from './nodeShapeData.js';
+
+/** `PropertyShapeData` minus the circular parent link, with `pattern` as a string. */
+export type PropertyShapeWire = Omit<
+  PropertyShapeData,
+  'pattern' | 'parentNodeShape'
+> & {
+  /** `sh:pattern` as its SOURCE string — never a live RegExp. */
+  pattern?: string;
+  /** RegExp flags, so a case-insensitive pattern survives the round trip. */
+  patternFlags?: string;
+};
+
+/** `NodeShapeData` whose property shapes are in wire form. */
+export type NodeShapeWire = Omit<NodeShapeData, 'propertyShapes'> & {
+  propertyShapes: PropertyShapeWire[];
+};
+
+/**
+ * True when the value is already in wire form (or is indistinguishable from it —
+ * a shape with no patterns and no parent links satisfies both types, which is
+ * harmless because the conversions are then identities).
+ */
+export function isNodeShapeWire(
+  shape: NodeShapeData | NodeShapeWire,
+): shape is NodeShapeWire {
+  return (shape.propertyShapes ?? []).every(
+    (prop) =>
+      !(prop as PropertyShapeData).parentNodeShape &&
+      !((prop as PropertyShapeData).pattern instanceof RegExp),
+  );
+}
+
+/** Metamodel → wire. Drops the parent back-reference, stringifies the pattern. */
+export function toWire(shape: NodeShapeData): NodeShapeWire {
+  return {
+    ...shape,
+    propertyShapes: (shape.propertyShapes ?? []).map(propertyToWire),
+  };
+}
+
+/** Wire → metamodel. Restores the parent back-reference, recompiles the pattern. */
+export function fromWire(wire: NodeShapeWire): NodeShapeData {
+  const shape: NodeShapeData = {
+    ...wire,
+    propertyShapes: [],
+  };
+  shape.propertyShapes = (wire.propertyShapes ?? []).map((prop) =>
+    propertyFromWire(prop, shape),
+  );
+  return shape;
+}
+
+function propertyToWire(prop: PropertyShapeData): PropertyShapeWire {
+  // Destructure the two problem fields out; everything else is carried verbatim,
+  // which is what keeps this from falling behind the metamodel.
+  const {pattern, parentNodeShape: _drop, ...rest} = prop;
+  const wire = rest as PropertyShapeWire;
+  if (pattern instanceof RegExp) {
+    wire.pattern = pattern.source;
+    if (pattern.flags) wire.patternFlags = pattern.flags;
+  } else if (typeof pattern === 'string') {
+    // Tolerate a pattern that is already a source string (a wire object handed
+    // back in). Not a supported input type, but silently dropping it would be worse.
+    wire.pattern = pattern;
+  }
+  return wire;
+}
+
+function propertyFromWire(
+  wire: PropertyShapeWire,
+  parent: NodeShapeData,
+): PropertyShapeData {
+  const {pattern, patternFlags, ...rest} = wire;
+  const prop = rest as PropertyShapeData;
+  if (typeof pattern === 'string') {
+    prop.pattern = new RegExp(pattern, patternFlags ?? '');
+  }
+  prop.parentNodeShape = parent;
+  return prop;
+}

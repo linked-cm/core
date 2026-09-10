@@ -19,7 +19,7 @@ describe('propertyShapeTerms', () => {
     const terms = getPropertyShapeTerms();
     for (const label of [
       'path', 'nodeKind', 'datatype', 'minCount', 'maxCount', 'name', 'description',
-      'class', 'in', 'equals', 'disjoint', 'lessThan', 'lessThanOrEquals', 'hasValue',
+      'class', 'in', 'disjoint', 'lessThan', 'lessThanOrEquals', 'hasValue',
       'minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive',
       'minLength', 'maxLength', 'pattern', 'order', 'group',
     ]) {
@@ -47,6 +47,12 @@ describe('propertyShapeTerms', () => {
 
   test('valueShape maps to sh:node, and unknown labels are undefined', () => {
     expect(getPropertyShapeTerm('valueShape')?.predicate).toBe(`${SH}node`);
+    // sh:equals is labelled `equalsConstraint` — `equals` is a query-builder method.
+    expect(getPropertyShapeTerm('equalsConstraint')?.predicate).toBe(`${SH}equals`);
+    // …but the DECORATOR key is still `equals`, and code-to-SHACL materialization looks
+    // terms up by that key. Asserting it resolves to nothing was asserting the bug: it
+    // meant `@literalProperty({equals: …})` silently stopped emitting sh:equals.
+    expect(getPropertyShapeTerm('equals')?.predicate).toBe(`${SH}equals`);
     expect(getPropertyShapeTerm('notAConstraint')).toBeUndefined();
   });
 });

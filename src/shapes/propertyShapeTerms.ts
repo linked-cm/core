@@ -14,9 +14,10 @@ import {PropertyShape} from './SHACL.js';
 export interface PropertyShapeTerm {
   /**
    * The constraint's name as used by the decorator config and by `PropertyShapeData`
-   * — e.g. `pattern`, `minLength`, `in`. (A few `PropertyShapeData` fields carry a
-   * disambiguating suffix — `equalsConstraint`, `hasValueConstraint` — the LABEL is
-   * always the bare SHACL name, `equals` / `hasValue`.)
+   * — e.g. `pattern`, `minLength`, `in`. Usually the bare SHACL name, but not always:
+   * `sh:equals` is labelled `equalsConstraint`, because a property labelled `equals`
+   * would be shadowed by the query builder's own `equals()` (backlog 041). Look a
+   * constraint up by label, never by assuming the predicate's local name.
    */
   label: string;
   /** The predicate IRI the constraint serializes to, e.g. `sh:pattern`. */
@@ -42,6 +43,22 @@ let cached: Map<string, PropertyShapeTerm> | undefined;
  * Requires the meta-model to have been set up (importing `@_linked/core` or `utils/Package`
  * does that). The result is cached once non-empty.
  */
+/**
+ * Author-facing decorator config keys that do not match the meta-shape label.
+ *
+ * `sh:equals` is labelled `equalsConstraint` on the meta-shape, because the bare name
+ * collides with `QueryShape.equals` and made the constraint unselectable through the DSL.
+ * The DECORATOR key stayed `equals` — that is what a person writes, and renaming it would
+ * break every existing shape for a reason internal to the query builder.
+ *
+ * Which leaves a gap this map closes: code-to-SHACL materialization looks terms up by the
+ * config key, so without the alias `@literalProperty({equals: …})` silently stopped
+ * emitting `sh:equals` — no error, just a constraint quietly missing from the graph.
+ */
+const CONFIG_KEY_ALIASES: Record<string, string> = {
+  equals: 'equalsConstraint',
+};
+
 export function getPropertyShapeTerms(): ReadonlyMap<string, PropertyShapeTerm> {
   if (cached && cached.size) return cached;
   const map = new Map<string, PropertyShapeTerm>();
@@ -63,5 +80,5 @@ export function getPropertyShapeTerms(): ReadonlyMap<string, PropertyShapeTerm> 
 
 /** Lookup of a single constraint by label — see {@link getPropertyShapeTerms}. */
 export function getPropertyShapeTerm(label: string): PropertyShapeTerm | undefined {
-  return getPropertyShapeTerms().get(label);
+  return getPropertyShapeTerms().get(label) ?? getPropertyShapeTerms().get(CONFIG_KEY_ALIASES[label] ?? '');
 }

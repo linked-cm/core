@@ -42,7 +42,7 @@ import {xsd} from '../ontologies/xsd.js';
 import {isNodeReferenceValue, type NodeReferenceValue} from '../utils/NodeReference.js';
 import {getUniquePropertyShapes} from './nodeShapeData.js';
 import type {NodeShapeData, PropertyShapeData} from './nodeShapeData.js';
-import {getShapeClass} from '../utils/ShapeClass.js';
+import {getNodeShape, getShapeClass} from '../utils/ShapeClass.js';
 import {isExpressionNode} from '../expressions/ExpressionNode.js';
 import {asContextRef} from '../queries/QueryContext.js';
 
@@ -775,7 +775,12 @@ function validateNode(
   // is not registered, that resolution quietly yields half a shape — required
   // inherited properties go unchecked, and any that *are* supplied look
   // undeclared. Report it rather than let a partial shape pass as a clean bill.
-  if (shape.extends?.id && !getShapeClass(shape.id)) {
+  //
+  // "Registered" means present in EITHER registry. Checking only for a class rejected
+  // exactly the shapes the metamodel work exists to support: a data-only child is
+  // registered, its parent resolves, and its inherited properties are checked — it simply
+  // has no class, which is not a defect.
+  if (shape.extends?.id && !getShapeClass(shape.id) && !getNodeShape(shape.id)) {
     results.push(
       nodeViolation(
         shape,
