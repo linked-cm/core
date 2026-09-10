@@ -6,6 +6,7 @@
 import {type NodeReferenceValue, toNodeReference} from '../utils/NodeReference.js';
 import {Shape, type ShapeConstructor} from './Shape.js';
 import {shacl} from '../ontologies/shacl.js';
+import {warnOnReservedPropertyLabel} from '../queries/reservedQueryNames.js';
 import {getShapeClass} from '../utils/ShapeClass.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
 import {normalizePropertyPath, type PropertyPathDecoratorInput} from '../paths/normalizePropertyPath.js';
@@ -376,6 +377,8 @@ export function registerPropertyShape(
         `and cannot be used as a property name. See documentation/dsl-json.md (Reserved words).`,
     );
   }
+  // Not fatal, but the author needs to hear it here rather than from the field tracer.
+  warnOnReservedPropertyLabel(propertyShape.label, shape.label, shape.id);
   const inherited = getPropertyShapeData(shape, propertyShape.label, true);
   const existing = getPropertyShapeData(shape, propertyShape.label, false);
   if (!existing && inherited) {

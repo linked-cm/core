@@ -54,3 +54,19 @@ lowers to the same SPARQL a compiled one does — with its declared `targetClass
 accepts such a shape as registered. The three lowering caches key on the registration
 version instead of the class registry's size, which did not change when a shape was
 re-registered in place.
+
+The SHACL meta-model's `sh:equals` accessor is relabelled `equalsConstraint`, matching the
+`PropertyShapeData` field (the predicate is unchanged). `equals` is a query-builder method,
+and the query proxy answers a key from its own surface before it looks for a property with
+that label — so a property labelled `equals` returned the DSL method and the field tracer
+failed on a native function. The meta-shape could not read its own constraint. Anything
+looking a constraint up in `getPropertyShapeTerms()` by the label `equals` must now ask for
+`equalsConstraint`.
+
+Registration now reports the general case: `registerPropertyShape` and
+`registerRuntimeShape` check each label against the query DSL surface
+(`RESERVED_QUERY_DSL_NAMES`) and warn once per shape+label, naming the shape, the property
+and why selecting it will fail. It warns rather than throws — `size`, `id` and `some` are
+legitimate domain property names, such a property still round-trips and is still reachable
+by path through DSL-JSON, and throwing would break existing apps on upgrade.
+

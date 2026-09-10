@@ -5,10 +5,26 @@ summary: >
   unreadable through the query DSL. The proxy returns the DSL method, and the field tracer
   fails with "Unknown trace result type: function". The meta-model's own `sh:equals`
   property hits this.
-status: Backlog
+status: Done
 ---
 
 # 041 — property names that collide with the query DSL
+
+> **Done.** Two changes. The meta-model's `sh:equals` accessor is now labelled
+> `equalsConstraint` (matching the `PropertyShapeData` field; the predicate is unchanged),
+> so the SHACL meta-shape can read its own constraint through the DSL again. And every
+> registration path — `registerPropertyShape` for decorated and generated shapes,
+> `registerRuntimeShape` for data-only ones — now checks the label against
+> `RESERVED_QUERY_DSL_NAMES` (`queries/reservedQueryNames.ts`) and `console.warn`s once per
+> shape+label, naming the shape, the property and why it will fail. A **warning, not a
+> throw**: `size`, `id` and `some` are legitimate domain property names, the property still
+> round-trips and is still reachable by path through DSL-JSON, and throwing at registration
+> would break existing apps on upgrade over a property they may never select through the
+> builder. (The DSL-JSON combinators `and`/`or`/`not` keep throwing — those have no escape
+> hatch at all.) The reserved list is a literal rather than derived from the query classes,
+> because the shape registry must not import the query builder; a test compares it against
+> the live prototypes so it cannot drift. The description below is kept as the record of
+> what was wrong.
 
 ## The behaviour
 

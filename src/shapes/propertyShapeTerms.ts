@@ -14,9 +14,10 @@ import {PropertyShape} from './SHACL.js';
 export interface PropertyShapeTerm {
   /**
    * The constraint's name as used by the decorator config and by `PropertyShapeData`
-   * — e.g. `pattern`, `minLength`, `in`. (A few `PropertyShapeData` fields carry a
-   * disambiguating suffix — `equalsConstraint`, `hasValueConstraint` — the LABEL is
-   * always the bare SHACL name, `equals` / `hasValue`.)
+   * — e.g. `pattern`, `minLength`, `in`. Usually the bare SHACL name, but not always:
+   * `sh:equals` is labelled `equalsConstraint`, because a property labelled `equals`
+   * would be shadowed by the query builder's own `equals()` (backlog 041). Look a
+   * constraint up by label, never by assuming the predicate's local name.
    */
   label: string;
   /** The predicate IRI the constraint serializes to, e.g. `sh:pattern`. */

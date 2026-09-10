@@ -747,7 +747,10 @@ createPropertyShape(
 );
 
 // PropertyShape pair constraints (values are property IRIs)
-createPropertyShape({path: shacl.equals, shape: Shape, maxCount: 1}, 'equals', shacl.IRI, PropertyShape);
+// Labelled `equalsConstraint`, not `equals`: `equals` is a query-builder method, so a
+// property under that label is unreachable through the DSL (backlog 041). The name also
+// matches the `PropertyShapeData` field. The predicate stays sh:equals.
+createPropertyShape({path: shacl.equals, shape: Shape, maxCount: 1}, 'equalsConstraint', shacl.IRI, PropertyShape);
 createPropertyShape({path: shacl.disjoint, shape: Shape, maxCount: 1}, 'disjoint', shacl.IRI, PropertyShape);
 createPropertyShape({path: shacl.lessThan, shape: Shape, maxCount: 1}, 'lessThan', shacl.IRI, PropertyShape);
 createPropertyShape(

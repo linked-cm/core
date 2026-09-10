@@ -25,6 +25,7 @@
  */
 
 import {getShapeClass, registerNodeShape} from '../utils/ShapeClass.js';
+import {warnOnReservedPropertyLabel} from '../queries/reservedQueryNames.js';
 import type {NodeShapeData} from './nodeShapeData.js';
 import {fromWire, isNodeShapeWire, type NodeShapeWire} from './nodeShapeWire.js';
 
@@ -44,7 +45,14 @@ export function registerRuntimeShape(
 ): boolean {
   if (!shape?.id) return false;
   if (getShapeClass(shape.id)) return false;
-  registerNodeShape(isNodeShapeWire(shape) ? fromWire(shape) : (shape as NodeShapeData));
+  const data = isNodeShapeWire(shape) ? fromWire(shape) : (shape as NodeShapeData);
+  // A data-only shape never passes through registerPropertyShape, so the collision
+  // check has to happen here too — otherwise a shape authored in a builder is the one
+  // kind of shape that gets no warning until the field tracer fails.
+  for (const ps of data.propertyShapes ?? []) {
+    warnOnReservedPropertyLabel(ps.label, data.label, data.id);
+  }
+  registerNodeShape(data);
   return true;
 }
 
