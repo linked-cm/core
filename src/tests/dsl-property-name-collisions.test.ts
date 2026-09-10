@@ -22,6 +22,7 @@ import {
   isReservedQueryDslName,
 } from '../queries/reservedQueryNames';
 import {QueryShape, QueryShapeSet} from '../queries/SelectQuery';
+import {getPropertyShapeTerm} from '../shapes/propertyShapeTerms';
 
 const SH = 'http://www.w3.org/ns/shacl#';
 
@@ -136,5 +137,20 @@ describe('the reserved list tracks the real DSL surface', () => {
     }
     const missing = [...live].filter((n) => !RESERVED_QUERY_DSL_NAMES.has(n));
     expect(missing).toEqual([]);
+  });
+});
+
+describe('the author-facing config key survives the rename', () => {
+  test("getPropertyShapeTerm('equals') still resolves to sh:equals", () => {
+    // The decorator key stayed `equals` — that is what a person writes, and renaming it
+    // would break every existing shape for a reason internal to the query builder. But
+    // code-to-SHACL materialization looks terms up BY THAT KEY, so without an alias
+    // `@literalProperty({equals: …})` silently stopped emitting `sh:equals`: no error,
+    // just a constraint quietly missing from the graph.
+    expect(getPropertyShapeTerm('equals')?.predicate).toBe(`${SH}equals`);
+  });
+
+  test('the meta-shape label resolves too', () => {
+    expect(getPropertyShapeTerm('equalsConstraint')?.predicate).toBe(`${SH}equals`);
   });
 });
