@@ -72,3 +72,26 @@ native function.
    then rename it, which is a decision they should be allowed to make knowingly.
 
 Registration-time detection is cheap: the labels are known when the shape is registered.
+
+## Follow-up: the warning was too blunt
+
+The first version warned identically for every reserved name. Measuring the two proxy
+surfaces showed they are not the same problem:
+
+- **On `QueryShape`** — `as`, `equals`, `id`, `limit`, `select`, `selectAll`, `oneOf`,
+  `notOneOf`, `preloadFor`, the getters, plus the instance fields `subject`, `source`,
+  `property`, `prop`, `proxy`, `queryShapes`, `originalValue`, `wherePath`. Always shadowed.
+- **Only on `QueryShapeSet`** — `add`, `concat`, `every`, `none`, `size`, `some`, `where`,
+  `buildPredicateExpression`, `callPropertyShapeAccessor`. `widget.size` reads the property
+  perfectly well; it is `article.widgets.size` that returns the set's size.
+
+`size`, `some`, `every` and `where` are among the most ordinary names a domain model has, so
+warning about them as though they were always broken is how a warning gets ignored. The two
+cases now get different messages, and `SET_CONTEXT_ONLY_NAMES` is pinned against the live
+prototypes so a method moving between the surfaces cannot silently change which properties
+are safe.
+
+Both messages now name the way out, which already existed and was easy to miss:
+`select(['size'])` takes the label as a string, never touches the proxy, and accepts
+dot-paths. Verified working for a colliding name in both the array form and the
+callback-returns-a-string form.

@@ -19,7 +19,10 @@ import {NodeShape, PropertyShape, registerPropertyShape} from '../shapes/SHACL';
 import {registerRuntimeShape} from '../shapes/registerRuntimeShape';
 import {
   RESERVED_QUERY_DSL_NAMES,
+  SET_CONTEXT_ONLY_NAMES,
   isReservedQueryDslName,
+  resetReservedPropertyLabelWarnings,
+  warnOnReservedPropertyLabel,
 } from '../queries/reservedQueryNames';
 import {QueryShape, QueryShapeSet} from '../queries/SelectQuery';
 import {getPropertyShapeTerm} from '../shapes/propertyShapeTerms';
@@ -152,5 +155,50 @@ describe('the author-facing config key survives the rename', () => {
 
   test('the meta-shape label resolves too', () => {
     expect(getPropertyShapeTerm('equalsConstraint')?.predicate).toBe(`${SH}equals`);
+  });
+});
+
+describe('the two collision kinds are reported differently', () => {
+  test('the set-only names are exactly those on QueryShapeSet but not QueryShape', () => {
+    // Pins the split against the live prototypes, so a DSL method moving between the two
+    // surfaces cannot silently change which properties are safe.
+    for (const name of SET_CONTEXT_ONLY_NAMES) {
+      expect(name in (QueryShapeSet as never as {prototype: object}).prototype).toBe(true);
+      expect(name in (QueryShape as never as {prototype: object}).prototype).toBe(false);
+    }
+  });
+
+  test('a set-only name says it is fine to read directly', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    resetReservedPropertyLabelWarnings();
+    warnOnReservedPropertyLabel('size', 'Widget', 'urn:Widget');
+    const message = String(warn.mock.calls[0]?.[0] ?? '');
+    expect(message).toContain('multi-valued');
+    expect(message).toContain('is fine');
+    // …and it must NOT claim the query fails, because it does not.
+    expect(message).not.toContain('the query fails');
+    warn.mockRestore();
+  });
+
+  test('a single-shape name says the query fails, because it does', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    resetReservedPropertyLabelWarnings();
+    warnOnReservedPropertyLabel('select', 'Widget', 'urn:Widget');
+    const message = String(warn.mock.calls[0]?.[0] ?? '');
+    expect(message).toContain('the query fails');
+    expect(message).not.toContain('multi-valued');
+    warn.mockRestore();
+  });
+
+  test('both messages name the escape hatch', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const label of ['size', 'select']) {
+      resetReservedPropertyLabelWarnings();
+      warn.mockClear();
+      warnOnReservedPropertyLabel(label, 'Widget', 'urn:Widget');
+      // A warning that does not say what to do instead is a warning people learn to skip.
+      expect(String(warn.mock.calls[0]?.[0] ?? '')).toContain(`select(['${label}'])`);
+    }
+    warn.mockRestore();
   });
 });

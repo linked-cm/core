@@ -53,8 +53,34 @@ export const RESERVED_QUERY_DSL_NAMES: ReadonlySet<string> = new Set([
   'wherePath',
 ]);
 
+/**
+ * The subset that only bites through a MULTI-VALUED hop.
+ *
+ * These are on `QueryShapeSet` but not on `QueryShape`, so `widget.size` resolves to the
+ * property perfectly well — it is `article.widgets.size` that returns the set's size
+ * instead. Which matters because `size`, `some`, `every` and `where` are among the most
+ * ordinary names a domain model has, and warning about them as if they were always broken
+ * trains people to ignore the warning.
+ */
+export const SET_CONTEXT_ONLY_NAMES: ReadonlySet<string> = new Set([
+  'add',
+  'buildPredicateExpression',
+  'callPropertyShapeAccessor',
+  'concat',
+  'every',
+  'none',
+  'size',
+  'some',
+  'where',
+]);
+
 export function isReservedQueryDslName(label: string | undefined): boolean {
   return !!label && RESERVED_QUERY_DSL_NAMES.has(label);
+}
+
+/** True when the name is only shadowed when the shape is reached as a set. */
+export function isSetContextOnlyName(label: string | undefined): boolean {
+  return !!label && SET_CONTEXT_ONLY_NAMES.has(label);
 }
 
 /** One warning per shape + label; a shape re-registered on hot reload must not spam. */
@@ -65,10 +91,18 @@ const reported = new Set<string>();
  *
  * A warning rather than a throw, on purpose. `size`, `id` and `some` are legitimate
  * names for a domain property, and the property still works everywhere except the
- * proxy-traced builder — DSL-JSON reaches it by path, and the data round-trips
- * unharmed. Throwing here would break existing apps on upgrade over a property they may
- * never select through the builder. (Contrast `RESERVED_PROPERTY_LABELS` in `SHACL.ts`,
- * which does throw: a DSL-JSON combinator name has no escape hatch at all.)
+ * proxy-traced builder. Throwing here would break existing apps on upgrade over a property
+ * they may never select through the builder. (Contrast `RESERVED_PROPERTY_LABELS` in
+ * `SHACL.ts`, which does throw: a DSL-JSON combinator name has no escape hatch at all.)
+ *
+ * Two messages, because the two cases are genuinely different: a `QueryShape` member is
+ * always shadowed, while a set-only member is fine until the shape is reached through a
+ * multi-valued property. Saying "broken" about the second kind is how a warning gets
+ * ignored.
+ *
+ * Both name the way out. The escape hatch already exists and is easy to miss:
+ * `select(['size'])` takes the label as a string and never touches the proxy, so it
+ * resolves the property whatever it is called. It accepts dot-paths too.
  */
 export function warnOnReservedPropertyLabel(
   label: string | undefined,
@@ -79,11 +113,23 @@ export function warnOnReservedPropertyLabel(
   const key = `${shapeId ?? shapeLabel ?? ''}#${label}`;
   if (reported.has(key)) return;
   reported.add(key);
+  const owner = shapeLabel ?? shapeId ?? 'shape';
+  const escape = `Use \`select(['${label}'])\`, which takes the label as a string and never touches the proxy. Renaming the property also works; the RDF predicate can stay the same.`;
+
+  if (isSetContextOnlyName(label)) {
+    console.warn(
+      `[linked] ${owner}.${label} is shadowed when ${owner} is reached through a ` +
+        `multi-valued property: '${label}' is a method of the query builder's SET proxy, so ` +
+        `\`parent.${owner.toLowerCase()}s.${label}\` returns that method. Reading it directly ` +
+        `(\`select(s => s.${label})\`) is fine. ${escape}`,
+    );
+    return;
+  }
+
   console.warn(
-    `[linked] ${shapeLabel ?? shapeId ?? 'shape'}.${label} shadows the query DSL: ` +
-      `'${label}' is a method of the query builder, so \`select(s => s.${label})\` returns ` +
-      `that method instead of the property and the query fails while tracing fields. ` +
-      `Rename the property (the RDF predicate can stay the same) to make it selectable.`,
+    `[linked] ${owner}.${label} shadows the query DSL: '${label}' is a method of the query ` +
+      `builder, so \`select(s => s.${label})\` returns that method instead of the property ` +
+      `and the query fails while tracing fields. ${escape}`,
   );
 }
 

@@ -70,3 +70,9 @@ and why selecting it will fail. It warns rather than throws — `size`, `id` and
 legitimate domain property names, such a property still round-trips and is still reachable
 by path through DSL-JSON, and throwing would break existing apps on upgrade.
 
+
+The reserved-name warning distinguishes the two proxy surfaces. A name on `QueryShape` is
+always shadowed; a name only on `QueryShapeSet` — `size`, `some`, `every`, `where`, `add`,
+`concat`, `none` — is fine to read directly and only shadowed when the shape is reached
+through a multi-valued property. Both messages now name the existing escape hatch,
+`select(['size'])`, which takes the label as a string and never touches the proxy.
