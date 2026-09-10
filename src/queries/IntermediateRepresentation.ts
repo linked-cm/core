@@ -8,8 +8,10 @@ export type IRValue = string | number | boolean | null;
 
 export type IRQuery =
   | IRSelectQuery
+  | IRAskQuery
   | IRCreateMutation
   | IRUpdateMutation
+  | IRUpsertMutation
   | IRDeleteMutation
   | IRDeleteAllMutation
   | IRDeleteWhereMutation
@@ -28,6 +30,28 @@ export type IRSelectQuery = {
   subjectIds?: string[];
   singleResult?: boolean;
   resultMap?: IRResultMapEntry[];
+};
+
+/**
+ * A query whose answer is a boolean.
+ *
+ * Carries a pattern and nothing else. There is no `projection`, `orderBy`,
+ * `limit` or `offset`: each of those shapes or windows a *solution sequence*, and
+ * an ask has none — so rather than being ignored during conversion, or guarded
+ * against, they are unrepresentable.
+ *
+ * `root` is **optional**. Absent means no `rdf:type` constraint at all — "does a
+ * node with this IRI exist", under any shape or none — which lowers to
+ * `ASK { <iri> ?p ?o }`. A rootless ask carries no `patterns` or `where`, since
+ * both reference properties and a property is only resolvable through a shape.
+ */
+export type IRAskQuery = {
+  kind: 'ask';
+  root?: IRShapeScanPattern;
+  patterns: IRGraphPattern[];
+  where?: IRExpression;
+  subjectId?: string;
+  subjectIds?: string[];
 };
 
 export type IRProjectionItem = {
@@ -240,6 +264,27 @@ export type IRTraversalPattern = {
 
 export type IRUpdateMutation = {
   kind: 'update';
+  shape: string;
+  id: string;
+  data: IRNodeData;
+  traversalPatterns?: IRTraversalPattern[];
+};
+
+/**
+ * Create-or-replace against a known id, in one request.
+ *
+ * Structurally identical to {@link IRUpdateMutation} — it lowers through the same
+ * DELETE/INSERT/WHERE body — and differs in exactly one emitted triple: upsert also
+ * asserts `?id rdf:type <targetClass>`, which the update path never writes.
+ *
+ * That single triple is the whole difference between the two, because `update`'s WHERE
+ * is a bare `OPTIONAL` and so already matches when the node is absent. It is a distinct
+ * IR kind rather than a flag on the update mutation so that a consumer which does not
+ * know about upsert fails loudly, instead of quietly writing an untyped node and
+ * reporting success.
+ */
+export type IRUpsertMutation = {
+  kind: 'upsert';
   shape: string;
   id: string;
   data: IRNodeData;

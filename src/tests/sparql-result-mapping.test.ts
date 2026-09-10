@@ -1,8 +1,10 @@
 import {describe, expect, test} from '@jest/globals';
 import {
   mapSparqlSelectResult,
+  mapSparqlAskResult,
   mapSparqlCreateResult,
   mapSparqlUpdateResult,
+  isSparqlSelectResults,
 } from '../sparql/resultMapping';
 import type {SparqlJsonResults} from '../sparql/resultMapping';
 import type {
@@ -1462,5 +1464,51 @@ describe('mapSparqlSelectResult — aggregate with traversal', () => {
     const p2 = result.find((r) => r.id === E('p2'));
     expect(p2).toBeDefined();
     expect(p2!.friends).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ASK results
+// ---------------------------------------------------------------------------
+
+describe('mapSparqlAskResult', () => {
+  // The wire shape Fuseki (and any SPARQL 1.1 endpoint) returns for ASK: no
+  // `results` key at all, just `boolean`.
+  const askTrue = {head: {}, boolean: true};
+  const askFalse = {head: {}, boolean: false};
+
+  test('maps the boolean through, both ways', () => {
+    expect(mapSparqlAskResult(askTrue)).toBe(true);
+    expect(mapSparqlAskResult(askFalse)).toBe(false);
+  });
+
+  test('THROWS on a SELECT result set rather than coercing it', () => {
+    // A result set arriving here means the wrong query form reached the endpoint.
+    // Coercing it — `!!json.results.bindings.length` — would be a plausible-looking
+    // answer to a question that was never asked, which is the failure mode the
+    // whole existence check exists to remove.
+    const selectResults: SparqlJsonResults = {
+      head: {vars: ['a0']},
+      results: {bindings: [{a0: {type: 'uri', value: 'urn:x'}}]},
+    };
+    expect(() => mapSparqlAskResult(selectResults)).toThrow(/SELECT result set/);
+    expect(() =>
+      mapSparqlAskResult({head: {vars: []}, results: {bindings: []}}),
+    ).toThrow(/SELECT result set/);
+  });
+
+  test('throws on a malformed response', () => {
+    expect(() => mapSparqlAskResult({head: {}} as any)).toThrow(/ASK/);
+    expect(() => mapSparqlAskResult({head: {}, boolean: 'true'} as any)).toThrow(/ASK/);
+    expect(() => mapSparqlAskResult(null as any)).toThrow(/ASK/);
+  });
+});
+
+describe('isSparqlSelectResults', () => {
+  test('separates the two response shapes', () => {
+    expect(isSparqlSelectResults({head: {}, boolean: true})).toBe(false);
+    expect(
+      isSparqlSelectResults({head: {vars: []}, results: {bindings: []}}),
+    ).toBe(true);
   });
 });

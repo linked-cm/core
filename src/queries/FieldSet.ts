@@ -2,7 +2,7 @@ import type {NodeShapeData, PropertyShapeData} from '../shapes/SHACL.js';
 import {getUniquePropertyShapes, getPropertyShape} from '../shapes/nodeShapeData.js';
 import type {Shape, ShapeConstructor} from '../shapes/Shape.js';
 import {PropertyPath, walkPropertyPath} from './PropertyPath.js';
-import {getShapeClass, getAllShapeClasses} from '../utils/ShapeClass.js';
+import {getShapeClass, getAllShapeClasses, getNodeShape, getAllNodeShapes} from '../utils/ShapeClass.js';
 import type {WherePath} from './SelectQuery.js';
 import {createProxiedPathBuilder} from './ProxiedPathBuilder.js';
 import {isExpressionNode, ExpressionNode} from '../expressions/ExpressionNode.js';
@@ -688,10 +688,16 @@ export class FieldSet<R = any, Source = any> {
   private static resolveShapeInput(shape: ShapeConstructor<any> | NodeShapeData | string): {nodeShape: NodeShapeData; shapeClass?: ShapeConstructor<any>} {
     if (typeof shape === 'string') {
       const shapeClass = getShapeClass(shape);
-      if (!shapeClass || !shapeClass.shape) {
+      if (shapeClass?.shape) {
+        return {nodeShape: shapeClass.shape, shapeClass};
+      }
+      // No authored class: the metadata alone is enough here — the classless branch
+      // below is already supported, it just was not reachable from an IRI.
+      const nodeShape = getNodeShape(shape);
+      if (!nodeShape) {
         throw new Error(`Cannot resolve shape for '${shape}'`);
       }
-      return {nodeShape: shapeClass.shape, shapeClass};
+      return {nodeShape};
     }
     // ShapeConstructor: has a static .shape property that is a NodeShapeData
     if ('shape' in shape && typeof shape.shape === 'object' && shape.shape !== null && 'id' in shape.shape) {
@@ -917,7 +923,7 @@ export class FieldSet<R = any, Source = any> {
   // ---------------------------------------------------------------------------
 
   private static shapeById(id: string): NodeShapeData | undefined {
-    return getShapeClass(id)?.shape;
+    return getShapeClass(id)?.shape ?? getNodeShape(id);
   }
 
   private static shapeByLabel(label: string): NodeShapeData | undefined {

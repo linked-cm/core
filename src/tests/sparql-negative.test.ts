@@ -6,6 +6,8 @@ import type {IRSelectQuery, IRCreateMutation, IRDeleteMutation} from '../queries
 import type {SparqlAlgebraNode, SparqlSelectPlan, SparqlBGP, SparqlJoin} from '../sparql/SparqlAlgebra';
 import type {SparqlJsonResults} from '../sparql/resultMapping';
 
+import {Person} from '../test-helpers/query-fixtures';
+
 import '../ontologies/rdf';
 import '../ontologies/xsd';
 
@@ -13,7 +15,9 @@ import '../ontologies/xsd';
 // Constants
 // ---------------------------------------------------------------------------
 
-const SHAPE = 'http://example.org/Shape';
+// A registered shape — these hand-built IRs exercise expression/pattern error
+// paths, and the root scan now requires a shape whose targetClass resolves.
+const SHAPE = Person.shape.id;
 const PROP_VAL = 'http://example.org/props/val';
 
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
@@ -298,5 +302,45 @@ describe('algebraToString — edge cases', () => {
     expect(sparql).toContain('LIMIT 10');
     expect(sparql).toContain('OFFSET 5');
     expect(sparql).toContain('GROUP BY');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shape scan — an unresolvable rdf:type is an error, not a fallback
+// ---------------------------------------------------------------------------
+
+describe('resolveShapeScanIri — no targetClass', () => {
+  const irFor = (shape: string): IRSelectQuery => ({
+    kind: 'select',
+    root: {kind: 'shape_scan', alias: 'a0', shape},
+    patterns: [],
+    projection: [{alias: 'a0', expression: {kind: 'alias_expr', alias: 'a0'}}],
+    resultMap: [{key: 'id', alias: 'a0'}],
+  });
+
+  test('an unregistered shape IRI throws rather than typing on itself', () => {
+    // The old behaviour substituted the shape's own IRI for the rdf:type, which
+    // silently typed instances as the shape that describes them.
+    expect(() => selectToAlgebra(irFor('http://example.org/NotRegistered'))).toThrow(
+      /no targetClass is declared/,
+    );
+  });
+
+  test('the error names the shape and points at the fix', () => {
+    expect(() => selectToAlgebra(irFor('http://example.org/NotRegistered'))).toThrow(
+      /http:\/\/example\.org\/NotRegistered/,
+    );
+    expect(() => selectToAlgebra(irFor('http://example.org/NotRegistered'))).toThrow(
+      /static targetClass/,
+    );
+  });
+
+  test('a registered shape resolves to its targetClass, temporary IRI included', () => {
+    // A `linked://tmp/` targetClass is a real node whose IRI is not yet final —
+    // it is honoured, not treated as absent.
+    const plan = selectToAlgebra(irFor(Person.shape.id));
+    const json = JSON.stringify(plan);
+    expect(json).toContain(Person.targetClass.id);
+    expect(json).not.toContain(`"value":"${Person.shape.id}"`);
   });
 });

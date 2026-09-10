@@ -7,6 +7,7 @@ import {CreateBuilder} from '../queries/CreateBuilder';
 import {UpdateBuilder} from '../queries/UpdateBuilder';
 import {lower} from '../queries/lower';
 import {fromJSON} from '../queries/fromJSON';
+import {WIRE_VERSION} from '../queries/wireVersion';
 import {
   getQueryContext,
   setQueryContext,
@@ -274,7 +275,7 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
 
   test('wire version is stamped and an unknown major is rejected', () => {
     const json: any = queryFactories.createSimple().toJSON();
-    expect(json.v).toBe('1.0');
+    expect(json.v).toBe(WIRE_VERSION);
     expect(() => fromJSON({...json, v: '2.0'})).toThrow(/wire version/i);
     // missing v is tolerated
     const {v, ...noV} = json;
@@ -295,5 +296,49 @@ describe('mutation DSL-JSON round-trip (iteration 1)', () => {
     )?.value;
     expect(birthDate).toBeInstanceOf(Date);
     expect((birthDate as Date).toISOString()).toBe('2020-01-01T00:00:00.000Z');
+  });
+});
+
+describe('upsert — DSL-JSON round-trip', () => {
+  const ID = 'linked://tmp/entities/p1';
+
+  test('serializes as op "upsert", mode "for"', () => {
+    const json: any = Person.upsert({hobby: 'Chess'}).for({id: ID}).toJSON();
+    expect(json.op).toBe('upsert');
+    expect(json.mode).toBe('for');
+    expect(json.targetId).toBe(ID);
+  });
+
+  test('round-trips builder → JSON → builder → JSON unchanged', () => {
+    const first: any = Person.upsert({hobby: 'Chess'}).for({id: ID}).toJSON();
+    const second: any = (fromJSON(first) as any).toJSON();
+    expect(second).toEqual(first);
+  });
+
+  test('a rebuilt upsert still lowers to an upsert, not an update', () => {
+    const json: any = Person.upsert({hobby: 'Chess'}).for({id: ID}).toJSON();
+    expect((lower(fromJSON(json) as any) as any).kind).toBe('upsert');
+    expect(lowerMutationJSON(json).kind).toBe('upsert');
+  });
+
+  test('the JSON lowers to the same IR by either route', () => {
+    const json: any = Person.upsert({hobby: 'Chess'}).for({id: ID}).toJSON();
+    expect(sanitize(lowerMutationJSON(json))).toEqual(
+      sanitize(lower(fromJSON(json) as any)),
+    );
+  });
+
+  test('an upsert envelope with a non-"for" mode is rejected', () => {
+    // Cannot be produced by the builder; this is a hand-rolled/corrupted envelope.
+    const json: any = {v: '1', op: 'upsert', shape: Person.shape.id, mode: 'forAll', data: {}};
+    expect(() => fromJSON(json)).toThrow(/upsert mode "forAll" is invalid/);
+  });
+
+  test('an unknown op is still rejected loudly', () => {
+    // The guard that made a distinct `op` the safe choice: had upsert ridden along as
+    // `op: 'update'` with a new mode, an unaware consumer would have fallen through to
+    // the update-where path with no where clause — an update over every instance.
+    const json: any = {v: '1', op: 'unknown-op', shape: Person.shape.id, mode: 'for', data: {}};
+    expect(() => fromJSON(json)).toThrow(/Unknown query op/);
   });
 });

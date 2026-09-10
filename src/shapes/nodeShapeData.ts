@@ -5,8 +5,7 @@
  */
 import type {NodeReferenceValue} from '../utils/NodeReference.js';
 import type {PathExpr} from '../paths/PropertyPathExpr.js';
-import {getShapeClass} from '../utils/ShapeClass.js';
-import {Shape} from './Shape.js';
+import {getSuperShapes} from '../utils/ShapeClass.js';
 
 /**
  * Plain-object SHACL metadata — the QResult-like shape of a `sh:PropertyShape`.
@@ -27,6 +26,14 @@ export interface PropertyShapeData {
   description?: string;
   order?: number;
   group?: string;
+  /**
+   * `linked_core:displayRank` — a single linear importance rank, lower = more
+   * important. Truncated display contexts ("the top 3 properties") derive from it.
+   * Distinct from `order`, which is arrangement rather than importance.
+   */
+  displayRank?: number;
+  /** `linked_core:displayHidden` — omit from generic rendering. */
+  displayHidden?: boolean;
   class?: NodeReferenceValue;
   in?: (NodeReferenceValue | string | number | boolean)[];
   equalsConstraint?: NodeReferenceValue;
@@ -148,8 +155,9 @@ function ownPropertyShapes(nodeShape: NodeShapeData): PropertyShapeData[] {
 
 /**
  * Property shapes declared on this NodeShape. With `includeSuperClasses`, walks the
- * registered shape-class inheritance chain (via `getShapeClass(nodeShape.id)`) and
- * concatenates each ancestor's own property shapes.
+ * inheritance chain via `getSuperShapes` and concatenates each ancestor's own property
+ * shapes — the prototype chain for a class-backed shape, `extends` for one known only
+ * as data.
  */
 export function getPropertyShapes(
   nodeShape: NodeShapeData,
@@ -158,18 +166,15 @@ export function getPropertyShapes(
   if (!includeSuperClasses) {
     return [...ownPropertyShapes(nodeShape)];
   }
-  let shapeClass = getShapeClass(nodeShape.id);
-  if (!shapeClass) {
-    return [...ownPropertyShapes(nodeShape)];
-  }
-  const res: PropertyShapeData[] = [];
-  while (shapeClass?.shape) {
-    res.push(...ownPropertyShapes(shapeClass.shape));
-    // Stop at the base Shape class.
-    if ((shapeClass as unknown) === (Shape as unknown)) {
-      break;
-    }
-    shapeClass = Object.getPrototypeOf(shapeClass);
+  // One inheritance walk, shared with getSuperShapes: the prototype chain for a
+  // class-backed shape (which includes the framework `Shape` root and its `label` /
+  // `type` properties), or `extends` through the registry for a shape that exists only
+  // as data. Previously this walked the prototype chain directly and returned ONLY own
+  // properties when no class existed — so a project-authored shape silently lost
+  // everything it inherited.
+  const res: PropertyShapeData[] = [...ownPropertyShapes(nodeShape)];
+  for (const superShape of getSuperShapes(nodeShape)) {
+    res.push(...ownPropertyShapes(superShape));
   }
   return res;
 }
@@ -191,30 +196,28 @@ export function getUniquePropertyShapes(
 
 /**
  * Find a property shape by label. With `checkSubShapes` (default true), ascends the
- * registered shape-class chain to superclasses if the label isn't found locally.
+ * inheritance chain if the label isn't found locally.
+ *
+ * Shares `getSuperShapes` with {@link getPropertyShapes}, so the singular and plural
+ * lookups can never disagree about what a shape inherits — and so a shape registered
+ * from data resolves inherited properties through `extends` rather than stopping at its
+ * own. This is what `getPropertyShapeByLabel` delegates to (PR #211), so closing the gap
+ * here closes it for the query proxies too. See docs/backlog/040.
  */
 export function getPropertyShape(
   nodeShape: NodeShapeData,
   label: string,
   checkSubShapes: boolean = true,
 ): PropertyShapeData | undefined {
-  let shapeClass = getShapeClass(nodeShape.id);
-  if (!shapeClass) {
-    return ownPropertyShapes(nodeShape).find((ps) => ps.label === label);
+  const own = ownPropertyShapes(nodeShape).find((ps) => ps.label === label);
+  if (own || !checkSubShapes) return own;
+  for (const superShape of getSuperShapes(nodeShape)) {
+    const inherited = ownPropertyShapes(superShape).find(
+      (ps) => ps.label === label,
+    );
+    if (inherited) return inherited;
   }
-  let res: PropertyShapeData | undefined;
-  while (!res && shapeClass?.shape) {
-    res = ownPropertyShapes(shapeClass.shape).find((ps) => ps.label === label);
-    if (checkSubShapes) {
-      if ((shapeClass as unknown) === (Shape as unknown)) {
-        break;
-      }
-      shapeClass = Object.getPrototypeOf(shapeClass);
-    } else {
-      break;
-    }
-  }
-  return res;
+  return undefined;
 }
 
 /** Two node shapes are equal when they share the same IRI. */

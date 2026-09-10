@@ -19,6 +19,8 @@ const prop = (n: string) => ({id: `https://example.org/list#${n}`});
 
 @linkedShape
 class Holder extends Shape {
+  static targetClass = {id: 'https://example.org/list#Holder'} as any;
+
   @objectProperty({path: prop('items'), shape: List, maxCount: 1})
   get items(): List {
     return null;

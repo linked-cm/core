@@ -747,7 +747,10 @@ createPropertyShape(
 );
 
 // PropertyShape pair constraints (values are property IRIs)
-createPropertyShape({path: shacl.equals, shape: Shape, maxCount: 1}, 'equals', shacl.IRI, PropertyShape);
+// Labelled `equalsConstraint`, not `equals`: `equals` is a query-builder method, so a
+// property under that label is unreachable through the DSL (backlog 041). The name also
+// matches the `PropertyShapeData` field. The predicate stays sh:equals.
+createPropertyShape({path: shacl.equals, shape: Shape, maxCount: 1}, 'equalsConstraint', shacl.IRI, PropertyShape);
 createPropertyShape({path: shacl.disjoint, shape: Shape, maxCount: 1}, 'disjoint', shacl.IRI, PropertyShape);
 createPropertyShape({path: shacl.lessThan, shape: Shape, maxCount: 1}, 'lessThan', shacl.IRI, PropertyShape);
 createPropertyShape(
@@ -759,6 +762,11 @@ createPropertyShape(
 
 // PropertyShape.hasValue (literal or IRI — generic)
 createPropertyShape({path: shacl.hasValue, maxCount: 1}, 'hasValue', null, PropertyShape);
+
+// PropertyShape.defaultValue (literal or IRI — generic, mirrors hasValue).
+// getResult() already emits `defaultValue`, but without this registration the
+// property is not queryable and a query referencing it throws before executing.
+createPropertyShape({path: shacl.defaultValue, maxCount: 1}, 'defaultValue', null, PropertyShape);
 
 // PropertyShape value-range / string-length / pattern constraints (report 021 §3, G5).
 // The range constraints carry no fixed datatype — the literal is typed from the JS value
@@ -795,6 +803,21 @@ createPropertyShape(
   PropertyShape,
 );
 createPropertyShape({path: shacl.group, maxCount: 1}, 'group', shacl.Literal, PropertyShape);
+
+// PropertyShape.displayRank / displayHidden (linked_core: display vocabulary).
+// These materialize onto the pure sh:NodeShape and so travel with an ejected app.
+createPropertyShape(
+  {path: coreOntology.displayRank, datatype: xsd.integer, maxCount: 1},
+  'displayRank',
+  shacl.Literal,
+  PropertyShape,
+);
+createPropertyShape(
+  {path: coreOntology.displayHidden, datatype: xsd.boolean, maxCount: 1},
+  'displayHidden',
+  shacl.Literal,
+  PropertyShape,
+);
 
 // PropertyShape.contains (linked_core:contains — persists the composition flag)
 createPropertyShape(

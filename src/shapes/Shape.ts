@@ -13,6 +13,9 @@ import type {
 import type {NodeReferenceValue, UpdatePartial} from '../queries/QueryFactory.js';
 import type {NodeId} from '../queries/MutationQuery.js';
 import {QueryBuilder} from '../queries/QueryBuilder.js';
+import {AskBuilder} from '../queries/AskBuilder.js';
+import type {PendingQueryContext} from '../queries/QueryContext.js';
+import type {IDataset} from '../interfaces/IDataset.js';
 import {CreateBuilder} from '../queries/CreateBuilder.js';
 import {UpdateBuilder} from '../queries/UpdateBuilder.js';
 import {DeleteBuilder, type DeleteId} from '../queries/DeleteBuilder.js';
@@ -177,6 +180,67 @@ export abstract class Shape {
   }
 
   /**
+   * Whether a node with this id exists as an instance of this shape.
+   *
+   * On the base class — `Shape.exists(uri)` — it means something different and
+   * weaker: does a node with this IRI exist **at all**, under any type or none.
+   * There is no shape to constrain by, so no `rdf:type` triple is emitted and the
+   * query is `ASK { <uri> ?p ?o }`. (`Shape` is free to mean this because the
+   * shapes themselves are described by `NodeShape` and `PropertyShape`, so
+   * `Shape.exists` is not needed for "is this a shape?".) Because a shapeless ask
+   * has no shape to route on, a router asks every dataset it knows — see
+   * `LinkedStorage.askQuery`.
+   *
+   * ```typescript
+   * if (await SourceDocument.exists({id})) {
+   *   await SourceDocument.update(values).for({id});
+   * } else {
+   *   await SourceDocument.create({id, ...values});
+   * }
+   * ```
+   *
+   * Resolves to a real `boolean` — unlike `select().where(…).one()`, which resolves
+   * to a row or `null` and leaves the conversion (and the failure modes) to the
+   * caller. Runs the cheapest correct query: against a SPARQL store, an
+   * `ASK WHERE { ?a0 rdf:type <ShapeClass> . FILTER(?a0 = <id>) }` — the shape's
+   * type triple and an equality filter on the subject, nothing else.
+   *
+   * Note the type triple: this asks whether the node exists **as an instance of
+   * this shape**. A node with that IRI and a different type answers `false`.
+   *
+   * A `null`/`undefined` id resolves to `false` without touching the store — as does
+   * a `PendingQueryContext` whose value has not landed yet, since there is no subject
+   * to ask about. (An unresolved context inside a *where clause* rejects instead; see
+   * {@link QueryBuilder.exists}.)
+   *
+   * **Errors reject — they are never reported as `false`.** Do not wrap this in a
+   * `.catch(() => false)`: that is exactly how a broken existence check hides,
+   * turning every `exists ? update : create` into an unconditional `create`.
+   *
+   * For "does *anything* match?", compose on the builder instead:
+   * `await Person.select().where(p => p.name.equals('Semmy')).exists()`.
+   *
+   * @param id The node id: a string IRI, a `{id}` reference, or a `PendingQueryContext`.
+   *   A malformed string IRI rejects (it does not throw synchronously).
+   * @param target Optional explicit dataset to run against; omitted uses the
+   *   global query dispatch.
+   */
+  static async exists<S extends Shape>(
+    this: ShapeConstructor<S> | typeof Shape,
+    id: string | NodeReferenceValue | PendingQueryContext | null | undefined,
+    target?: IDataset,
+  ): Promise<boolean> {
+    // `async`, so that a bad string IRI (resolveUriOrThrow) rejects rather than
+    // throwing synchronously past the caller's .catch().
+    if ((this as unknown) === Shape) {
+      // Called on the base class: no shape to constrain by, so no rdf:type triple.
+      // `ASK { <iri> ?p ?o }` — does this node exist at all?
+      return AskBuilder.forNode(id).exec(target);
+    }
+    return QueryBuilder.from(this as ShapeConstructor<S>).for(id).exists(target);
+  }
+
+  /**
    * Update properties of an instance of this shape.
    * Chain `.for(id)` to target a specific entity.
    *
@@ -191,6 +255,14 @@ export abstract class Shape {
    * (breaks `sh:maxCount 1`). For a replace, **omit `__id`** — the engine drops the
    * old edge and writes a fresh node, so the value replaces cleanly. (Use `Shape.create`
    * for `__id` at creation; use `.delete()` or `{remove: […]}` for full owned-node cleanup.)
+   *
+   * **On a node that does not exist, this still writes — untyped.** `update`'s WHERE is a
+   * bare `OPTIONAL`, so it matches whether or not the subject exists, and the INSERT fires
+   * either way. What it never writes is `rdf:type`, so the result is an id carrying
+   * properties that no shape-scoped select can find, and the call reports success. If the
+   * node may be absent, use {@link Shape.upsert} instead, which asserts the type. (Whether
+   * `update` should instead no-op on an absent node is an open semantic question — core
+   * backlog 039.)
    */
   static update<S extends Shape>(
     this: ShapeConstructor<S>,
@@ -205,6 +277,47 @@ export abstract class Shape {
     data: any,
   ): UpdateBuilder<S, any> {
     return UpdateBuilder.from(this).set(data) as unknown as UpdateBuilder<S, any>;
+  }
+
+  /**
+   * Create the node if it is absent, replace the named properties if it is present —
+   * in one request.
+   *
+   * ```ts
+   * await SourceDocument.upsert(values).for({id});
+   * ```
+   *
+   * This replaces the branch callers otherwise hand-roll:
+   *
+   * ```ts
+   * if (await S.exists({id})) await S.update(values).for({id});
+   * else                      await S.create({id, ...values});
+   * ```
+   *
+   * which costs two round-trips, races between them, and — if the check is wrong in the
+   * `false` direction — takes the `create` branch silently, duplicating single-valued
+   * properties rather than erroring.
+   *
+   * Semantics:
+   * - Replaces **only the properties named**; others on an existing node are untouched.
+   *   It is not a whole-node replace.
+   * - Always asserts the node's type, which `update().for({id})` does not — an update
+   *   against an absent id writes its properties onto an untyped node.
+   * - Returns what `update` returns. It deliberately does **not** report whether it
+   *   created or replaced: knowing that needs the extra read this avoids.
+   * - `.where()` / `.forAll()` are rejected — an upsert targets one known id.
+   * - **The id goes in `.for(id)`, not in the data object** — unlike `create`, where an
+   *   `id`/`__id` in the data names the node being created. Here the data object is
+   *   properties only; an `id` in it is rejected.
+   * - Expression-valued fields are rejected: an expression reads the node's current
+   *   value, which does not exist when upsert creates it, and the property would be
+   *   silently skipped.
+   */
+  static upsert<S extends Shape, U extends UpdatePartial<S>>(
+    this: ShapeConstructor<S>,
+    data: U,
+  ): UpdateBuilder<S, U> {
+    return UpdateBuilder.upsertFrom(this).set(data) as unknown as UpdateBuilder<S, U>;
   }
 
   static create<S extends Shape, U extends UpdatePartial<S>>(

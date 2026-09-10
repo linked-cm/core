@@ -14,16 +14,20 @@ export {
 // IR → Algebra conversion (Layer 1)
 export {
   selectToAlgebra,
+  askToAlgebra,
   createToAlgebra,
   updateToAlgebra,
+  upsertToAlgebra,
   deleteToAlgebra,
 } from './irToAlgebra.js';
 
 // High-level IR → SPARQL string (convenience wrappers)
 export {
   selectToSparql,
+  askToSparql,
   createToSparql,
   updateToSparql,
+  upsertToSparql,
   deleteToSparql,
 } from './irToAlgebra.js';
 
@@ -33,6 +37,7 @@ export {
   serializeExpression,
   serializeTerm,
   selectPlanToSparql,
+  askPlanToSparql,
   insertDataPlanToSparql,
   deleteInsertPlanToSparql,
   deleteWherePlanToSparql,
@@ -41,10 +46,17 @@ export {
 // Result mapping
 export {
   mapSparqlSelectResult,
+  mapSparqlAskResult,
   mapSparqlCreateResult,
   mapSparqlUpdateResult,
+  isSparqlSelectResults,
 } from './resultMapping.js';
-export type {SparqlJsonResults, SparqlBinding} from './resultMapping.js';
+export type {
+  SparqlJsonResults,
+  SparqlAskResults,
+  SparqlQueryResults,
+  SparqlBinding,
+} from './resultMapping.js';
 
 // Dataset base class
 export {SparqlDataset, SparqlStore} from './SparqlDataset.js';

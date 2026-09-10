@@ -3,6 +3,7 @@ import type {CreateQuery} from './CreateQuery.js';
 import type {UpdateQuery} from './UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from './DeleteQuery.js';
 import type {IDataset} from '../interfaces/IDataset.js';
+import type {AskQuery} from './AskQuery.js';
 
 /**
  * Abstraction boundary between the DSL layer (Shape) and the storage layer
@@ -14,9 +15,52 @@ import type {IDataset} from '../interfaces/IDataset.js';
  */
 export interface QueryDispatch {
   selectQuery<R = any>(query: SelectQuery): Promise<R>;
+  /** Answer an ask query — a boolean, not a result set. */
+  askQuery(query: AskQuery): Promise<boolean>;
   createQuery<R = any>(query: CreateQuery): Promise<R>;
   updateQuery<R = any>(query: UpdateQuery): Promise<R>;
   deleteQuery(query: DeleteQuery): Promise<DeleteResponse>;
+}
+
+/** A target that can answer an ask query. */
+type ExistenceTarget = {askQuery(query: AskQuery): Promise<boolean>};
+
+/**
+ * Answer an ask query against `target` — the single entry point for every
+ * boolean-answered query in the library. `AskBuilder.exec()` and
+ * `LinkedStorage.askQuery` both come here rather than calling `askQuery`
+ * directly, so the contract below is enforced once for every store.
+ *
+ * There is deliberately **no translation to a select query anywhere in this
+ * package.** An ask goes to `IDataset.askQuery` and a SPARQL-backed store turns
+ * it into `ASK`. A store that lacks a boolean primitive implements `askQuery`
+ * itself, in whatever way its backend allows — that decision belongs to the
+ * store, and making it here would hide it.
+ *
+ * `askQuery` must resolve to a real boolean: anything else rejects rather than
+ * being coerced, since a truthy non-boolean would read as "exists". Errors
+ * propagate for the same reason — "could not ask" is never `false`.
+ */
+export async function resolveExistence(
+  target: ExistenceTarget,
+  query: AskQuery,
+): Promise<boolean> {
+  if (typeof target?.askQuery !== 'function') {
+    throw new Error(
+      'This dataset does not implement the required IDataset.askQuery(query). ' +
+      'An ask query is answered with a boolean — a SPARQL store emits ASK — and is ' +
+      'never rewritten as a select on its behalf.',
+    );
+  }
+  const answer = await target.askQuery(query);
+  if (typeof answer !== 'boolean') {
+    throw new Error(
+      `askQuery must resolve to a boolean; got ${answer === null ? 'null' : typeof answer}. ` +
+      'An ask query will not coerce a non-boolean into an answer — a truthy ' +
+      'value would silently read as "exists".',
+    );
+  }
+  return answer;
 }
 
 // Global-backed so it is SHARED across duplicate copies of this module. In dev,

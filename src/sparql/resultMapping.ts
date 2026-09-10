@@ -5,6 +5,7 @@ import type {
   IRNodeData,
   IRSelectQuery,
   IRUpdateMutation,
+  IRUpsertMutation,
   CreateResult,
   ResultFieldValue,
   ResultRow,
@@ -23,6 +24,28 @@ export type SparqlJsonResults = {
   };
 };
 
+/**
+ * The `application/sparql-results+json` form of an **ASK** response:
+ * `{"head": {}, "boolean": true}`. It carries no `results` key at all, which is
+ * why this is a sibling type rather than an optional field on
+ * {@link SparqlJsonResults} — that type would then describe a shape no endpoint
+ * returns.
+ */
+export type SparqlAskResults = {
+  head: {vars?: string[]; link?: string[]};
+  boolean: boolean;
+};
+
+/** Either form a SPARQL query endpoint can return for the queries this layer emits. */
+export type SparqlQueryResults = SparqlJsonResults | SparqlAskResults;
+
+/** Narrowing guard for {@link SparqlQueryResults} — true for a SELECT result set. */
+export function isSparqlSelectResults(
+  json: SparqlQueryResults,
+): json is SparqlJsonResults {
+  return (json as SparqlJsonResults)?.results?.bindings !== undefined;
+}
+
 export type SparqlBinding = Record<
   string,
   {
@@ -34,6 +57,7 @@ export type SparqlBinding = Record<
 >;
 
 import {xsd} from '../ontologies/xsd.js';
+import {sanitizeVarName} from './sparqlUtils.js';
 
 // ---------------------------------------------------------------------------
 // XSD constants (derived from ontology module)
@@ -84,7 +108,14 @@ function localName(uri: string): string {
 function sparqlVarName(expression: IRExpression, projectionAlias: string): string {
   switch (expression.kind) {
     case 'property_expr':
-      return `${expression.sourceAlias}_${localName(expression.property)}`;
+      // SANITIZED, because `algebraToString` sanitizes when it WRITES the variable and this
+      // reads the same variable back. A SPARQL variable may hold only letters, digits and `_`,
+      // so a property named by a person — "Volume share", "Avg. basket" — is emitted as
+      // `?a0_Volume_share` while this returned `a0_Volume share`, which matches no binding.
+      // The lookup then yielded undefined, the value became null, and the CMS drew the column
+      // with an empty cell and no error anywhere. Single-word names were unaffected, which is
+      // what made it look like missing data rather than a naming mismatch.
+      return sanitizeVarName(`${expression.sourceAlias}_${localName(expression.property)}`);
     case 'alias_expr':
       return expression.alias;
     case 'aggregate_expr':
@@ -704,10 +735,37 @@ function fieldValueToResult(value: IRFieldValue): ResultFieldValue {
 // ---------------------------------------------------------------------------
 
 /**
+ * Maps a SPARQL `ASK` response to the boolean it carries.
+ *
+ * Throws on a SELECT result set rather than coercing one. A result set is not a
+ * failed `ASK` — it means the wrong query form reached the endpoint, and the
+ * existence check that called this exists precisely so that "could not ask" is
+ * never quietly reported as `false`.
+ */
+export function mapSparqlAskResult(json: SparqlQueryResults): boolean {
+  const value = (json as SparqlAskResults)?.boolean;
+  if (typeof value !== 'boolean') {
+    throw new Error(
+      'Expected a SPARQL ASK response with a `boolean` field, got ' +
+      (isSparqlSelectResults(json)
+        ? 'a SELECT result set'
+        : `${JSON.stringify(json)?.slice(0, 200)}`) +
+      '. The endpoint did not answer the ASK query that was sent.',
+    );
+  }
+  return value;
+}
+
+/**
  * Constructs an `UpdateResult` from the IR update mutation.
  * Echoes back the updated fields as an `UpdateResult` with the target node's `id`.
  */
-export function mapSparqlUpdateResult(query: IRUpdateMutation): UpdateResult {
+export function mapSparqlUpdateResult(
+  // Upsert returns exactly what update returns — the caller deliberately does not learn
+  // whether the node was created or replaced (that would cost the extra read the single
+  // round-trip exists to avoid). Only `id` and `data.fields` are read, which both carry.
+  query: IRUpdateMutation | IRUpsertMutation,
+): UpdateResult {
   const result: UpdateResult = {id: query.id};
 
   for (const field of query.data.fields) {

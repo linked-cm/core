@@ -211,6 +211,18 @@ export type SparqlSelectPlan = {
   aggregates?: SparqlAggregateBinding[];
 };
 
+/**
+ * `ASK WHERE { … }` — a boolean existence check.
+ *
+ * Deliberately carries nothing but the pattern: `ASK` has no projection, no
+ * solution modifiers and no pagination, so there is no field here that could be
+ * silently ignored at serialization time.
+ */
+export type SparqlAskPlan = {
+  type: 'ask';
+  algebra: SparqlAlgebraNode;
+};
+
 export type SparqlInsertDataPlan = {
   type: 'insert_data';
   triples: SparqlTriple[];
@@ -233,6 +245,7 @@ export type SparqlDeleteWherePlan = {
 
 export type SparqlPlan =
   | SparqlSelectPlan
+  | SparqlAskPlan
   | SparqlInsertDataPlan
   | SparqlDeleteInsertPlan
   | SparqlDeleteWherePlan;
