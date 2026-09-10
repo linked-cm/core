@@ -1,5 +1,314 @@
 # Changelog
 
+## 2.18.0
+
+### Minor Changes
+
+- [#208](https://github.com/linked-cm/core/pull/208) [`085cfad`](https://github.com/linked-cm/core/commit/085cfadd4ebf0e584da9476a234b6ec47b261b5f) Thanks [@flyon](https://github.com/flyon)! - Ask queries — a first-class query kind whose answer is a boolean — plus two `rdf:type` / `sh:path`
+  resolution fixes it surfaced.
+
+  ## Ask queries
+
+  `.exists()` is a shortcut for an ask, not a special case of select. An ask carries a **pattern and
+  nothing else** — no projection, sorting or pagination — at every layer: `AskBuilder`, `IRAskQuery`,
+  an `op: 'ask'` wire envelope, and `ASK WHERE { … }` in SPARQL.
+
+  ```ts
+  await Person.exists({ id }); // ASK { ?a0 a <PersonClass> . FILTER(?a0 = <id>) }
+  await Person.select()
+    .where((p) => p.name.equals("Semmy"))
+    .exists(); // ASK with the filter
+  await Shape.exists(uri); // ASK { <uri> ?p ?o }
+  ```
+
+  **`Shape.exists(uri)` on the base class asks whether a node exists at all** — no `rdf:type`
+  constraint, under any shape or none. (`Shape` is free to mean "anything": the shapes themselves are
+  described by `NodeShape` and `PropertyShape`.) A shapeless ask has no shape to route on, so
+  `LinkedStorage` asks **every** dataset it knows and ORs the answers, short-circuiting on the first
+  `true` — cheap precisely because the answers are booleans. Any router implementing `IDataset`
+  inherits that obligation: a shapeless ask means "anywhere I can reach", not "in my default store".
+
+  ### Breaking: `IDataset.askQuery(query: AskQuery): Promise<boolean>` is required
+
+  Every store must implement it; `query.shape` is optional. **No code path in this package rewrites an
+  ask as a select** — a store with no boolean primitive decides for itself how to answer, and
+  defaulting that here would hide the choice. `askQuery` must resolve to a real boolean (a non-boolean
+  is rejected, not coerced, since a truthy value would read as "exists") and must reject on failure.
+
+  ### Wire format `1.1`
+
+  An ask travels as its own envelope, discriminated by `op: 'ask'`:
+
+  ```json
+  {"v": "1.1", "op": "ask", "shape": "…/Person", "subject": "…/p1"}
+  {"v": "1.1", "op": "ask", "subject": "https://example.org/thing"}
+  ```
+
+  Omitting `shape` **is** the shapeless form. There is no `fields`, `limit`, `offset`, `sortBy` or
+  `one`, so a receiver has nothing to validate or ignore. `fromJSON` routes `op: 'ask'` to an
+  `AskBuilder` and still throws `Unknown query op` on anything unrecognised, so an older peer fails
+  loud rather than reinterpreting the envelope as a select. Deploy receivers first.
+
+  New exports: `AskBuilder`, `isAskQuery`, and the `AskQuery` / `AskQueryJSON` / `RawAskInput` /
+  `AskSpec` types. `lower()` gains an ask overload returning `IRAskQuery`; `askToAlgebra` /
+  `askToSparql` / `askPlanToSparql` / `SparqlAskPlan` / `mapSparqlAskResult` are the SPARQL arm.
+
+  ## Breaking: a shape must declare a `targetClass`
+
+  A query or mutation on a shape with none — on it or on any shape it extends — now throws instead of
+  silently typing instances with the shape's own IRI.
+
+  ```ts
+  @linkedShape
+  class Person extends Shape {
+    static targetClass = { id: "https://example.org/Person" }; // required
+  }
+  ```
+
+  `rdf:type` names the class a node **is**; the shape IRI identifies the SHACL description _of_ that
+  class — a different node. Substituting one for the other conflated them, and did so invisibly: read
+  and write used the same substitution, so data round-tripped and nothing surfaced the mistake.
+  `targetClass` is read off the shape class, so JavaScript static inheritance already walks the
+  superclass chain.
+
+  ## A declared `sh:path` is always the predicate
+
+  The resolver skipped any shape or property IRI beginning `linked://tmp/`, substituting the property
+  shape's own "shadow" IRI. That skip existed only so this repo's fixtures could assert shape-derived
+  predicates; it is gone, along with the `linked://tmp/` special case. Two mutation paths that built
+  traversal predicates by hand — bypassing the resolver — now go through it, fixing an expression
+  update (`p.bestFriend.name`) that emitted the shadow IRI as a predicate and therefore matched
+  nothing.
+
+  ## Migration
+
+  - Declare a `targetClass` on any shape lacking one. Data written under the old behaviour is typed
+    with the shape IRI: either set that IRI as the `targetClass`, or retype the nodes.
+  - Implement `askQuery` on any `IDataset`.
+  - A shape declaring a `linked://tmp/` path gets its declared path as the predicate instead of the
+    shadow IRI. No released code minted such IRIs, so this is expected to affect nobody.
+
+- [#214](https://github.com/linked-cm/core/pull/214) [`67e015b`](https://github.com/linked-cm/core/commit/67e015bf7f32dd9cda2a1ad9f5589ead0b8408d3) Thanks [@flyon](https://github.com/flyon)! - One shape metamodel, and inheritance that works for shapes known only as data.
+
+  `NodeShapeData` gains a JSON-safe transport form (`toWire` / `fromWire` in
+  `shapes/nodeShapeWire.ts`). It is defined by subtraction from the metamodel — drop the
+  circular `parentNodeShape` back-reference, carry `pattern` as its source string and flags
+  — so new metamodel fields are carried automatically instead of a hand-maintained subset
+  falling behind. `PathExpr` is already a plain discriminated union, so complex SHACL paths
+  (sequence, alternative, inverse, the cardinality operators, negated property sets) survive
+  a round trip intact rather than collapsing to a single IRI.
+
+  Display vocabulary: `linked_core:displayRank` (a single linear importance rank, lower =
+  more important) and `linked_core:displayHidden`, accepted by the property decorators,
+  carried on `PropertyShapeData`, registered as meta-shape properties and serialized by
+  `syncShapes`. They materialize onto the pure `sh:NodeShape`, so they travel with an
+  ejected app.
+
+  Fixes `order` and `group`, which were declared on `PropertyShapeConfig` but never copied
+  onto the property shape — a declared `sh:order` was silently dropped and renderers fell
+  back to array position.
+
+  `getSuperShapes` is now the single canonical inheritance walk, and `getPropertyShapes`,
+  `getPropertyShape` and the class-returning helpers all delegate to it: the prototype chain
+  for a class-backed shape (which includes the framework `Shape` root, whose `label` and
+  `type` really are inherited), `extends` through the shape registry for a shape with no
+  compiled class. Previously the latter case returned only own properties, so a
+  project-authored shape silently lost everything it inherited (backlog 040). Since
+  `getPropertyShapeByLabel` delegates to `getPropertyShape`, the query proxies are fixed
+  too.
+
+  Adds a primary IRI to `NodeShapeData` registry alongside the class registry, so query
+  lowering and predicate resolution work for both kinds of shape;
+  `registerNodeShape` / `getNodeShape` / `getAllNodeShapes` and the data-based
+  `getSuperShapes` / `getSubShapes` / `isSubShapeOf` are exported.
+  `SelectBuilder.from(iri)` now resolves a shape that exists only as data.
+
+  Cache invalidation moves from a `setTimeout` plus registry-size comparison to a monotonic
+  version counter — the old scheme silently reused a stale cache when a registration and a
+  removal coincided, or when a shape was re-registered in place.
+
+  Adds `registerRuntimeShape` / `registerRuntimeShapes`: register a shape that exists only
+  as data, taking metadata (`NodeShapeData` or its wire form) rather than a bespoke DTO.
+  `registerRuntimeShapes` orders a batch parents-first, because inheritance resolves
+  `extends` through the registry and a child registered ahead of its parent would resolve an
+  empty chain. Neither shadows a compiled class.
+
+  Query lowering, containment resolution, blank-node deletion and mutation lowering all read
+  the shape registry rather than the class registry, so a shape that exists only as data
+  lowers to the same SPARQL a compiled one does — with its declared `targetClass` (walking
+  `extends` where it is inherited) and its declared `sh:path` as the predicate. `validate()`
+  accepts such a shape as registered. The three lowering caches key on the registration
+  version instead of the class registry's size, which did not change when a shape was
+  re-registered in place.
+
+  The SHACL meta-model's `sh:equals` accessor is relabelled `equalsConstraint`, matching the
+  `PropertyShapeData` field (the predicate is unchanged). `equals` is a query-builder method,
+  and the query proxy answers a key from its own surface before it looks for a property with
+  that label — so a property labelled `equals` returned the DSL method and the field tracer
+  failed on a native function. The meta-shape could not read its own constraint. Anything
+  looking a constraint up in `getPropertyShapeTerms()` by the label `equals` must now ask for
+  `equalsConstraint`.
+
+  Registration now reports the general case: `registerPropertyShape` and
+  `registerRuntimeShape` check each label against the query DSL surface
+  (`RESERVED_QUERY_DSL_NAMES`) and warn once per shape+label, naming the shape, the property
+  and why selecting it will fail. It warns rather than throws — `size`, `id` and `some` are
+  legitimate domain property names, such a property still round-trips and is still reachable
+  by path through DSL-JSON, and throwing would break existing apps on upgrade.
+
+  The reserved-name warning distinguishes the two proxy surfaces. A name on `QueryShape` is
+  always shadowed; a name only on `QueryShapeSet` — `size`, `some`, `every`, `where`, `add`,
+  `concat`, `none` — is fine to read directly and only shadowed when the shape is reached
+  through a multi-valued property. Both messages now name the existing escape hatch,
+  `select(['size'])`, which takes the label as a string and never touches the proxy.
+
+- [#205](https://github.com/linked-cm/core/pull/205) [`48ecb4d`](https://github.com/linked-cm/core/commit/48ecb4dbdc20471bf19a4c4cc9d58ef90f5cd1b1) Thanks [@flyon](https://github.com/flyon)! - Expose the meta-model's SHACL constraint table via `getPropertyShapeTerms()` /
+  `getPropertyShapeTerm(label)`, so an alternative serializer can look up each constraint's
+  predicate, datatype and node kind rather than hard-coding its own copy.
+
+  Purely additive — `buildPropertyShapeData` is unchanged. Create Now's code→RDF shape sync uses
+  this to emit the full SHACL constraint set (pattern, `sh:in`, ranges, lengths, class) instead of
+  the five it previously enumerated by hand.
+
+- [#206](https://github.com/linked-cm/core/pull/206) [`a4989a8`](https://github.com/linked-cm/core/commit/a4989a80e3619500238f6c1a8f60cc482458b99a) Thanks [@flyon](https://github.com/flyon)! - Add a boolean existence check to the query API: `Shape.exists(id)` and a terminal
+  `.exists()` on the select builder.
+
+  ```ts
+  if (await SourceDocument.exists({ id })) {
+    await SourceDocument.update(values).for({ id });
+  } else {
+    await SourceDocument.create({ id, ...values });
+  }
+
+  // or, for "does anything match?"
+  await Person.select()
+    .where((p) => p.name.equals("Semmy"))
+    .exists();
+  ```
+
+  Until now "does this node exist?" had no direct expression. The natural workaround —
+  `select().where(…).one()` — resolves to a row or `null`, so callers wrap it in a
+  `.catch(() => null)` and convert; that swallow makes an unreachable store
+  indistinguishable from a missing node, silently turning every
+  `exists ? update : create` into an unconditional `create`.
+
+  `.exists()` returns a real `Promise<boolean>` and never catches: a store, transport or
+  lowering failure rejects, including an unresolved query-context reference in a where
+  clause (which `exec()` still reports as `null`, unchanged).
+
+  It also normalises the query to its cheapest correct form first. Dropped: the projection,
+  preloads, sorting and pagination — none of them can change whether a _match_ exists, and
+  honouring `offset` while dropping the projection could actively flip the answer, since
+  `OFFSET` skips rows of a solution sequence whose cardinality depends on the projection.
+  Kept: filters, `minus` entries and the subject. So
+  `Person.select(p => p.name).orderBy(…).offset(10).exists()` costs and answers exactly the same
+  as a bare `Person.exists({id})`.
+
+  See the ask-query entry in this release for what that normalised query becomes on the wire and in
+  SPARQL: `.exists()` is a shortcut for an ask query, which is its own query kind with its own
+  `IDataset.askQuery` method.
+
+- [#212](https://github.com/linked-cm/core/pull/212) [`44936de`](https://github.com/linked-cm/core/commit/44936ded51a0f84a9d9369c452b407c7f2ae2bb5) Thanks [@flyon](https://github.com/flyon)! - `Shape.upsert()` — create-or-replace against a known id, in one request.
+
+  ```ts
+  await SourceDocument.upsert({ filename, checksum }).for({ id });
+  ```
+
+  It replaces the branch callers otherwise hand-roll:
+
+  ```ts
+  if (await S.exists({ id })) await S.update(values).for({ id });
+  else await S.create({ id, ...values });
+  ```
+
+  which costs two round-trips, races between them, and — if the existence check is wrong in the
+  `false` direction — silently takes `create`, where `INSERT DATA` duplicates single-valued
+  properties instead of erroring.
+
+  **Semantics**
+
+  - Replaces **only the properties named**; others on an existing node are untouched. It is not a
+    whole-node replace.
+  - Always asserts the node's type. `update().for({id})` does not — an update against an absent id
+    writes its properties onto an untyped node that shape-scoped selects cannot find. That single
+    triple is the entire difference between the two: `update`'s `WHERE` is a bare `OPTIONAL`, so it
+    already matches when the node is missing.
+  - Returns what `update` returns. It deliberately does not report whether it created or replaced —
+    knowing that needs the extra read the single round-trip exists to avoid.
+  - `.where()` and `.forAll()` throw: an upsert targets one known id.
+  - Expression-valued fields throw. An expression reads the node's current value, which does not
+    exist when upsert creates it, and SPARQL would silently drop the triple.
+
+  **Wire format** — a new `op: "upsert"` envelope (`mode` is always `"for"`), documented in
+  `documentation/dsl-json.md`. It is a distinct `op` rather than a new `mode` on `update` so that a
+  consumer which does not understand it fails loudly instead of falling through to an
+  update-every-instance.
+
+  **IR** — a new `IRUpsertMutation` kind, with `upsertToAlgebra` / `upsertToSparql` alongside the
+  update equivalents.
+
+### Patch Changes
+
+- [#207](https://github.com/linked-cm/core/pull/207) [`02a32e2`](https://github.com/linked-cm/core/commit/02a32e2bd3483e601b1761ea950e3771ff1c419b) Thanks [@flyon](https://github.com/flyon)! - Never emit a prefixed name whose local part is not a legal SPARQL `PN_LOCAL`.
+
+  `Prefix.toPrefixed()` guarded only against `/`, so when a registered namespace was a proper
+  string prefix of an IRI's own namespace the compaction produced names like
+  `create-now:access#PolicyRegistry`. `#` is not in `PN_LOCAL`: the tokenizer ends the name at
+  `create-now:access` and reads the rest of the line as a **comment**, eating the triple
+  terminator and yielding a query the store rejects — with a parse error pointing at the
+  _following_ line, which is why this was hard to attribute.
+
+  The local part is now validated against a conservative `PN_LOCAL` allowlist and falls back to
+  `<full-iri>` when it does not fit. `collectPrefixes` asks `toPrefixed` rather than
+  re-implementing the rule, so the `PREFIX` block and the terms can never disagree.
+
+- [#213](https://github.com/linked-cm/core/pull/213) [`46bc8de`](https://github.com/linked-cm/core/commit/46bc8def877ea741c62baa0e39bf49cec5855176) Thanks [@flyon](https://github.com/flyon)! - Read result bindings under the same sanitized variable name they were written with.
+
+  `algebraToString` sanitizes a projection into a legal SPARQL variable — only letters, digits
+  and underscore survive — while `resultMapping` derived the name it reads back without doing
+  the same. A property named by a person ("Volume share", "Avg. basket") was therefore emitted
+  as `?a0_Volume_share` and looked up as `a0_Volume share`, matching no binding: the value came
+  back `null` with no error, for every multi-word property, on every query. Single-word names
+  were unaffected, which made it look like missing data rather than a naming mismatch.
+
+- [#189](https://github.com/linked-cm/core/pull/189) [`70a6d33`](https://github.com/linked-cm/core/commit/70a6d33e01f7eaab0e01cc7b59b2bc4c54118655) Thanks [@carlenmy](https://github.com/carlenmy)! - Register `PropertyShape.defaultValue` as a queryable property.
+
+  `sh:defaultValue` was read from config and emitted by `PropertyShape.getResult()`,
+  and the published `ShapeDetails` type declares it — but the property was never
+  registered in the meta-model, so any query referencing `defaultValue` threw
+  before executing. Adds the missing `sh:defaultValue` ontology term and its
+  `createPropertyShape` registration, mirroring the existing generic `hasValue`
+  registration (literal or IRI, `maxCount: 1`).
+
+- [#209](https://github.com/linked-cm/core/pull/209) [`0eb6b3c`](https://github.com/linked-cm/core/commit/0eb6b3ce841d895734f2c94602f25d412b9fef25) Thanks [@flyon](https://github.com/flyon)! - Fix `update(expr).where(…)` writing one value per node in the store when the expression traverses a
+  relation.
+
+  ```ts
+  Person.update((p) => ({ hobby: p.bestFriend.name.ucase() })).where((p) =>
+    p.name.equals("Moa")
+  );
+  ```
+
+  The traversal's leaf property was emitted as an `OPTIONAL` _beside_ the traversal edge rather than
+  inside it, and before it:
+
+  ```sparql
+  OPTIONAL { ?__trav_0__ <…/name> ?__trav_0___name . }   # subject var not yet bound
+  OPTIONAL { ?a0 <…/bestFriend> ?__trav_0__ . }
+  ```
+
+  The first `OPTIONAL` introduces `?__trav_0__` and so shares no variable with anything to its left —
+  a left join with no join condition, i.e. a cartesian product over every node in the store carrying
+  that predicate. The second cannot repair it: the variable is already bound, and `OPTIONAL` never
+  removes rows. Every resulting row then reached the `INSERT`, so a single-valued property was written
+  once per named node, with values taken from unrelated nodes.
+
+  The leaf is now nested inside the edge's `OPTIONAL`, which is what `.for(id)` already emitted for the
+  identical expression — the two mutation paths disagreed.
+
+  Only `update()` with a **computed expression that traverses a relation** _and_ a `.where()` clause is
+  affected. Plain `update().where()`, and any `update().for(id)`, were already correct.
+
 ## 2.17.0
 
 ### Minor Changes
