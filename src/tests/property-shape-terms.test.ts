@@ -49,7 +49,10 @@ describe('propertyShapeTerms', () => {
     expect(getPropertyShapeTerm('valueShape')?.predicate).toBe(`${SH}node`);
     // sh:equals is labelled `equalsConstraint` — `equals` is a query-builder method.
     expect(getPropertyShapeTerm('equalsConstraint')?.predicate).toBe(`${SH}equals`);
-    expect(getPropertyShapeTerm('equals')).toBeUndefined();
+    // …but the DECORATOR key is still `equals`, and code-to-SHACL materialization looks
+    // terms up by that key. Asserting it resolves to nothing was asserting the bug: it
+    // meant `@literalProperty({equals: …})` silently stopped emitting sh:equals.
+    expect(getPropertyShapeTerm('equals')?.predicate).toBe(`${SH}equals`);
     expect(getPropertyShapeTerm('notAConstraint')).toBeUndefined();
   });
 });
