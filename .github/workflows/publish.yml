@@ -133,8 +133,8 @@ jobs:
           gh pr merge "$pr" --auto --merge \
             || echo "Auto-merge unavailable (disabled or conflicts) — PR #$pr left open for manual merge."
 
-  dev-release:
-    name: Publish Dev Release
+  dev-build:
+    name: Verify Dev Build
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
@@ -159,18 +159,32 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish next release
-        run: |
-          # Start from main's version so changesets apply on top of the latest stable
-          git fetch origin main --depth=1
-          MAIN_VERSION=$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
-          npm version "$MAIN_VERSION" --no-git-tag-version --allow-same-version
-          # Apply pending changesets to get the next version
-          npx changeset version
-          NEXT_VERSION=$(node -p "require('./package.json').version")
-          # Append dev prerelease identifier
-          DEV_VERSION="${NEXT_VERSION}-next.$(date +%Y%m%d%H%M%S)"
-          npm version "$DEV_VERSION" --no-git-tag-version
-          npm publish --tag next
+      # Prerelease publishing is commented out, NOT deleted — the machinery is correct and
+      # the decision is reversible.
+      #
+      # It published `X.Y.Z-next.<timestamp>` under the `next` dist-tag on every push to `dev`.
+      # The org npm token is now stage-only, so `npm publish` cannot run at all; the nearest
+      # equivalent, `npm stage publish`, would queue a version for a maintainer's 2FA approval
+      # on EVERY push — an approval queue nobody can drain, mostly of artifacts nothing
+      # installs. A gate nobody keeps up with is a gate that gets skimmed, so the prerelease
+      # goes rather than the gate.
+      #
+      # To bring it back for a package that genuinely needs prereleases, uncomment and change
+      # the last line to `npm stage publish --tag next`. Better still, move this job to
+      # `workflow_dispatch` so a prerelease is cut deliberately rather than on every push.
+      #
+      # - name: Publish next release
+      #   run: |
+      #     # Start from main's version so changesets apply on top of the latest stable
+      #     git fetch origin main --depth=1
+      #     MAIN_VERSION=$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+      #     npm version "$MAIN_VERSION" --no-git-tag-version --allow-same-version
+      #     # Apply pending changesets to get the next version
+      #     npx changeset version
+      #     NEXT_VERSION=$(node -p "require('./package.json').version")
+      #     # Append dev prerelease identifier
+      #     DEV_VERSION="${NEXT_VERSION}-next.$(date +%Y%m%d%H%M%S)"
+      #     npm version "$DEV_VERSION" --no-git-tag-version
+      #     npm publish --tag next
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
