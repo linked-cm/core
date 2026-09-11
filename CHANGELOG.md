@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.18.1
+
+### Patch Changes
+
+- [#220](https://github.com/linked-cm/core/pull/220) [`dc1bdbb`](https://github.com/linked-cm/core/commit/dc1bdbb8e966b57f7b2add7050244a0ae0811fef) Thanks [@flyon](https://github.com/flyon)! - Fix `Class extends value undefined` when registering a runtime shape — `getOrCreateShapeAdapter`
+  captured `Shape` at module-evaluation time, which could be before `Shape.js` had finished.
+
 ## 2.18.0
 
 ### Minor Changes
