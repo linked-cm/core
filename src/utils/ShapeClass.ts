@@ -1,4 +1,9 @@
-import {Shape, type ShapeConstructor} from '../shapes/Shape.js';
+import {type Shape, type ShapeConstructor} from '../shapes/Shape.js';
+// Namespace import, read at CALL time rather than captured at module-evaluation time.
+// `getOrCreateShapeAdapter` subclasses `Shape` at runtime, and under some import orders this
+// module finishes evaluating before `Shape.js` does — a named import captured then is
+// permanently `undefined`, and the subclass fails with "Class extends value undefined".
+import * as ShapeModule from '../shapes/Shape.js';
 import {
   getPropertyShape,
   type NodeShapeData,
@@ -149,7 +154,7 @@ export function getOrCreateShapeAdapter(
   // object must not be reused.
   if (cached && cached.shape === data) return cached;
 
-  class RuntimeShape extends Shape {
+  class RuntimeShape extends ShapeModule.Shape {
     static shape = data as NodeShapeData;
     static targetClass = (data as NodeShapeData).targetClass ?? null;
   }
@@ -218,7 +223,7 @@ export function getSuperShapes(shape: ShapeLike): NodeShapeData[] {
       const parent = Object.getPrototypeOf(current) as typeof Shape | undefined;
       if (!parent?.shape) break;
       chain.push(parent.shape);
-      if ((parent as unknown) === (Shape as unknown)) break;
+      if ((parent as unknown) === (ShapeModule.Shape as unknown)) break;
       current = parent;
     }
     return chain;
