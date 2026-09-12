@@ -754,6 +754,41 @@ export const queryFactories = {
  * `captureQuery` still yields the IR/SPARQL these produce, so the golden suite
  * consumes them the same way.
  */
+/**
+ * Root-count factories, kept **out of `queryFactories`** for the same reason
+ * `existsFactories` are: `.count()` is terminal (it returns `Promise<number>`, not a
+ * builder), so the DSL-JSON round-trip suite that calls `.toJSON()` on every entry
+ * of `queryFactories` cannot enumerate them. The count *does* have a wire form —
+ * `builder.toCount().toJSON()`, exercised directly in `count-wire.test.ts`.
+ *
+ * `captureQuery` still yields the IR these produce, so the golden suite consumes
+ * them the same way.
+ */
+export const countFactories = {
+  countAll: () => Person.count(),
+  countWhere: () => Person.select().where((p) => p.name.equals('Semmy')).count(),
+  countById: () => Person.select().for(entity('p1')).count(),
+  countMinus: () => Person.select().minus(Employee).count(),
+  // Normalisation: the projection and the sort are dropped, so this must lower to
+  // exactly the same IR as `countWhere`.
+  countNormalised: () =>
+    Person.select((p) => [p.name, p.friends.name])
+      .orderBy((p) => p.name)
+      .where((p) => p.name.equals('Semmy'))
+      .count(),
+  // Pagination is dropped too — see the LIMIT/OFFSET note on SelectBuilder.count().
+  countPaginated: () =>
+    Person.select((p) => p.friends.name)
+      .where((p) => p.name.equals('Semmy'))
+      .offset(10)
+      .limit(50)
+      .count(),
+  // A filter on a multi-valued property yields several rows per subject, which is
+  // why the aggregate counts DISTINCT subjects rather than rows.
+  countMultiValuedWhere: () =>
+    Person.select().where((p) => p.nickNames.equals('Sem')).count(),
+};
+
 export const existsFactories = {
   existsById: () => Person.exists(entity('p1')),
   existsWhere: () => Person.select().where((p) => p.name.equals('Semmy')).exists(),
