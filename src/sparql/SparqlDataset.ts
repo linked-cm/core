@@ -1,6 +1,7 @@
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {SelectQuery} from '../queries/SelectQuery.js';
 import type {AskQuery} from '../queries/AskQuery.js';
+import type {CountQuery} from '../queries/CountQuery.js';
 import type {CreateQuery} from '../queries/CreateQuery.js';
 import type {UpdateQuery} from '../queries/UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from '../queries/DeleteQuery.js';
@@ -13,6 +14,7 @@ import type {SparqlQueryResults} from './resultMapping.js';
 import {
   selectToSparql,
   askToSparql,
+  countToSparql,
   createToSparql,
   updateToSparql,
   upsertToSparql,
@@ -24,6 +26,7 @@ import {
 import {
   mapSparqlSelectResult,
   mapSparqlAskResult,
+  mapSparqlCountResult,
   mapSparqlCreateResult,
   mapSparqlUpdateResult,
   isSparqlSelectResults,
@@ -108,6 +111,22 @@ export abstract class SparqlDataset implements IDataset {
     const sparql = askToSparql(ir, this.options);
     const json = await this.executeSparqlSelect(sparql);
     return mapSparqlAskResult(json);
+  }
+
+  /**
+   * Count the matching instances — emitted as
+   * `SELECT (COUNT(DISTINCT ?a0) AS ?count) WHERE { … }`.
+   *
+   * A {@link CountQuery} carries only a pattern, so there is nothing to normalise
+   * away here: no projection, no ordering, and in particular no `LIMIT`/`OFFSET`,
+   * which the builder dropped before the query ever reached the IR. Errors reject;
+   * they are never reported as `0`.
+   */
+  async countQuery(query: CountQuery): Promise<number> {
+    const ir = lower(query);
+    const sparql = countToSparql(ir, this.options);
+    const json = await this.executeSparqlSelect(sparql);
+    return mapSparqlCountResult(json, ir);
   }
 
   async createQuery(query: CreateQuery): Promise<CreateResult> {

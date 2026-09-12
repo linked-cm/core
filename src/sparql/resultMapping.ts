@@ -3,6 +3,7 @@ import type {
   IRExpression,
   IRFieldValue,
   IRNodeData,
+  IRCountQuery,
   IRSelectQuery,
   IRUpdateMutation,
   IRUpsertMutation,
@@ -751,6 +752,49 @@ export function mapSparqlAskResult(json: SparqlQueryResults): boolean {
         ? 'a SELECT result set'
         : `${JSON.stringify(json)?.slice(0, 200)}`) +
       '. The endpoint did not answer the ASK query that was sent.',
+    );
+  }
+  return value;
+}
+
+/**
+ * Reads the number out of a root-count result set.
+ *
+ * Strict on purpose, and in exactly the way {@link mapSparqlAskResult} is strict: a
+ * missing binding, an empty result set or a non-numeric value **throws**. It never
+ * defaults to `0`, because `0` is a perfectly plausible count — it renders an empty
+ * table and is indistinguishable from real data, so a broken count that returned it
+ * would hide instead of failing.
+ *
+ * A well-formed `COUNT` over an empty match set does bind `?count` to `0`, and that
+ * is returned as the real answer it is.
+ */
+export function mapSparqlCountResult(
+  json: SparqlQueryResults,
+  query: IRCountQuery,
+): number {
+  if (!isSparqlSelectResults(json)) {
+    throw new Error(
+      'Expected a SPARQL SELECT result set for a count query, got ' +
+      `${JSON.stringify(json)?.slice(0, 200)}. The endpoint did not answer the ` +
+      'SELECT (COUNT(…)) query that was sent.',
+    );
+  }
+  const variable = sanitizeVarName(query.alias);
+  const binding = json.results.bindings[0]?.[variable];
+  if (!binding) {
+    throw new Error(
+      `A count result set has no binding for ?${variable}. A root COUNT is an ` +
+      'aggregate over the whole match set, so it always yields exactly one row — an ' +
+      'empty result set means the query that ran was not the count that was built.',
+    );
+  }
+  const value = Number(binding.value);
+  if (!Number.isFinite(value)) {
+    throw new Error(
+      `A count result bound ?${variable} to ${JSON.stringify(binding.value)}, which ` +
+      'is not a number. It is not coerced — a count that silently reads as 0 hides a ' +
+      'broken query behind an empty table.',
     );
   }
   return value;
