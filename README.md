@@ -381,7 +381,7 @@ The query DSL is schema-parameterized: you define your own SHACL shapes, and Lin
 - `and(...)` / `or(...)` combinations
 - Set filtering with `some(...)` / `every(...)` (and implicit `some`)
 - Outer `where(...)` chaining
-- Counting with `.size()`
+- Counting: `.count()` for how many instances match, `.size()` for a property's value count
 - Custom result formats (object mapping)
 - Computed values — derive new fields with arithmetic, string, date, and comparison methods
 - Expression-based WHERE filters (`p.name.strlen().gt(5)`)
@@ -487,11 +487,32 @@ const outer = await Person.select((p) => p.knows).where((p) =>
 );
 ```
 
-#### Counting (size)
+#### Counting
+
+Two different questions, two different queries.
+
+`.count()` answers **how many instances match** — one number for the whole match set. It respects
+`where` and `minus`, and ignores `limit`/`offset`, so a paged table can ask for its total row count
+beside the page it is showing:
+
+```typescript
+/* Result: number */
+const total = await Person.count();
+const matching = await Person.select().where((p) => p.name.equals('Semmy')).count();
+
+// Lowers to: SELECT (COUNT(DISTINCT ?a0) AS ?count) WHERE { ?a0 a Person ; name ?n . FILTER(…) }
+```
+
+`.size()` answers **how many values a property has**, per row:
+
 ```typescript
 /* Result: Array<{id: string; knows: number}> */
-const count = await Person.select((p) => p.knows.size());
+const perPerson = await Person.select((p) => p.knows.size());
 ```
+
+A count resolves to a real number and **rejects on failure** — it never reports an unreachable store
+as `0`. `.toCount()` gives you the count query itself, for a router that forwards
+(`builder.toCount().toJSON()`) rather than executes.
 
 #### Custom result formats
 ```typescript

@@ -783,6 +783,11 @@ export const countFactories = {
       .offset(10)
       .limit(50)
       .count(),
+  countBySubjects: () =>
+    Person.select().forAll([entity('p1'), entity('p2')]).count(),
+  // The query context is set to p3 by the suites that use these fixtures, so this
+  // counts one resolved node — not the whole shape.
+  countByContextSubject: () => Person.select().for(getQueryContext('user')).count(),
   // A filter on a multi-valued property yields several rows per subject, which is
   // why the aggregate counts DISTINCT subjects rather than rows.
   countMultiValuedWhere: () =>

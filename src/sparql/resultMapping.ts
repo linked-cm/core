@@ -789,12 +789,18 @@ export function mapSparqlCountResult(
       'empty result set means the query that ran was not the count that was built.',
     );
   }
-  const value = Number(binding.value);
-  if (!Number.isFinite(value)) {
+  // `Number('')` and `Number('  ')` are both 0, and `Number.isFinite(0)` is true —
+  // so a blank lexical form must be rejected BEFORE the numeric check, or the one
+  // value this function exists not to invent is exactly the one it would return.
+  const lexical = binding.value?.trim();
+  const value = lexical ? Number(lexical) : NaN;
+  if (!Number.isInteger(value) || value < 0) {
     throw new Error(
       `A count result bound ?${variable} to ${JSON.stringify(binding.value)}, which ` +
-      'is not a number. It is not coerced — a count that silently reads as 0 hides a ' +
-      'broken query behind an empty table.',
+      'is not a non-negative integer. It is not coerced — a count that silently reads ' +
+      'as 0 hides a broken query behind an empty table. (These checks are repeated ' +
+      'here rather than left to `resolveCount`, because a caller may hold a store and ' +
+      'invoke `countQuery` on it directly, which does not pass through that helper.)',
     );
   }
   return value;

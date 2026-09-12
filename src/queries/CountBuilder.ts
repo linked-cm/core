@@ -91,10 +91,20 @@ export class CountBuilder implements PromiseLike<number>, Promise<number> {
   toJSON(): CountQueryJSON {
     const {shapeClass, subject, subjects, where, minusEntries, nullSubject} =
       this._spec;
+    const shapeId = shapeClass.shape?.id;
+    if (!shapeId) {
+      // Refuse here rather than emitting `shape: ''` for the receiver's `fromJSON`
+      // to reject: the caller who holds the shape can act on this, and a peer
+      // across a wire cannot.
+      throw new Error(
+        'Cannot serialize a count query whose shape has no id. A count envelope must ' +
+        'name a shape — a shapeless count would count every node in the store.',
+      );
+    }
     const json: CountQueryJSON = {
       v: WIRE_VERSION,
       op: 'count',
-      shape: shapeClass.shape?.id || '',
+      shape: shapeId,
     };
 
     if (subject instanceof PendingQueryContext) {

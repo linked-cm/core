@@ -436,3 +436,89 @@ demonstration that stripping `DISTINCT` from the emitted query changes the answe
 ### Phase 5 — Docs and changeset ✅
 
 `.changeset/root-level-count.md` (minor).
+
+## Review
+
+A fresh-eyes review pass (full diff + the ask path as reference idiom) plus my own. Two real
+correctness bugs, one coverage hole, and confirmation of the things that had been worried about.
+
+### Confirmed correct — checked and clear
+
+- `COUNT(DISTINCT ?a0)` on the root alias is right; the DISTINCT is golden-tested *and* proven
+  against Fuseki by stripping it (2 → 1).
+- **No `limit`/`offset` leak path exists.** No IR pattern kind carries a window — `limit`/`offset`
+  appear only on `IRSelectQuery` — `countToAlgebra` builds the plan with every modifier undefined,
+  and `selectPlanToSparql` omits each when unset.
+- **The alias-collision worry is not real.** `selectToAlgebra`'s aggregate rename only walks
+  `query.projection`, which `countToAlgebra` passes as `[]`; generated aliases are `a<N>` /
+  `a<N>_<prop>`, so `count` cannot collide. `mapSparqlCountResult` reads
+  `sanitizeVarName(query.alias)` — the same function the serializer uses — so they cannot disagree.
+- **The HAVING guard is sufficient.** `groupBy` is only set when `hasAggregates`, which with an empty
+  projection can only come from `havingExpr` — so the `inner.having` check catches every
+  aggregate-in-where case. No silent drop.
+- `where`, `minus` and subject filters all reach the count; `minus` travels as an `IRMinusPattern`
+  inside `patterns`, so dropping the select plan's projection loses nothing.
+
+### Gaps found and addressed (Iteration 1)
+
+**G1 — URGENT, a real bug: an unresolved context *subject* lowered to a count of the whole shape.**
+`lowerCount` refused `nullSubject` and a missing shape, but not a `PendingQueryContext` with no `id`.
+`buildSelectQuery` narrows a subject with `'id' in subject`, so an unresolved one yielded
+`subjectId: undefined` and the emitted query was `SELECT (COUNT(DISTINCT ?a0)) WHERE { ?a0 a Person }`
+— **every instance of the shape, reported as the count of one node.** `CountBuilder.exec`
+short-circuits that case to `0`, but the path that skips `exec` is exactly the one `toCount()` is
+public *for*: a receiver that rehydrates the envelope with `fromJSON` and hands the builder straight
+to a store. So the one case that actually crosses a process boundary was the unguarded one.
+
+Fixed by resolving the context in `lowerCount` via `resolveContextId(name, true)`, which throws
+`UnresolvedContextError` when unset — the same "not ready" a where-clause reference raises, never a
+plausible number — and resolves correctly when set. Pinned by three regression tests (wire, golden,
+Fuseki); all three fail with the fix reverted, which was verified.
+
+**G2 — URGENT, a real bug: `mapSparqlCountResult` could still return `0`.** `Number('')` is `0` and
+`Number.isFinite(0)` is `true`, so a blank lexical form returned the single value the function's own
+doc comment forbids it to invent. The integer / non-negative checks also lived *only* in
+`resolveCount`, which `SparqlDataset.countQuery` does not pass through — and calling a store's
+`countQuery` directly is a supported entry point (the Fuseki suite does it). Fixed: reject a blank
+form before the numeric check, and repeat the integer/non-negative checks in the mapper, with a
+comment saying why they are repeated.
+
+**G3 — URGENT, missing coverage of the new path.** Added: multiple subjects (`forAll`) through
+fixture, golden SPARQL (`VALUES ?a0 { … }`), wire round trip and Fuseki; a resolved context subject;
+the G1 case at all three levels; the public entry points (`SelectBuilder.count`, `Shape.count`,
+`await builder`) against a dispatch that lacks `countQuery`; the blank/fractional/negative binding
+forms; and the unresolved-context-in-`where` asymmetry — `select` answers `null`, count **rejects**.
+
+**G4 — architecture/duplication (partly addressed).** `toCount()` was a verbatim copy of `_toAsk()`.
+Extracted a shared private `_patternSpec()` on `SelectBuilder`, so the two can no longer drift — and
+added a parity test asserting the two envelopes carry an identical pattern for six builder shapes,
+because a drift would mean `count === 0` next to `exists === true` from the same builder.
+
+**G5 — `toJSON()` could emit `shape: ''`** for the receiver's `fromJSON` to reject. Moved the refusal
+to serialization time, where the caller who holds the shape can act on it.
+
+**G6 — consumer note.** Documented in the changeset: `countQuery` is optional, so a store or router
+that does not extend `SparqlDataset` (including any `setQueryDispatch({…})` literal in a consuming
+package) needs a `countQuery` arm added by hand.
+
+**G7 — README.** The feature list and the "Counting" example covered only `.size()`. Rewritten to
+present both, and to state the distinction directly: `.count()` is how many instances match,
+`.size()` is how many values a property has.
+
+### Deferred (non-urgent, noted in the PR body)
+
+- **`CountBuilder` and `AskBuilder` are near-identical files.** A shared scalar-query base (or a
+  small generic over the answer type) would remove ~150 duplicated lines. Deliberately not done here:
+  it changes `AskBuilder`, which is out of this change's scope, and it wants its own review.
+- **`askToAlgebra` has the HAVING silent-drop that `countToAlgebra` now guards against.**
+  `.where(p => p.friends.size().gt(2)).exists()` emits an `ASK` with the aggregate filter *missing*,
+  so it answers "does any Person exist". Pre-existing, not introduced here; the fix needs the same
+  nested-sub-SELECT work the count guard defers. Worth a backlog entry.
+- **Counting a HAVING-filtered group set** (`.where(p => p.friends.size().gt(2)).count()`) is refused
+  rather than supported. See the "Known limitation" contract above.
+
+### Validation after Iteration 1
+
+`npm run typecheck`: 0 `error TS`. `npm run build`: 0 errors. Full Jest suite, `--runInBand`:
+**1897 passed, 0 failed, 120 skipped, 2017 total** across 76 suites (from 1871/1991 before the
+iteration, and 1817/1938 on `dev`).

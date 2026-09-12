@@ -26,7 +26,12 @@ import {lower} from '../queries/lower';
 import {resolveCount} from '../queries/queryDispatch';
 import {countToSparql} from '../sparql/irToAlgebra';
 import {mapSparqlCountResult} from '../sparql/resultMapping';
-import {setQueryContext, PendingQueryContext} from '../queries/QueryContext';
+import {
+  setQueryContext,
+  getQueryContext,
+  PendingQueryContext,
+  UnresolvedContextError,
+} from '../queries/QueryContext';
 // Imported for its side effect: it installs the global query dispatch that the
 // PromiseLike (`await builder`) path below uses.
 import '../test-helpers/query-capture-store';
@@ -253,13 +258,184 @@ describe('mapSparqlCountResult', () => {
     ).toThrow(/no binding for \?count/);
   });
 
-  test('a non-numeric binding throws rather than reading as 0', () => {
-    expect(() => mapSparqlCountResult(bindings('lots'), ir)).toThrow(/not a number/);
+  test.each([
+    ['a non-numeric binding', 'lots'],
+    // `Number('')` is 0 and `Number.isFinite(0)` is true, so a blank lexical form is
+    // the one value this function must not invent.
+    ['an empty binding', ''],
+    ['a whitespace binding', '   '],
+    ['a fractional count', '1.5'],
+    ['a negative count', '-1'],
+  ])('%s throws rather than reading as a number', (_label, value) => {
+    expect(() => mapSparqlCountResult(bindings(value), ir)).toThrow(
+      /non-negative integer/,
+    );
   });
 
   test('an ASK response throws', () => {
     expect(() => mapSparqlCountResult({head: {}, boolean: true}, ir)).toThrow(
       /SELECT result set/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A failure is never a plausible answer
+// ---------------------------------------------------------------------------
+
+describe('count never flattens a failure into 0', () => {
+  /**
+   * A store that lowers what it is given, the way a real one does — so an
+   * unresolved context surfaces from lowering rather than from a missing method.
+   */
+  const loweringStore = {
+    selectQuery: async (q: never) => lower(q) as never,
+    countQuery: async (q: never) => lower(q) as never,
+  };
+
+  test('an unresolved context in a WHERE clause rejects — where select answers null', async () => {
+    // `exec()` deliberately reports an unresolved context reference as `null`
+    // ("not ready"), which a reactive layer re-runs once the context lands. A count
+    // must NOT flatten that into 0: 0 renders an empty table and looks like data.
+    // This is the same distinction `.exists()` draws for a boolean.
+    const builder = SelectBuilder.from(Person).where((p) =>
+      (p as any).bestFriend.equals(getQueryContext('nobody-has-set-this') as never),
+    );
+    await expect(builder.exec(loweringStore as never)).resolves.toBeNull();
+    await expect(builder.count(loweringStore as never)).rejects.toThrow(
+      UnresolvedContextError,
+    );
+  });
+
+  test('a lowering failure inside the store rejects', async () => {
+    // The store lowers, and lowering throws (a `.for(null)` builder handed straight
+    // to a store, off the exec() path). The rejection must reach the caller.
+    const builder = SelectBuilder.from(Person).for(null).toCount();
+    expect(() => lower(builder)).toThrow(/no subject/i);
+    await expect(
+      resolveCount(
+        {
+          countQuery: async (q) => lower(q as never) as never,
+        },
+        builder as unknown as CountQuery,
+      ),
+    ).rejects.toThrow(/no subject/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `exists` and `count` must agree about the match set
+// ---------------------------------------------------------------------------
+
+describe('count and exists describe the same match set', () => {
+  // Both reduce a select through the same `_patternSpec()`. If those normalisations
+  // ever drifted, the same builder could report `count === 0` next to
+  // `exists === true`. Comparing the two envelopes pins them together.
+  const builders = {
+    bare: () => SelectBuilder.from(Person),
+    byId: () => SelectBuilder.from(Person).for(entity('p1')),
+    filtered: () => SelectBuilder.from(Person).where((p) => p.name.equals('Semmy')),
+    minus: () => SelectBuilder.from(Person).minus((p) => p.hobby),
+    windowedAndProjected: () =>
+      SelectBuilder.from(Person)
+        .select((p) => [p.name])
+        .orderBy((p) => p.name)
+        .limit(5)
+        .offset(10),
+    nullSubject: () => SelectBuilder.from(Person).for(null),
+  };
+
+  test.each(Object.keys(builders))('%s — same pattern in both envelopes', (name) => {
+    const builder = builders[name as keyof typeof builders]();
+    const {op: countOp, ...countPattern} = builder.toCount().toJSON();
+    const {op: askOp, ...askPattern} = (builder as any)._toAsk().toJSON();
+    expect(countOp).toBe('count');
+    expect(askOp).toBe('ask');
+    expect(countPattern).toEqual(askPattern);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Subjects — plural and context-resolved
+// ---------------------------------------------------------------------------
+
+describe('count over explicit subjects', () => {
+  test('forAll(ids) rides the envelope and the round trip', () => {
+    const builder = SelectBuilder.from(Person).forAll([entity('p1'), entity('p2')]);
+    const json = builder.toCount().toJSON();
+    expect(json.subjects).toEqual([entity('p1').id, entity('p2').id]);
+    expect(json.subject).toBeUndefined();
+    const rehydrated = fromJSON(json) as CountBuilder;
+    expect(lower(rehydrated)).toEqual(lower(builder.toCount()));
+    expect(lower(rehydrated).subjectIds).toEqual([entity('p1').id, entity('p2').id]);
+  });
+
+  test('a context already set travels as its concrete subject', () => {
+    setQueryContext('countCtx', entity('p1'), Person);
+    // `getQueryContext` hands back the real value when the context is set, so there
+    // is no reference left to carry.
+    const builder = SelectBuilder.from(Person).for(getQueryContext('countCtx'));
+    expect(builder.toCount().toJSON().subject).toBe(entity('p1').id);
+    expect(lower(builder.toCount()).subjectId).toBe(entity('p1').id);
+  });
+
+  test('a context set only at the receiver: reference on the wire, resolved at lowering', () => {
+    // The interesting case for a router: the sender has no value, so the envelope
+    // carries `{"@ctx"}` and the RECEIVER resolves it against its own map. It must
+    // lower to that subject — not to a bare shape scan counting everything.
+    const builder = SelectBuilder.from(Person).for(
+      new PendingQueryContext('receiver-side-ctx'),
+    );
+    const json = builder.toCount().toJSON();
+    expect(json.subject).toEqual({'@ctx': 'receiver-side-ctx'});
+    setQueryContext('receiver-side-ctx', entity('p2'), Person);
+    expect(lower(fromJSON(json) as CountBuilder).subjectId).toBe(entity('p2').id);
+  });
+
+  test('an unresolved context subject is refused at lowering', () => {
+    const rehydrated = CountBuilder.fromJSON({
+      op: 'count',
+      shape: Person.shape.id,
+      subject: {'@ctx': 'still-not-set'},
+    } as never);
+    // Not 0, and emphatically not a count of every Person.
+    expect(() => lower(rehydrated)).toThrow(UnresolvedContextError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The public entry points, against a dispatch that cannot count
+// ---------------------------------------------------------------------------
+
+describe('a store that cannot count says so, through every entry point', () => {
+  const cannotCount = {selectQuery: async () => []};
+
+  test('SelectBuilder.count()', async () => {
+    await expect(
+      SelectBuilder.from(Person).count(cannotCount as never),
+    ).rejects.toThrow(/IDataset\.countQuery/);
+  });
+
+  test('Shape.count()', async () => {
+    await expect(Person.count(cannotCount as never)).rejects.toThrow(
+      /IDataset\.countQuery/,
+    );
+  });
+
+  test('await on the builder', async () => {
+    await expect(
+      SelectBuilder.from(Person).toCount().exec(cannotCount as never),
+    ).rejects.toThrow(/IDataset\.countQuery/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Serialization refusal
+// ---------------------------------------------------------------------------
+
+describe('count serialization', () => {
+  test('a shape with no id is refused at toJSON, where the caller can act', () => {
+    const builder = CountBuilder.of({shapeClass: {shape: {}} as never});
+    expect(() => builder.toJSON()).toThrow(/must name a shape/);
   });
 });

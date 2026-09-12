@@ -436,53 +436,31 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
    * separate builder rather than a mode of this one.
    */
   toCount(): CountBuilder {
-    let where: WherePath | undefined;
-    if (this._whereFn) {
-      where = processWhereClause(this._whereFn, this._shape);
-    } else if (this._where) {
-      where = this._where;
-    }
-
-    let minusEntries: RawMinusEntry[] | undefined;
-    if (this._minusEntries && this._minusEntries.length > 0) {
-      minusEntries = this._evaluateMinusEntries();
-    } else if (this._rawMinusEntries && this._rawMinusEntries.length > 0) {
-      minusEntries = this._rawMinusEntries;
-    }
-
-    // A PendingQueryContext must survive as itself — it has an `id` *getter*, so
-    // narrowing it to `{id}` here would silently resolve it against THIS process's
-    // context map, and the count would travel as a concrete IRI where the
-    // equivalent select travels as `{"@ctx": name}` for the receiver to resolve.
-    const subject =
-      this._subject instanceof PendingQueryContext
-        ? this._subject
-        : this._subject && typeof this._subject === 'object' && 'id' in this._subject
-          ? {id: (this._subject as NodeReferenceValue).id}
-          : undefined;
-
     return CountBuilder.of({
       shapeClass: this._shape,
-      subject,
-      subjects: this._subjects,
-      where,
-      minusEntries,
-      // `.for(null)`. An unresolved pending context is handled by
-      // CountBuilder.exec, which answers `0` without querying.
-      nullSubject: this._nullSubject,
+      // `.for(null)` rides along in the spec. An unresolved pending context is
+      // handled by CountBuilder.exec, which answers `0` without querying.
+      ...this._patternSpec(),
     });
   }
 
   /**
-   * Reduce this select to the ask query that answers the same existence question.
+   * The pattern-bearing part of this select: shape-membership, subject(s), filters
+   * and `minus` — everything that decides which nodes are in the match set, and
+   * nothing that shapes or windows the rows describing them.
    *
-   * Only the pattern survives — shape, subject(s), filters, `minus`. The
-   * projection, preloads, sorting and pagination are not "dropped" so much as
-   * unrepresentable: {@link AskBuilder} has nowhere to put them. That is the point
-   * of it being a separate builder rather than a mode of this one — the
-   * normalisation cannot be forgotten or half-applied.
+   * Shared by {@link _toAsk} and {@link toCount} rather than written twice. That is
+   * not only about duplication: if the two normalisations drifted, `.exists()` and
+   * `.count()` would disagree about what the match set *is* — a count of 0 next to
+   * an `exists` of `true`, from the same builder.
    */
-  private _toAsk(): AskBuilder {
+  private _patternSpec(): {
+    subject?: NodeReferenceValue | PendingQueryContext;
+    subjects?: NodeReferenceValue[];
+    where?: WherePath;
+    minusEntries?: RawMinusEntry[];
+    nullSubject?: boolean;
+  } {
     let where: WherePath | undefined;
     if (this._whereFn) {
       where = processWhereClause(this._whereFn, this._shape);
@@ -499,7 +477,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
 
     // A PendingQueryContext must survive as itself. It has an `id` *getter*, so
     // narrowing it to `{id}` here would silently resolve it against THIS process's
-    // context map — and the ask would then travel as a concrete IRI where the
+    // context map — and the query would then travel as a concrete IRI where the
     // equivalent select travels as `{"@ctx": name}` for the receiver to resolve.
     const subject =
       this._subject instanceof PendingQueryContext
@@ -508,15 +486,31 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
           ? {id: (this._subject as NodeReferenceValue).id}
           : undefined;
 
-    return AskBuilder.of({
-      shapeClass: this._shape,
+    return {
       subject,
       subjects: this._subjects,
       where,
       minusEntries,
-      // `.for(null)`. An unresolved pending context is handled by AskBuilder.exec,
-      // which sees the live context and answers `false` without querying.
       nullSubject: this._nullSubject,
+    };
+  }
+
+  /**
+   * Reduce this select to the ask query that answers the same existence question.
+   *
+   * Only the pattern survives — shape, subject(s), filters, `minus`. The
+   * projection, preloads, sorting and pagination are not "dropped" so much as
+   * unrepresentable: {@link AskBuilder} has nowhere to put them. That is the point
+   * of it being a separate builder rather than a mode of this one — the
+   * normalisation cannot be forgotten or half-applied.
+   */
+  private _toAsk(): AskBuilder {
+    return AskBuilder.of({
+      shapeClass: this._shape,
+      // `.for(null)` rides along in the spec. An unresolved pending context is
+      // handled by AskBuilder.exec, which sees the live context and answers `false`
+      // without querying.
+      ...this._patternSpec(),
     });
   }
 

@@ -2125,6 +2125,33 @@ describe('Fuseki COUNT — root-level', () => {
     expect(await countOf(Person.select().minus((p) => p.hobby).toCount())).toBe(2);
   });
 
+  test('counts explicit subjects', async () => {
+    if (!fusekiAvailable) return;
+    expect(
+      await countOf(
+        Person.select().forAll([{id: `${ENT}p1`}, {id: `${ENT}p2`}]).toCount(),
+      ),
+    ).toBe(2);
+  });
+
+  test('an unresolved context subject is refused, never counted as the whole shape', async () => {
+    if (!fusekiAvailable) return;
+    // The regression this pins: a rehydrated `{"@ctx"}` subject whose context is
+    // unset on THIS side must not lower to a bare scan and report 4 (every Person)
+    // as the count of one node.
+    const {CountBuilder} = await import('../queries/CountBuilder');
+    const rehydrated = CountBuilder.fromJSON({
+      op: 'count',
+      shape: Person.shape.id,
+      subject: {'@ctx': 'not-set-in-this-process'},
+    } as never);
+    const store = new FusekiStore(
+      process.env.FUSEKI_BASE_URL || 'http://localhost:3939',
+      DATASET_NAME,
+    );
+    await expect(store.countQuery(rehydrated)).rejects.toThrow(/context/i);
+  });
+
   test('SparqlDataset.countQuery answers end to end', async () => {
     if (!fusekiAvailable) return;
     const store = new FusekiStore(

@@ -32,7 +32,7 @@ import {
 import {captureQuery} from '../test-helpers/query-capture-store';
 import {countToAlgebra, countToSparql} from '../sparql/irToAlgebra';
 import {lower} from '../queries/lower';
-import {setQueryContext} from '../queries/QueryContext';
+import {setQueryContext, UnresolvedContextError} from '../queries/QueryContext';
 import type {IRCountQuery} from '../queries/IntermediateRepresentation';
 
 import '../ontologies/rdf';
@@ -100,6 +100,19 @@ describe('IR golden — count', () => {
     expect(ir.subjectId).toBe(`${tmpEntityBase}p1`);
   });
 
+  test('countBySubjects keeps every subject', async () => {
+    const ir = await captureCount(countFactories.countBySubjects);
+    expect(ir.subjectIds).toEqual([`${tmpEntityBase}p1`, `${tmpEntityBase}p2`]);
+  });
+
+  test('a resolved context subject lowers to that one node', async () => {
+    // The dangerous case is the UNRESOLVED one (see the refusal below): a context
+    // that has not landed would otherwise count the whole shape. A resolved one must
+    // count exactly its node.
+    const ir = await captureCount(countFactories.countByContextSubject);
+    expect(ir.subjectId).toBe('user-1');
+  });
+
   test('countMinus keeps the MINUS pattern', async () => {
     const ir = await captureCount(countFactories.countMinus);
     expect(ir.patterns).toEqual([
@@ -140,6 +153,16 @@ SELECT (count(DISTINCT ?a0) AS ?count)
 WHERE {
   ?a0 rdf:type <${PT}> .
   FILTER(?a0 = <${tmpEntityBase}p1>)
+}`);
+  });
+
+  test('countBySubjects', async () => {
+    expect(await goldenCount(countFactories.countBySubjects)).toBe(
+`${RDF_PREFIX}
+SELECT (count(DISTINCT ?a0) AS ?count)
+WHERE {
+  VALUES ?a0 { <${tmpEntityBase}p1> <${tmpEntityBase}p2> }
+  ?a0 rdf:type <${PT}> .
 }`);
   });
 
@@ -267,6 +290,21 @@ describe('count refusals', () => {
     // anyway must not get a pattern that counts every instance of the shape.
     const builder = Person.select().for(null).toCount();
     expect(() => lower(builder)).toThrow(/no subject/i);
+  });
+
+  test('an unresolved context subject is refused at lowering, not counted', async () => {
+    // The bug this guards: a `{"@ctx"}` subject that has not resolved would narrow to
+    // `subjectId: undefined`, and the emitted query would count EVERY instance of the
+    // shape while the caller believes it counted one node. `CountBuilder.exec`
+    // short-circuits to 0 before dispatching, but a receiver that rehydrates the
+    // envelope and hands the builder straight to a store reaches lowering directly.
+    const {CountBuilder} = await import('../queries/CountBuilder');
+    const rehydrated = CountBuilder.fromJSON({
+      op: 'count',
+      shape: Person.shape.id,
+      subject: {'@ctx': 'never-set-anywhere'},
+    } as never);
+    expect(() => lower(rehydrated)).toThrow(UnresolvedContextError);
   });
 
   test('countToAlgebra refuses a rootless IR', () => {

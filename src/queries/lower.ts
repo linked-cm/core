@@ -238,10 +238,23 @@ function lowerCount(input: RawCountInput): IRCountQuery {
       'every node in the store, under any type or none.',
     );
   }
+  // A `{"@ctx": name}` subject arrives here as a live PendingQueryContext, and
+  // `buildSelectQuery` narrows a subject with `'id' in subject` — so an UNRESOLVED
+  // one would quietly yield `subjectId: undefined` and the count would be of every
+  // instance of the shape, reported as the count of one node. `CountBuilder.exec`
+  // answers `0` for that case before dispatching, but this path is reached without
+  // it: a receiver that rehydrates an envelope with `fromJSON` and hands the builder
+  // straight to a store. Resolve it here, which throws `UnresolvedContextError` when
+  // the context is unset — the same "not ready" a where-clause reference raises, and
+  // never a plausible number.
+  const subject =
+    input.subject instanceof PendingQueryContext
+      ? {id: resolveContextId(input.subject.contextName, true)!}
+      : input.subject;
   const selected = buildSelectQuery({
     entries: [],
     shape: input.shape,
-    subject: input.subject,
+    subject,
     subjects: input.subjects,
     where: input.where,
     minusEntries: input.minusEntries,
