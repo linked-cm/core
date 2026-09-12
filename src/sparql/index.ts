@@ -15,6 +15,7 @@ export {
 export {
   selectToAlgebra,
   askToAlgebra,
+  countToAlgebra,
   createToAlgebra,
   updateToAlgebra,
   upsertToAlgebra,
@@ -25,6 +26,7 @@ export {
 export {
   selectToSparql,
   askToSparql,
+  countToSparql,
   createToSparql,
   updateToSparql,
   upsertToSparql,
@@ -47,6 +49,7 @@ export {
 export {
   mapSparqlSelectResult,
   mapSparqlAskResult,
+  mapSparqlCountResult,
   mapSparqlCreateResult,
   mapSparqlUpdateResult,
   isSparqlSelectResults,
