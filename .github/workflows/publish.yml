@@ -16,6 +16,11 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # `npm stage publish --provenance` signs the tarball with a GitHub OIDC token, so the
+      # job needs to be able to mint one. This does NOT switch the package to OIDC trusted
+      # publishing — authentication is still the org npm token. It only lets npm attest where
+      # the tarball was built, which is worth having on a package a human is about to approve
+      # sight-unseen.
       id-token: write
     steps:
       # Author the version PR as the org release App (not the default GITHUB_TOKEN) so its
@@ -39,8 +44,11 @@ jobs:
           node-version: 22.16.0
           registry-url: "https://registry.npmjs.org"
 
-      - name: Setup npm
-        run: npm install -g npm@^11.5.1
+      # `npm stage` landed in CLI 11.15.0; Node 22.16 ships npm 10.x, so the bundled one
+      # cannot stage. Pinned rather than `@latest` so a future npm release cannot change how
+      # releases behave without a commit here.
+      - name: Use an npm that can stage
+        run: npm i -g npm@^11.15.0
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
@@ -48,26 +56,99 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Create release Pull Request or Publish
+      # No `publish:` — changesets only opens/updates the version PR here. Publishing is the
+      # step below, because `changeset publish` shells out to `npm publish`, which a
+      # stage-only token cannot do (changesets/changesets#2025 is open for first-class
+      # support). Splitting them keeps changesets doing what it is good at — versions and
+      # changelogs — and leaves the registry call to us.
+      - name: Create release Pull Request
         id: changesets
         uses: changesets/action@v1
         with:
-          publish: npx changeset publish
           title: "chore: version package for release"
           commit: "chore: version package for release"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      # When changesets opened/updated the version PR (rather than publishing), merge it so the
-      # release ships without a manual click. The App token is used so the merge's push to `main`
-      # re-triggers this workflow, which — now that no changesets remain — runs `changeset publish`.
+      # Stage the version for a human to approve.
+      #
+      # A staged version is uploaded but NOT public: a maintainer reviews it and approves with
+      # 2FA, from the Staged Packages tab in the npm user menu or `npm stage approve`. That is
+      # the point — every release keeps a proof-of-presence step even though CI is
+      # unattended — and it is why the org token is scoped "read and write (stage only)".
+      #
+      # Idempotent: this workflow runs on every push to main, including the merge of the
+      # version PR and any later commit, so it must do nothing when the version is already on
+      # the registry or already sitting in the queue.
+      - name: Stage the release for approval
+        if: steps.changesets.outputs.hasChangesets != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          private=$(node -p "require('./package.json').private === true")
+          if [ "$private" = "true" ]; then
+            echo "$name is private — nothing to publish."; exit 0
+          fi
+
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on the registry — nothing to do."
+            exit 0
+          fi
+
+          if npm stage list "$name" 2>/dev/null | grep -q "$version"; then
+            echo "$name@$version is already staged and waiting for approval."
+            exit 0
+          fi
+
+          echo "Staging $name@$version…"
+          # Capture the output: `npm stage publish` prints the stage id, and `npm stage
+          # approve` takes ONLY that id — a package spec is rejected with "stage-id must be a
+          # valid UUID". Without this the notice below hands out a command that does not work.
+          out=$(npm stage publish --access public --provenance 2>&1 | tee /dev/stderr)
+          uuid='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+          # `|| true` because the script runs under `set -euo pipefail`: a grep that matches
+          # nothing exits 1 and would fail the step even though the staging itself succeeded.
+          stage_id=$(printf '%s' "$out" | grep -oE "$uuid" | tail -1 || true)
+
+          {
+            echo "### 📦 \`$name@$version\` is staged, not published"
+            echo
+            echo "It is uploaded and held for review. **Approve it to make it public:**"
+            echo
+            if [ -n "$stage_id" ]; then
+              echo "- **CLI:** \`npm stage approve $stage_id\`"
+            else
+              echo "- **CLI:** \`npm stage list $name\` to find the id, then"
+              echo "  \`npm stage approve <stage-id>\`"
+            fi
+            echo "- **Web:** [npmjs.com](https://www.npmjs.com) → your avatar → **Staged"
+            echo "  Packages** → **Approve**. The button stays disabled until npm has"
+            echo "  finished scanning the tarball; the page refreshes every minute."
+            echo
+            echo "Both prompt for 2FA. Until then \`npm install $name\` still resolves"
+            echo "\`$(npm view "$name" version 2>/dev/null || echo 'nothing')\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "$stage_id" ]; then
+            echo "::notice title=Approval needed::$name@$version is staged. Run: npm stage approve $stage_id"
+          else
+            echo "::notice title=Approval needed::$name@$version is staged, but the stage id could not be read from the output. Run: npm stage list $name"
+          fi
+
+      # When changesets opened/updated the version PR, merge it so the release reaches the
+      # staging queue without a manual click. The App token is used so the merge's push to
+      # `main` re-triggers this workflow, which — now that no changesets remain — stages it.
       #
       # NB: we DIRECT-merge (not `--auto`). The App is on `main`'s review-bypass list, which lets
       # it merge past the required approval — but that bypass is only honored for a *direct* merge;
       # GitHub's auto-merge queue ignores it and would wait forever on REVIEW_REQUIRED. The required
       # "Build & Test" status check is NOT bypassable, so we retry until the ci-gate goes green.
-      - name: Merge the version PR to publish
-        if: steps.changesets.outputs.hasChangesets == 'true' && steps.changesets.outputs.published != 'true'
+      - name: Merge the version PR to stage the release
+        if: steps.changesets.outputs.hasChangesets == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
@@ -75,13 +156,13 @@ jobs:
           if [ -z "$pr" ]; then echo "No open version PR (nothing to merge)."; exit 0; fi
           for i in $(seq 1 40); do
             if gh pr merge "$pr" --merge 2>/tmp/merge_err; then
-              echo "Merged version PR #$pr on attempt $i — publish will run on the resulting push to main."
+              echo "Merged version PR #$pr on attempt $i — staging will run on the resulting push to main."
               exit 0
             fi
             echo "Attempt $i/40: version PR #$pr not mergeable yet ($(tr -d '\n' < /tmp/merge_err)); waiting for the Build & Test gate…"
             sleep 15
           done
-          echo "::warning::Version PR #$pr not merged after retries — merge it manually to publish."
+          echo "::warning::Version PR #$pr not merged after retries — merge it manually to stage the release."
 
   backmerge-to-dev:
     # Full back-merge of main into dev after a release. Unlike a version-only sync, this also
