@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.19.0
+
+### Minor Changes
+
+- [#224](https://github.com/linked-cm/core/pull/224) [`ea9971c`](https://github.com/linked-cm/core/commit/ea9971c6201f610102ad7674868602e1aaeb4e1f) Thanks [@flyon](https://github.com/flyon)! - Adds a root-level count to the query DSL: `SelectBuilder.from(shape).where(…).count()` and
+  `Shape.count()` resolve to a real `number`, lowering to `SELECT (COUNT(DISTINCT ?s) AS ?count)
+WHERE { … }`. Like an ask, a count is its own builder and IR kind, so `limit`/`offset` are dropped at
+  the boundary and unrepresentable thereafter — the count of a window is the count of the whole match
+  set. `.toCount()` is public so a router can forward the `{op: 'count'}` envelope instead of executing
+  it.
+
+  `IDataset.countQuery` is **optional**, so nothing breaks: every store extending `SparqlDataset` gets
+  it with no edit. A store or router that does not extend `SparqlDataset` — including any
+  `setQueryDispatch({…})` object literal in a consuming package — needs a `countQuery` arm added by
+  hand before `.count()` works against it; until then it fails loudly, naming the method.
+
 ## 2.18.1
 
 ### Patch Changes
