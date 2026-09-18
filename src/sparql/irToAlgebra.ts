@@ -1,6 +1,7 @@
 import type {
   IRSelectQuery,
   IRAskQuery,
+  IRCountQuery,
   IRCreateMutation,
   IRUpdateMutation,
   IRUpsertMutation,
@@ -32,6 +33,7 @@ import type {
   SparqlProjectionItem,
   SparqlOrderCondition,
   SparqlAggregateBinding,
+  SparqlAggregateExpr,
   SparqlLeftJoin,
   SparqlFilter,
 } from './SparqlAlgebra.js';
@@ -2823,6 +2825,83 @@ export function askToAlgebra(
   return {type: 'ask', algebra};
 }
 
+/**
+ * Converts an {@link IRCountQuery} to a {@link SparqlSelectPlan} shaped as a
+ * root-level count:
+ *
+ * ```sparql
+ * SELECT (COUNT(DISTINCT ?a0) AS ?count) WHERE { … }
+ * ```
+ *
+ * The **pattern** is built by {@link selectToAlgebra}, so shape scans, traversals,
+ * filters and `MINUS` have exactly one implementation; only the pattern is kept and
+ * the select plan's projection is discarded. That discard is load-bearing:
+ * `selectToAlgebra` unconditionally projects the root alias as a plain variable, and
+ * then makes every plain projected variable a `GROUP BY` target once an aggregate is
+ * present — so reusing its projection would yield `SELECT ?a0 (COUNT(…) AS ?count) …
+ * GROUP BY ?a0`, one row per entity each counting 1.
+ *
+ * `DISTINCT` inside the aggregate is likewise load-bearing. A shape scan joined with
+ * property triples yields one row per property-value combination (which is why the
+ * plain select path emits `SELECT DISTINCT`), so `COUNT(?a0)` would count *rows* and
+ * a filter on a multi-valued property would inflate the total. `COUNT(DISTINCT ?a0)`
+ * counts subjects, which is what "how many instances match" means.
+ *
+ * There is no `groupBy`, `orderBy`, `limit` or `offset` on the returned plan — and
+ * nothing to guard against, because {@link IRCountQuery} cannot carry them.
+ */
+export function countToAlgebra(
+  query: IRCountQuery,
+  options?: SparqlOptions,
+): SparqlSelectPlan {
+  if (!query.root) {
+    throw new Error(
+      'countToAlgebra: query.root is undefined. A count needs a shape to scan — a ' +
+      'shapeless count would count every node in the store.',
+    );
+  }
+  const inner = selectToAlgebra(
+    {
+      kind: 'select',
+      root: query.root,
+      patterns: query.patterns,
+      projection: [],
+      where: query.where,
+      subjectId: query.subjectId,
+      subjectIds: query.subjectIds,
+    },
+    options,
+  );
+  if (inner.having) {
+    // An aggregate in the WHERE clause (e.g. `p.friends.size().gt(2)`) lowers to
+    // HAVING + GROUP BY on the select plan. Only `algebra` is carried over here, so
+    // the HAVING would vanish and the count would be of the UNFILTERED match set —
+    // a plausible-looking wrong number. Counting a HAVING-filtered group set needs
+    // `SELECT (COUNT(DISTINCT ?a0) AS ?count) WHERE { SELECT ?a0 WHERE { … }
+    // GROUP BY ?a0 HAVING(…) }`, and `SparqlSubSelect` carries no groupBy/having
+    // today. Refuse it rather than answer it wrongly.
+    throw new Error(
+      'Cannot count a query whose where clause contains an aggregate (e.g. ' +
+      '`.where(p => p.friends.size().gt(2))`). That filter lowers to HAVING over a ' +
+      'per-subject group, and counting the surviving groups needs a nested ' +
+      'sub-SELECT that this layer does not emit yet. Filter without an aggregate, or ' +
+      'count the rows of the select.',
+    );
+  }
+  const aggregate: SparqlAggregateExpr = {
+    kind: 'aggregate_expr',
+    name: 'count',
+    args: [{kind: 'variable_expr', name: query.root.alias}],
+    distinct: true,
+  };
+  return {
+    type: 'select',
+    algebra: inner.algebra,
+    projection: [{kind: 'aggregate', expression: aggregate, alias: query.alias}],
+    aggregates: [{variable: query.alias, aggregate}],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Convenience wrappers: IR → algebra → SPARQL string in one call
 // ---------------------------------------------------------------------------
@@ -2847,6 +2926,18 @@ export function askToSparql(
 ): string {
   const plan = askToAlgebra(query, options);
   return askPlanToSparql(plan, options);
+}
+
+/**
+ * Converts an {@link IRCountQuery} to a SPARQL `SELECT (COUNT(DISTINCT …) AS …)`
+ * string, through the same {@link selectPlanToSparql} every select uses.
+ */
+export function countToSparql(
+  query: IRCountQuery,
+  options?: SparqlOptions,
+): string {
+  const plan = countToAlgebra(query, options);
+  return selectPlanToSparql(plan, options);
 }
 
 /**
