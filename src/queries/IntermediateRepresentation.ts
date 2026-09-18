@@ -9,6 +9,7 @@ export type IRValue = string | number | boolean | null;
 export type IRQuery =
   | IRSelectQuery
   | IRAskQuery
+  | IRCountQuery
   | IRCreateMutation
   | IRUpdateMutation
   | IRUpsertMutation
@@ -52,6 +53,37 @@ export type IRAskQuery = {
   where?: IRExpression;
   subjectId?: string;
   subjectIds?: string[];
+};
+
+/**
+ * A query whose answer is a single number: how many instances of a shape match.
+ *
+ * Like {@link IRAskQuery}, it carries a **pattern and nothing else**. There is no
+ * `projection`, `orderBy`, `limit` or `offset`: each of those shapes or windows a
+ * *solution sequence*, and a count has none — the number it answers is a property
+ * of the whole match set. So rather than being ignored during conversion, or
+ * guarded against, they are unrepresentable.
+ *
+ * That is the entire reason this is a distinct IR kind and not a flag on
+ * {@link IRSelectQuery}: a count of a windowed query is meaningless, and a type
+ * that cannot hold the window cannot half-drop it.
+ *
+ * `root` is **required**, unlike an ask's. A shapeless count would count every
+ * node in the store, which is never what a caller means.
+ */
+export type IRCountQuery = {
+  kind: 'count';
+  root: IRShapeScanPattern;
+  patterns: IRGraphPattern[];
+  where?: IRExpression;
+  subjectId?: string;
+  subjectIds?: string[];
+  /**
+   * The variable the `COUNT` is bound to (`(COUNT(DISTINCT ?a0) AS ?count)`).
+   * Carried in the IR rather than hardcoded in two places so lowering and result
+   * mapping cannot disagree about it.
+   */
+  alias: IRAlias;
 };
 
 export type IRProjectionItem = {

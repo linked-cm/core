@@ -14,6 +14,7 @@ import type {NodeReferenceValue, UpdatePartial} from '../queries/QueryFactory.js
 import type {NodeId} from '../queries/MutationQuery.js';
 import {QueryBuilder} from '../queries/QueryBuilder.js';
 import {AskBuilder} from '../queries/AskBuilder.js';
+import {CountBuilder} from '../queries/CountBuilder.js';
 import type {PendingQueryContext} from '../queries/QueryContext.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import {CreateBuilder} from '../queries/CreateBuilder.js';
@@ -238,6 +239,56 @@ export abstract class Shape {
       return AskBuilder.forNode(id).exec(target);
     }
     return QueryBuilder.from(this as ShapeConstructor<S>).for(id).exists(target);
+  }
+
+  /**
+   * How many instances of this shape exist — a real `number`.
+   *
+   * ```typescript
+   * const total = await Person.count();
+   * ```
+   *
+   * This is the unfiltered total. For a filtered one, compose on the builder, which
+   * is the form a paging table wants:
+   *
+   * ```typescript
+   * await Person.select().where(p => p.name.equals('Semmy')).count();
+   * ```
+   *
+   * Runs the cheapest correct query: against a SPARQL store,
+   * `SELECT (COUNT(DISTINCT ?a0) AS ?count) WHERE { ?a0 rdf:type <ShapeClass> }` —
+   * the shape's type triple and nothing else. Note the type triple: this counts
+   * instances **of this shape**, not nodes in general.
+   *
+   * **On the base class — `Shape.count()` — this throws.** Unlike
+   * {@link Shape.exists}, whose shapeless reading ("does this node exist at all?")
+   * is useful and cheap, a shapeless count would count every node in every dataset
+   * the router knows. No caller means that, so it is refused rather than answered.
+   *
+   * **Errors reject — they are never reported as `0`.** Do not wrap this in a
+   * `.catch(() => 0)`: `0` is a plausible count, so a broken one renders an empty
+   * table that looks exactly like real data.
+   *
+   * @param target Optional explicit dataset to run against; omitted uses the
+   *   global query dispatch.
+   */
+  static async count<S extends Shape>(
+    this: ShapeConstructor<S> | typeof Shape,
+    target?: IDataset,
+  ): Promise<number> {
+    // `async`, so the base-class refusal rejects rather than throwing synchronously
+    // past the caller's `.catch()`.
+    if ((this as unknown) === Shape) {
+      throw new Error(
+        'Shape.count() has no meaning on the base class: there is no shape to ' +
+        'constrain by, so it would count every node in the store, under any type or ' +
+        'none. Call it on a shape subclass (`Person.count()`), or compose a filter ' +
+        'on the builder (`Person.select().where(…).count()`).',
+      );
+    }
+    return CountBuilder.of({
+      shapeClass: this as ShapeConstructor<S>,
+    }).exec(target);
   }
 
   /**

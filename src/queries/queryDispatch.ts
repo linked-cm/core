@@ -4,6 +4,7 @@ import type {UpdateQuery} from './UpdateQuery.js';
 import type {DeleteQuery, DeleteResponse} from './DeleteQuery.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {AskQuery} from './AskQuery.js';
+import type {CountQuery} from './CountQuery.js';
 
 /**
  * Abstraction boundary between the DSL layer (Shape) and the storage layer
@@ -17,6 +18,15 @@ export interface QueryDispatch {
   selectQuery<R = any>(query: SelectQuery): Promise<R>;
   /** Answer an ask query — a boolean, not a result set. */
   askQuery(query: AskQuery): Promise<boolean>;
+  /**
+   * Answer a count query — a number, not a result set.
+   *
+   * **Optional**, unlike `askQuery`. This interface is implemented by object
+   * literals in consuming packages (`setQueryDispatch({…})`), so requiring it would
+   * break every one of them at compile time. {@link resolveCount} turns a missing
+   * implementation into a precise runtime error instead.
+   */
+  countQuery?(query: CountQuery): Promise<number>;
   createQuery<R = any>(query: CreateQuery): Promise<R>;
   updateQuery<R = any>(query: UpdateQuery): Promise<R>;
   deleteQuery(query: DeleteQuery): Promise<DeleteResponse>;
@@ -58,6 +68,53 @@ export async function resolveExistence(
       `askQuery must resolve to a boolean; got ${answer === null ? 'null' : typeof answer}. ` +
       'An ask query will not coerce a non-boolean into an answer — a truthy ' +
       'value would silently read as "exists".',
+    );
+  }
+  return answer;
+}
+
+/** A target that can answer a count query. */
+type CountTarget = {countQuery?(query: CountQuery): Promise<number>};
+
+/**
+ * Answer a count query against `target` — the single entry point for every
+ * number-answered query in the library, as {@link resolveExistence} is for boolean
+ * ones. `CountBuilder.exec()` and a router's `countQuery` both come here rather than
+ * calling `countQuery` directly, so the contract below is enforced once for every
+ * store.
+ *
+ * There is deliberately **no translation to a select query anywhere in this
+ * package.** A count goes to `IDataset.countQuery` and a SPARQL-backed store turns
+ * it into `SELECT (COUNT(DISTINCT ?s) AS ?count)`. A store that lacks an aggregate
+ * primitive implements `countQuery` itself, in whatever way its backend allows —
+ * that decision belongs to the store, and making it here (by fetching every row and
+ * measuring the array) would hide an unbounded read behind a cheap-looking call.
+ *
+ * `countQuery` must resolve to a **finite, non-negative integer**: anything else
+ * rejects rather than being coerced. Errors propagate for the same reason a failed
+ * ask is never `false` — and more sharply, because `0` is a *plausible* count. A
+ * count that reported an unreachable store as `0` would render an empty table that
+ * looks exactly like real data.
+ */
+export async function resolveCount(
+  target: CountTarget,
+  query: CountQuery,
+): Promise<number> {
+  if (typeof target?.countQuery !== 'function') {
+    throw new Error(
+      'This dataset does not implement IDataset.countQuery(query). A count query is ' +
+      'answered with a number — a SPARQL store emits ' +
+      'SELECT (COUNT(DISTINCT ?s) AS ?count) — and is never rewritten as a select ' +
+      'on its behalf, which would read every matching row to measure the array.',
+    );
+  }
+  const answer = await target.countQuery(query);
+  if (typeof answer !== 'number' || !Number.isInteger(answer) || answer < 0) {
+    throw new Error(
+      `countQuery must resolve to a non-negative integer; got ${
+        answer === null ? 'null' : typeof answer === 'number' ? String(answer) : typeof answer
+      }. A count query will not coerce — a NaN or a missing value that fell through ` +
+      'as 0 would silently read as "no matches".',
     );
   }
   return answer;

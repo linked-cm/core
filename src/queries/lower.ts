@@ -33,8 +33,13 @@ import {
 import {toWhere} from './IRDesugar.js';
 import {lowerWhereToIR} from './IRLower.js';
 import type {WherePath} from './SelectQuery.js';
-import type {IRAskQuery, IRSelectQuery} from './IntermediateRepresentation.js';
+import type {
+  IRAskQuery,
+  IRCountQuery,
+  IRSelectQuery,
+} from './IntermediateRepresentation.js';
 import type {RawAskInput} from './AskQuery.js';
+import type {RawCountInput} from './CountQuery.js';
 import type {IRCreateQuery} from './CreateQuery.js';
 import type {IRUpdateQuery} from './UpdateQuery.js';
 import type {IRDeleteQuery} from './DeleteQuery.js';
@@ -48,6 +53,8 @@ import type {
 export type LowerableSelect = {readonly __queryKind: 'select'; toRawInput(): any};
 /** An ask query that can be lowered (the ask builder). */
 export type LowerableAsk = {readonly __queryKind: 'ask'; toRawInput(): RawAskInput};
+/** A count query that can be lowered (the count builder). */
+export type LowerableCount = {readonly __queryKind: 'count'; toRawInput(): RawCountInput};
 /** A mutation query that can be lowered (the mutation builders). */
 export type LowerableCreate = {readonly __queryKind: 'create'; _lowerSpec(): CreateLowerSpec};
 export type LowerableUpdate = {readonly __queryKind: 'update'; _lowerSpec(): UpdateLowerSpec};
@@ -55,6 +62,7 @@ export type LowerableDelete = {readonly __queryKind: 'delete'; _lowerSpec(): Del
 export type LowerableQuery =
   | LowerableSelect
   | LowerableAsk
+  | LowerableCount
   | LowerableCreate
   | LowerableUpdate
   | LowerableDelete;
@@ -196,19 +204,94 @@ function lowerAsk(input: RawAskInput): IRAskQuery {
   };
 }
 
+/**
+ * The variable a root count binds its `COUNT` to.
+ *
+ * Chosen not to collide with the `a<N>` alias scheme the pipeline generates for
+ * the root and every traversal, so it never needs the collision rename
+ * `selectToAlgebra` applies to aggregate aliases.
+ */
+export const COUNT_ALIAS = 'count';
+
+/**
+ * Lower a count to its canonical IR.
+ *
+ * Reuses the select pipeline to build the pattern — one implementation of shape
+ * scans, traversals, filters and minus — and then keeps only the pattern-bearing
+ * part, exactly as {@link lowerAsk} does. The `entries: []` is why nothing is
+ * projected: a count has no projection to build.
+ */
+function lowerCount(input: RawCountInput): IRCountQuery {
+  if (input.nullSubject) {
+    // "How many nodes with no id match?" is answered `0` without querying —
+    // `CountBuilder.exec` does that before dispatching. Reaching lowering means a
+    // store took the builder off the normal path; a subject-less pattern would
+    // count every instance of the shape and report it as the count of one node.
+    throw new Error(
+      'Cannot lower a count query with no subject (`.for(null)`). It resolves to ' +
+      '`0` without querying — execute it through `exec()` rather than lowering it.',
+    );
+  }
+  if (!input.shape) {
+    throw new Error(
+      'Cannot lower a count query with no shape. A shapeless count would count ' +
+      'every node in the store, under any type or none.',
+    );
+  }
+  // A `{"@ctx": name}` subject arrives here as a live PendingQueryContext, and
+  // `buildSelectQuery` narrows a subject with `'id' in subject` — so an UNRESOLVED
+  // one would quietly yield `subjectId: undefined` and the count would be of every
+  // instance of the shape, reported as the count of one node. `CountBuilder.exec`
+  // answers `0` for that case before dispatching, but this path is reached without
+  // it: a receiver that rehydrates an envelope with `fromJSON` and hands the builder
+  // straight to a store. Resolve it here, which throws `UnresolvedContextError` when
+  // the context is unset — the same "not ready" a where-clause reference raises, and
+  // never a plausible number.
+  const subject =
+    input.subject instanceof PendingQueryContext
+      ? {id: resolveContextId(input.subject.contextName, true)!}
+      : input.subject;
+  const selected = buildSelectQuery({
+    entries: [],
+    shape: input.shape,
+    subject,
+    subjects: input.subjects,
+    where: input.where,
+    minusEntries: input.minusEntries,
+  });
+  return {
+    kind: 'count',
+    root: selected.root,
+    patterns: selected.patterns,
+    where: selected.where,
+    subjectId: selected.subjectId,
+    subjectIds: selected.subjectIds,
+    alias: COUNT_ALIAS,
+  };
+}
+
 export function lower(query: LowerableSelect): IRSelectQuery;
 export function lower(query: LowerableAsk): IRAskQuery;
+export function lower(query: LowerableCount): IRCountQuery;
 export function lower(query: LowerableCreate): IRCreateQuery;
 export function lower(query: LowerableUpdate): IRUpdateQuery;
 export function lower(query: LowerableDelete): IRDeleteQuery;
 export function lower(
   query: LowerableQuery,
-): IRSelectQuery | IRAskQuery | IRCreateQuery | IRUpdateQuery | IRDeleteQuery {
+):
+  | IRSelectQuery
+  | IRAskQuery
+  | IRCountQuery
+  | IRCreateQuery
+  | IRUpdateQuery
+  | IRDeleteQuery {
   switch (query.__queryKind) {
     case 'select':
       return buildSelectQuery(query.toRawInput());
     case 'ask':
       return lowerAsk(query.toRawInput());
+    case 'count':
+      return lowerCount(query.toRawInput());
     case 'create':
       return lowerCreate(query._lowerSpec());
     case 'update':

@@ -19,12 +19,13 @@ import {captureQuery} from '../test-helpers/query-capture-store';
 import {lower} from '../queries/lower';
 import {
   selectToSparql,
+  countToSparql,
   createToSparql,
   updateToSparql,
   upsertToSparql,
   deleteToSparql,
 } from '../sparql/irToAlgebra';
-import {mapSparqlSelectResult} from '../sparql/resultMapping';
+import {mapSparqlSelectResult, mapSparqlCountResult} from '../sparql/resultMapping';
 import {setQueryContext} from '../queries/QueryContext';
 import type {
   IRSelectQuery,
@@ -46,6 +47,7 @@ import {
   DATASET_NAME,
 } from '../test-helpers/fuseki-test-store';
 import {FusekiStore} from '../test-helpers/FusekiStore';
+import type {CountBuilder} from '../queries/CountBuilder';
 
 import '../ontologies/rdf';
 import '../ontologies/xsd';
@@ -2047,6 +2049,124 @@ describe('Fuseki mutations — DELETE', () => {
     `);
     expect(after1.results.bindings.length).toBe(0);
     expect(after2.results.bindings.length).toBe(0);
+  });
+});
+
+// =========================================================================
+// COUNT — root-level aggregate, against real data
+// =========================================================================
+
+describe('Fuseki COUNT — root-level', () => {
+  // The seed holds 4 Persons (p1..p4). e1/e2 are typed Employee only, so they carry
+  // no Person type triple and must not be counted.
+  const countOf = async (builder: CountBuilder): Promise<number> => {
+    const ir = lower(builder);
+    const results = await executeSparqlQuery(countToSparql(ir));
+    return mapSparqlCountResult(results, ir);
+  };
+
+  test('counts every instance of the shape', async () => {
+    if (!fusekiAvailable) return;
+    expect(await countOf(Person.select().toCount())).toBe(4);
+  });
+
+  test('respects a where clause', async () => {
+    if (!fusekiAvailable) return;
+    expect(
+      await countOf(Person.select().where((p) => p.name.equals('Semmy')).toCount()),
+    ).toBe(1);
+    expect(
+      await countOf(Person.select().where((p) => p.name.equals('nobody')).toCount()),
+    ).toBe(0);
+  });
+
+  test('counts DISTINCT subjects, not rows', async () => {
+    if (!fusekiAvailable) return;
+    // Only p1 has `pluralTestProp`, and two of its four values are named by this OR
+    // — so the pattern yields TWO rows for ONE subject. A row-counting query reports
+    // 2 persons; the answer is 1.
+    const sparql = countToSparql(
+      lower(
+        Person.select()
+          .where((p) =>
+            p.pluralTestProp.name
+              .equals('Semmy')
+              .or(p.pluralTestProp.name.equals('Moa')),
+          )
+          .toCount(),
+      ),
+    );
+    const distinct = await executeSparqlQuery(sparql);
+    expect(Number(distinct.results.bindings[0].count.value)).toBe(1);
+    // The same query without DISTINCT counts rows — the number this feature must
+    // not produce.
+    const rows = await executeSparqlQuery(sparql.replace('count(DISTINCT ', 'count('));
+    expect(Number(rows.results.bindings[0].count.value)).toBeGreaterThan(1);
+  });
+
+  test('ignores limit and offset', async () => {
+    if (!fusekiAvailable) return;
+    // The whole point: a windowed builder still reports the total of the match set,
+    // which is what a paging table needs for its page count.
+    expect(
+      await countOf(Person.select((p) => p.name).limit(2).offset(1).orderBy((p) => p.name).toCount()),
+    ).toBe(4);
+  });
+
+  test('respects a subject filter', async () => {
+    if (!fusekiAvailable) return;
+    expect(await countOf(Person.select().for({id: `${ENT}p1`}).toCount())).toBe(1);
+    expect(await countOf(Person.select().for({id: `${ENT}nope`}).toCount())).toBe(0);
+  });
+
+  test('respects MINUS', async () => {
+    if (!fusekiAvailable) return;
+    // Only p1 and p2 have a hobby, so excluding them leaves 2.
+    expect(await countOf(Person.select().minus((p) => p.hobby).toCount())).toBe(2);
+  });
+
+  test('counts explicit subjects', async () => {
+    if (!fusekiAvailable) return;
+    expect(
+      await countOf(
+        Person.select().forAll([{id: `${ENT}p1`}, {id: `${ENT}p2`}]).toCount(),
+      ),
+    ).toBe(2);
+  });
+
+  test('an unresolved context subject is refused, never counted as the whole shape', async () => {
+    if (!fusekiAvailable) return;
+    // The regression this pins: a rehydrated `{"@ctx"}` subject whose context is
+    // unset on THIS side must not lower to a bare scan and report 4 (every Person)
+    // as the count of one node.
+    const {CountBuilder} = await import('../queries/CountBuilder');
+    const rehydrated = CountBuilder.fromJSON({
+      op: 'count',
+      shape: Person.shape.id,
+      subject: {'@ctx': 'not-set-in-this-process'},
+    } as never);
+    const store = new FusekiStore(
+      process.env.FUSEKI_BASE_URL || 'http://localhost:3939',
+      DATASET_NAME,
+    );
+    await expect(store.countQuery(rehydrated)).rejects.toThrow(/context/i);
+  });
+
+  test('SparqlDataset.countQuery answers end to end', async () => {
+    if (!fusekiAvailable) return;
+    const store = new FusekiStore(
+      process.env.FUSEKI_BASE_URL || 'http://localhost:3939',
+      DATASET_NAME,
+    );
+    await expect(store.countQuery(Person.select().toCount())).resolves.toBe(4);
+    await expect(
+      store.countQuery(Person.select().where((p) => p.name.equals('Moa')).toCount()),
+    ).resolves.toBe(1);
+    // And through the public entry point, with the store as an explicit target.
+    await expect(
+      Person.select().where((p) => p.name.equals('Moa')).count(store),
+    ).resolves.toBe(1);
+    await expect(Person.count(store)).resolves.toBe(4);
   });
 });
 

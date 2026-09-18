@@ -16,6 +16,7 @@ import type {PropertyPathSegment, RawMinusEntry, RawSelectInput} from './IRDesug
 import {WIRE_VERSION, assertWireVersion} from './wireVersion.js';
 import {getQueryDispatch} from './queryDispatch.js';
 import {AskBuilder} from './AskBuilder.js';
+import {CountBuilder} from './CountBuilder.js';
 import type {IDataset} from '../interfaces/IDataset.js';
 import type {NodeShapeData} from '../shapes/SHACL.js';
 import type {NodeReferenceValue} from './QueryFactory.js';
@@ -365,15 +366,101 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
   }
 
   /**
-   * Reduce this select to the ask query that answers the same existence question.
+   * **How many** rows match this query — the total of the match set, as a real
+   * `number`.
    *
-   * Only the pattern survives — shape, subject(s), filters, `minus`. The
-   * projection, preloads, sorting and pagination are not "dropped" so much as
-   * unrepresentable: {@link AskBuilder} has nowhere to put them. That is the point
-   * of it being a separate builder rather than a mode of this one — the
-   * normalisation cannot be forgotten or half-applied.
+   * ```ts
+   * await Person.select().where(p => p.name.equals('Semmy')).count(); // number
+   * await SelectBuilder.from(shapeIri).where(…).count();              // from an IRI alone
+   * ```
+   *
+   * ### The query is normalised to its cheapest correct form first
+   *
+   * **Dropped** — the projection, preloads, sorting *and pagination*
+   * (`limit`/`offset`). **Kept** — filters, `minus` entries and the subject: those
+   * decide membership of the match set. Against a SPARQL store that goes out as:
+   *
+   * ```sparql
+   * SELECT (COUNT(DISTINCT ?a0) AS ?count)
+   * WHERE { ?a0 rdf:type <…> . ?a0 <…name> ?a0_name . FILTER(?a0_name = "Semmy") }
+   * ```
+   *
+   * ### `limit`/`offset` are dropped, not rejected
+   *
+   * A count of a windowed query is meaningless — `OFFSET` skips rows of a *solution
+   * sequence*, and the number a count answers is a property of the whole match set,
+   * not of a page of it. So `.limit(20).offset(40).count()` costs, and answers,
+   * exactly the same as a bare `.count()`.
+   *
+   * Dropping rather than throwing is deliberate: the paging caller holds **one**
+   * builder and wants the page *and* its total from the same filter, so rejecting
+   * the combination would force it to rebuild the builder by hand for no
+   * correctness gain. There is exactly one sensible reading, and it is this one.
+   * `.exists()` already made the same call, so the DSL has one rule — *a
+   * scalar-answering query drops the solution-sequence modifiers* — not two.
+   *
+   * Nor is the drop merely a convention: a {@link CountBuilder} has nowhere to hold
+   * a window, so it cannot be forgotten or half-applied downstream.
+   *
+   * `DISTINCT` is likewise not optional. A filter on a multi-valued property yields
+   * several rows per subject, so the count is of distinct subjects — "how many
+   * instances match", which is the question asked.
+   *
+   * ### Errors are not swallowed
+   *
+   * A store, transport or lowering failure **rejects**; it is never reported as `0`.
+   * `0` is a plausible count: it renders an empty table and looks like data. Do not
+   * wrap this in `.catch(() => 0)`.
+   *
+   * The one case that resolves `0` without querying is a query with no subject to
+   * count — `.for(null)`, `.for(undefined)`, or an unresolved `PendingQueryContext`
+   * *as the subject*.
+   *
+   * @param target Optional explicit dataset, as for {@link exec}.
    */
-  private _toAsk(): AskBuilder {
+  async count(target?: IDataset): Promise<number> {
+    return this.toCount().exec(target);
+  }
+
+  /**
+   * Reduce this select to the count query that answers "how many match?".
+   *
+   * Public, unlike the ask equivalent, because a caller may want to **forward**
+   * rather than execute: `builder.toCount().toJSON()` is the `{op: 'count'}` wire
+   * envelope a router or RPC boundary sends on, and `fromJSON` turns it back into a
+   * `CountBuilder` on the other side.
+   *
+   * Only the pattern survives — shape, subject(s), filters, `minus`. The projection,
+   * preloads, sorting and pagination are not so much "dropped" as unrepresentable:
+   * {@link CountBuilder} has nowhere to put them. That is the point of it being a
+   * separate builder rather than a mode of this one.
+   */
+  toCount(): CountBuilder {
+    return CountBuilder.of({
+      shapeClass: this._shape,
+      // `.for(null)` rides along in the spec. An unresolved pending context is
+      // handled by CountBuilder.exec, which answers `0` without querying.
+      ...this._patternSpec(),
+    });
+  }
+
+  /**
+   * The pattern-bearing part of this select: shape-membership, subject(s), filters
+   * and `minus` — everything that decides which nodes are in the match set, and
+   * nothing that shapes or windows the rows describing them.
+   *
+   * Shared by {@link _toAsk} and {@link toCount} rather than written twice. That is
+   * not only about duplication: if the two normalisations drifted, `.exists()` and
+   * `.count()` would disagree about what the match set *is* — a count of 0 next to
+   * an `exists` of `true`, from the same builder.
+   */
+  private _patternSpec(): {
+    subject?: NodeReferenceValue | PendingQueryContext;
+    subjects?: NodeReferenceValue[];
+    where?: WherePath;
+    minusEntries?: RawMinusEntry[];
+    nullSubject?: boolean;
+  } {
     let where: WherePath | undefined;
     if (this._whereFn) {
       where = processWhereClause(this._whereFn, this._shape);
@@ -390,7 +477,7 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
 
     // A PendingQueryContext must survive as itself. It has an `id` *getter*, so
     // narrowing it to `{id}` here would silently resolve it against THIS process's
-    // context map — and the ask would then travel as a concrete IRI where the
+    // context map — and the query would then travel as a concrete IRI where the
     // equivalent select travels as `{"@ctx": name}` for the receiver to resolve.
     const subject =
       this._subject instanceof PendingQueryContext
@@ -399,15 +486,31 @@ export class SelectBuilder<S extends Shape = Shape, R = any, Result = any>
           ? {id: (this._subject as NodeReferenceValue).id}
           : undefined;
 
-    return AskBuilder.of({
-      shapeClass: this._shape,
+    return {
       subject,
       subjects: this._subjects,
       where,
       minusEntries,
-      // `.for(null)`. An unresolved pending context is handled by AskBuilder.exec,
-      // which sees the live context and answers `false` without querying.
       nullSubject: this._nullSubject,
+    };
+  }
+
+  /**
+   * Reduce this select to the ask query that answers the same existence question.
+   *
+   * Only the pattern survives — shape, subject(s), filters, `minus`. The
+   * projection, preloads, sorting and pagination are not "dropped" so much as
+   * unrepresentable: {@link AskBuilder} has nowhere to put them. That is the point
+   * of it being a separate builder rather than a mode of this one — the
+   * normalisation cannot be forgotten or half-applied.
+   */
+  private _toAsk(): AskBuilder {
+    return AskBuilder.of({
+      shapeClass: this._shape,
+      // `.for(null)` rides along in the spec. An unresolved pending context is
+      // handled by AskBuilder.exec, which sees the live context and answers `false`
+      // without querying.
+      ...this._patternSpec(),
     });
   }
 

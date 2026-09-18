@@ -7,7 +7,7 @@
 /**
  * Kind-detecting `fromJSON` — rehydrate any query DSL-JSON back into its builder.
  *
- * Ask and mutation envelopes carry an `op` discriminator; select envelopes
+ * Ask, count and mutation envelopes carry an `op` discriminator; select envelopes
  * (`QueryBuilderJSON`) do not. This is the inbound boundary helper: a receiving
  * process turns wire JSON into a live query with `fromJSON(json).exec()` (the
  * existing generic dispatch), no per-op routing needed.
@@ -17,21 +17,35 @@ import {CreateBuilder} from './CreateBuilder.js';
 import {UpdateBuilder} from './UpdateBuilder.js';
 import {DeleteBuilder} from './DeleteBuilder.js';
 import {AskBuilder} from './AskBuilder.js';
+import {CountBuilder} from './CountBuilder.js';
 import type {AskQueryJSON} from './AskQuery.js';
+import type {CountQueryJSON} from './CountQuery.js';
 import type {MutationJSON} from './MutationSerialization.js';
 import {assertWireVersion} from './wireVersion.js';
 
 /** Any query in its wire (DSL-JSON) form. */
-export type QueryJSON = QueryBuilderJSON | AskQueryJSON | MutationJSON;
+export type QueryJSON =
+  | QueryBuilderJSON
+  | AskQueryJSON
+  | CountQueryJSON
+  | MutationJSON;
 
 export function fromJSON(
   json: QueryJSON,
-): SelectBuilder | AskBuilder | CreateBuilder | UpdateBuilder | DeleteBuilder {
+):
+  | SelectBuilder
+  | AskBuilder
+  | CountBuilder
+  | CreateBuilder
+  | UpdateBuilder
+  | DeleteBuilder {
   assertWireVersion((json as {v?: unknown})?.v);
   if (json && typeof json === 'object' && 'op' in json) {
     switch (json.op) {
       case 'ask':
         return AskBuilder.fromJSON(json as AskQueryJSON);
+      case 'count':
+        return CountBuilder.fromJSON(json as CountQueryJSON);
       case 'create':
         return CreateBuilder.fromJSON(json);
       case 'update':
