@@ -52,15 +52,15 @@ class FakeFileStore implements IFileStore {
 
 const reset = () => (LinkedFileStorage as any).resetForTests();
 
-let infoSpy: ReturnType<typeof jest.spyOn>;
+let debugSpy: ReturnType<typeof jest.spyOn>;
 
 beforeEach(() => {
   reset();
-  infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
 });
 
 afterEach(() => {
-  infoSpy.mockRestore();
+  debugSpy.mockRestore();
   reset();
 });
 
@@ -81,8 +81,8 @@ describe('LinkedFileStorage purpose registry', () => {
     expect(LinkedFileStorage.getStore(FileStorePurposes.appAssets)).toBe(defaultStore);
     expect(LinkedFileStorage.getStore(FileStorePurposes.appAssets)).toBe(defaultStore);
 
-    expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(String(infoSpy.mock.calls[0][0])).toContain(FileStorePurposes.appAssets);
+    expect(debugSpy).toHaveBeenCalledTimes(1);
+    expect(String(debugSpy.mock.calls[0][0])).toContain(FileStorePurposes.appAssets);
   });
 
   test('the one-time log is per purpose', () => {
@@ -93,7 +93,7 @@ describe('LinkedFileStorage purpose registry', () => {
     LinkedFileStorage.getStore('captures');
     LinkedFileStorage.getStore(FileStorePurposes.appAssets);
 
-    expect(infoSpy).toHaveBeenCalledTimes(2);
+    expect(debugSpy).toHaveBeenCalledTimes(2);
   });
 
   test('an unregistered purpose throws, listing the known purposes', () => {
@@ -295,31 +295,35 @@ describe('LinkedFileStorage.saveFile options passthrough', () => {
 });
 
 describe('LinkedFileStorage uploads purpose', () => {
-  test('setDefaultStore configures uploads, silently', () => {
+  test('uploads resolves through the plain default-store fallback', () => {
     const store = new FakeFileStore('https://uploads.example.com');
     LinkedFileStorage.setDefaultStore(store);
 
     expect(LinkedFileStorage.getStore(FileStorePurposes.uploads)).toBe(store);
-    expect(infoSpy).not.toHaveBeenCalled();
-    expect(LinkedFileStorage.hasStore(FileStorePurposes.uploads)).toBe(true);
     expect(LinkedFileStorage.accessURLFor(FileStorePurposes.uploads)).toBe(
       'https://uploads.example.com',
     );
+
+    // Exactly like appAssets: unconfigured, so the fallback is noted once.
+    expect(LinkedFileStorage.hasStore(FileStorePurposes.uploads)).toBe(false);
+    expect(debugSpy).toHaveBeenCalledTimes(1);
+    expect(String(debugSpy.mock.calls[0][0])).toContain('no dedicated store');
 
     const uploads = LinkedFileStorage.listPurposes().find(
       (entry) => entry.purpose === FileStorePurposes.uploads,
     );
     expect(uploads).toMatchObject({
       purpose: FileStorePurposes.uploads,
-      configured: true,
+      configured: false,
     });
   });
 
-  test('the deprecated setDefaultDataset alias configures uploads too', () => {
+  test('the deprecated setDefaultDataset alias resolves uploads the same way', () => {
     const store = new FakeFileStore('https://uploads.example.com');
     LinkedFileStorage.setDefaultDataset(store);
 
     expect(LinkedFileStorage.getStore(FileStorePurposes.uploads)).toBe(store);
+    expect(LinkedFileStorage.hasStore(FileStorePurposes.uploads)).toBe(false);
     expect(store.initCalls).toBe(1);
   });
 
@@ -336,8 +340,27 @@ describe('LinkedFileStorage uploads purpose', () => {
     );
   });
 
-  test('resetForTests clears the uploads configuration', () => {
-    LinkedFileStorage.setDefaultStore(new FakeFileStore('https://uploads.example.com'));
+  test('setStore(uploads) before setDefaultStore is not clobbered — order does not matter', () => {
+    const other = new FakeFileStore('https://media.example.com');
+    const defaultStore = new FakeFileStore('https://uploads.example.com');
+    // The reverse order of the test above: the explicit store is configured
+    // first, and setDefaultStore must leave it alone.
+    LinkedFileStorage.setStore(FileStorePurposes.uploads, other);
+    LinkedFileStorage.setDefaultStore(defaultStore);
+
+    expect(LinkedFileStorage.getStore(FileStorePurposes.uploads)).toBe(other);
+    expect(LinkedFileStorage.hasStore(FileStorePurposes.uploads)).toBe(true);
+    expect(LinkedFileStorage.getDefaultStore()).toBe(defaultStore);
+    expect(LinkedFileStorage.accessURLFor(FileStorePurposes.uploads)).toBe(
+      'https://media.example.com',
+    );
+  });
+
+  test('resetForTests clears an explicit uploads store but keeps the purpose', () => {
+    LinkedFileStorage.setStore(
+      FileStorePurposes.uploads,
+      new FakeFileStore('https://media.example.com'),
+    );
     reset();
 
     expect(LinkedFileStorage.hasStore(FileStorePurposes.uploads)).toBe(false);

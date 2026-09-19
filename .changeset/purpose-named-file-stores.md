@@ -6,14 +6,16 @@ Purpose-named file stores, save options and `statFile`.
 
 - `LinkedFileStorage` gains a purpose registry: `registerPurpose`, `setStore`,
   `getStore`, `hasStore`, `listPurposes` and `accessURLFor`. `getStore(purpose)`
-  returns the store configured for that purpose; `setDefaultStore` also
-  configures the `uploads` purpose, since the default store *is* the uploads
-  store (an explicit `setStore('uploads', store)` afterwards overrides it); a
-  purpose that is registered but
-  not configured falls back to the default store (logged once); an unregistered
+  returns the store configured for that purpose; a purpose that is registered
+  but not configured falls back to the default store (noted once with
+  `console.debug`); an unregistered
   purpose throws, listing the known purposes, so a typo cannot silently write to
   the wrong store. The well-known purposes `uploads` and `appAssets` are exported
-  as `FileStorePurposes` and registered at module load.
+  as `FileStorePurposes` and registered at module load. `uploads` is an ordinary
+  purpose: `setDefaultStore` configures no purpose of its own, so `uploads`
+  resolves to the default store as a fallback, `hasStore('uploads')` is true only
+  after an explicit `setStore('uploads', store)`, and that call has the same
+  effect whether it runs before or after `setDefaultStore`.
 - `getDefaultDataset`/`setDefaultDataset` are renamed to
   `getDefaultStore`/`setDefaultStore`. The old names remain as `@deprecated`
   aliases that forward, so no caller has to change; they will be dropped in the

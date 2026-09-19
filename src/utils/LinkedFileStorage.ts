@@ -58,19 +58,16 @@ export abstract class LinkedFileStorage {
   }
 
   /**
-   * Configure the default store.
+   * Configure the default store: the fallback for *every* purpose, `uploads`
+   * included.
    *
-   * The default store *is* the uploads store, so this also configures the
-   * `uploads` purpose: `getStore(FileStorePurposes.uploads)` then returns this
-   * store without the "no store configured" fallback log, and
-   * `hasStore('uploads')` is true. An app that wants a separate uploads store
-   * calls `setStore('uploads', other)` afterwards, which overrides this.
+   * It deliberately writes no entry into the purpose → store map, so `uploads`
+   * behaves exactly like `appAssets`: an explicit `setStore('uploads', other)`
+   * wins whenever it is called, before or after this, and `hasStore('uploads')`
+   * stays false until such a call is made.
    */
   static setDefaultStore(store: IFileStore) {
     this.defaultStore = store;
-    this.registerPurpose(FileStorePurposes.uploads);
-    this.stores.set(FileStorePurposes.uploads, store);
-    this.loggedFallbacks.delete(FileStorePurposes.uploads);
 
     if (this.defaultStore.init) {
       this.defaultStore.init();
@@ -153,15 +150,26 @@ export abstract class LinkedFileStorage {
 
     if (!this.loggedFallbacks.has(purpose)) {
       this.loggedFallbacks.add(purpose);
-      console.info(
-        `[LinkedFileStorage] No store configured for purpose '${purpose}'; using the default store.`,
+      // `debug`, not `info`: falling back is the normal configuration for an
+      // app that runs one store, so this must not read as a problem or show up
+      // in default-level logs. It stays available when diagnosing which store a
+      // purpose actually resolved to.
+      console.debug(
+        `[LinkedFileStorage] Purpose '${purpose}' has no dedicated store; using the default store.`,
       );
     }
 
     return this.defaultStore;
   }
 
-  /** Whether a store is configured for this purpose. Ignores the fallback. */
+  /**
+   * Whether a store was *explicitly configured* for this purpose.
+   *
+   * The default-store fallback is deliberately ignored: `hasStore(p)` is false
+   * while `getStore(p)` still returns a usable store via the default. Use this
+   * to ask "did the app split this purpose out?", never as a guard before
+   * `getStore` — that would skip a perfectly working fallback.
+   */
   static hasStore(purpose: string): boolean {
     return this.stores.has(purpose);
   }
@@ -233,7 +241,7 @@ export abstract class LinkedFileStorage {
 /** The purposes core ships with are declared at module load. */
 function registerWellKnownPurposes() {
   LinkedFileStorage.registerPurpose(FileStorePurposes.uploads, {
-    description: 'User-generated files (the default store).',
+    description: 'User-generated files. Falls back to the default store.',
   });
   LinkedFileStorage.registerPurpose(FileStorePurposes.appAssets, {
     description: 'Built app bundles published by `linked build-app`.',
