@@ -13,7 +13,12 @@ export interface SaveFileOptions {
   cacheControl?: string;
   /** Store-level user metadata, when the backing store supports it. */
   metadata?: Record<string, string>;
-  /** Rename instead of overwriting when the path is already taken. */
+  /**
+   * Rename instead of overwriting when the path is already taken.
+   *
+   * Left `undefined` when the caller did not say: each store then applies its
+   * own default (`S3FileStore` overwrites, `LocalFileStore` adds a suffix).
+   */
   preventDuplicates?: boolean;
 }
 
@@ -73,16 +78,25 @@ export interface IFileStore {
  * Normalise `saveFile`'s widened third argument into a single options object.
  * Every `IFileStore` implementation should call this first, so the positional
  * mime-type form and the options form cannot drift apart.
+ *
+ * `preventDuplicates` stays `undefined` when neither `options.preventDuplicates`
+ * nor the positional argument was given: "unspecified" travels end to end and
+ * **each store applies its own default** (`S3FileStore` overwrites,
+ * `LocalFileStore` adds a random suffix). This helper must never invent `false`,
+ * or a two-argument `saveFile(path, bytes)` would silently start overwriting.
+ *
+ * `options.preventDuplicates` wins over the positional argument when both are
+ * given.
  */
 export function normalizeSaveFileOptions(
   options?: SaveFileOptions | string,
   preventDuplicates?: boolean,
-): SaveFileOptions {
+): SaveFileOptions & {preventDuplicates?: boolean | undefined} {
   if (typeof options === 'string') {
-    return {mimeType: options, preventDuplicates: preventDuplicates ?? false};
+    return {mimeType: options, preventDuplicates};
   }
   return {
     ...(options ?? {}),
-    preventDuplicates: options?.preventDuplicates ?? preventDuplicates ?? false,
+    preventDuplicates: options?.preventDuplicates ?? preventDuplicates,
   };
 }

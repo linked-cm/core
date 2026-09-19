@@ -57,8 +57,20 @@ export abstract class LinkedFileStorage {
     return this.defaultStore;
   }
 
+  /**
+   * Configure the default store.
+   *
+   * The default store *is* the uploads store, so this also configures the
+   * `uploads` purpose: `getStore(FileStorePurposes.uploads)` then returns this
+   * store without the "no store configured" fallback log, and
+   * `hasStore('uploads')` is true. An app that wants a separate uploads store
+   * calls `setStore('uploads', other)` afterwards, which overrides this.
+   */
   static setDefaultStore(store: IFileStore) {
     this.defaultStore = store;
+    this.registerPurpose(FileStorePurposes.uploads);
+    this.stores.set(FileStorePurposes.uploads, store);
+    this.loggedFallbacks.delete(FileStorePurposes.uploads);
 
     if (this.defaultStore.init) {
       this.defaultStore.init();
@@ -109,6 +121,11 @@ export abstract class LinkedFileStorage {
    * Unregistered throws on purpose: only a registry can tell "the app did not
    * split this purpose out" apart from a typo. Without it, `'appAsset'` would
    * silently write release bundles into the uploads store.
+   *
+   * The returned store is a **live reference**, resolved once at call time. A
+   * caller that holds on to a store returned through the default-store fallback
+   * keeps that object even after a later `setStore(purpose, other)`; call
+   * `getStore` again per operation if the configuration can change at runtime.
    */
   static getStore(purpose: string): IFileStore {
     const configured = this.stores.get(purpose);
@@ -183,7 +200,11 @@ export abstract class LinkedFileStorage {
     filePath: string,
     fileContent: string | Uint8Array | Buffer | Readable,
     options?: SaveFileOptions | string,
-    preventDuplicates: boolean = false,
+    /**
+     * Forwarded exactly as given. No default here on purpose: "unspecified"
+     * must reach the store so it can apply its own default.
+     */
+    preventDuplicates?: boolean,
   ): Promise<string> {
     return this.defaultStore.saveFile(
       filePath,
@@ -194,8 +215,10 @@ export abstract class LinkedFileStorage {
   }
 
   /**
-   * Internal. Clears the module-global registry and default store.
+   * Clears the module-global registry and default store.
    * For tests only — the registry is process-wide state.
+   *
+   * @internal
    */
   static resetForTests() {
     this.stores.clear();

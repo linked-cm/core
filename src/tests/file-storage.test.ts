@@ -228,6 +228,123 @@ describe('LinkedFileStorage.saveFile options passthrough', () => {
     expect(store.saveCalls[0].options).toBe('image/webp');
     expect(store.saveCalls[0].preventDuplicates).toBe(true);
   });
+
+  test('a two-argument call forwards preventDuplicates as undefined, not false', async () => {
+    const store = new FakeFileStore('https://uploads.example.com');
+    LinkedFileStorage.setDefaultStore(store);
+
+    await LinkedFileStorage.saveFile('/photo.webp', 'content');
+
+    // "Unspecified" must reach the store: LocalFileStore defaults to true and
+    // would start overwriting if core materialised a false here.
+    expect(store.saveCalls[0].preventDuplicates).toBeUndefined();
+    expect(store.saveCalls[0].options).toBeUndefined();
+    expect(
+      normalizeSaveFileOptions(
+        store.saveCalls[0].options,
+        store.saveCalls[0].preventDuplicates,
+      ).preventDuplicates,
+    ).toBeUndefined();
+  });
+
+  test('an explicit positional preventDuplicates is forwarded verbatim', async () => {
+    const store = new FakeFileStore('https://uploads.example.com');
+    LinkedFileStorage.setDefaultStore(store);
+
+    await LinkedFileStorage.saveFile('/a.webp', 'content', 'image/webp', false);
+    await LinkedFileStorage.saveFile('/b.webp', 'content', 'image/webp', true);
+
+    expect(store.saveCalls[0].preventDuplicates).toBe(false);
+    expect(store.saveCalls[1].preventDuplicates).toBe(true);
+  });
+
+  test('an explicit preventDuplicates in the options object is forwarded verbatim', async () => {
+    const store = new FakeFileStore('https://uploads.example.com');
+    LinkedFileStorage.setDefaultStore(store);
+
+    await LinkedFileStorage.saveFile('/a.webp', 'content', {
+      preventDuplicates: false,
+    });
+    await LinkedFileStorage.saveFile('/b.webp', 'content', {
+      preventDuplicates: true,
+    });
+
+    expect(store.saveCalls[0].options).toEqual({preventDuplicates: false});
+    expect(store.saveCalls[1].options).toEqual({preventDuplicates: true});
+    expect(store.saveCalls[0].preventDuplicates).toBeUndefined();
+    expect(store.saveCalls[1].preventDuplicates).toBeUndefined();
+  });
+
+  test('options.preventDuplicates wins over the positional argument', async () => {
+    const store = new FakeFileStore('https://uploads.example.com');
+    LinkedFileStorage.setDefaultStore(store);
+
+    await LinkedFileStorage.saveFile(
+      '/a.webp',
+      'content',
+      {mimeType: 'image/webp', preventDuplicates: true},
+      false,
+    );
+
+    const call = store.saveCalls[0];
+    expect(normalizeSaveFileOptions(call.options, call.preventDuplicates)).toEqual({
+      mimeType: 'image/webp',
+      preventDuplicates: true,
+    });
+  });
+});
+
+describe('LinkedFileStorage uploads purpose', () => {
+  test('setDefaultStore configures uploads, silently', () => {
+    const store = new FakeFileStore('https://uploads.example.com');
+    LinkedFileStorage.setDefaultStore(store);
+
+    expect(LinkedFileStorage.getStore(FileStorePurposes.uploads)).toBe(store);
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(LinkedFileStorage.hasStore(FileStorePurposes.uploads)).toBe(true);
+    expect(LinkedFileStorage.accessURLFor(FileStorePurposes.uploads)).toBe(
+      'https://uploads.example.com',
+    );
+
+    const uploads = LinkedFileStorage.listPurposes().find(
+      (entry) => entry.purpose === FileStorePurposes.uploads,
+    );
+    expect(uploads).toMatchObject({
+      purpose: FileStorePurposes.uploads,
+      configured: true,
+    });
+  });
+
+  test('the deprecated setDefaultDataset alias configures uploads too', () => {
+    const store = new FakeFileStore('https://uploads.example.com');
+    LinkedFileStorage.setDefaultDataset(store);
+
+    expect(LinkedFileStorage.getStore(FileStorePurposes.uploads)).toBe(store);
+    expect(store.initCalls).toBe(1);
+  });
+
+  test('an explicit setStore(uploads, other) overrides the default store', () => {
+    const defaultStore = new FakeFileStore('https://uploads.example.com');
+    const other = new FakeFileStore('https://media.example.com');
+    LinkedFileStorage.setDefaultStore(defaultStore);
+    LinkedFileStorage.setStore(FileStorePurposes.uploads, other);
+
+    expect(LinkedFileStorage.getStore(FileStorePurposes.uploads)).toBe(other);
+    expect(LinkedFileStorage.getDefaultStore()).toBe(defaultStore);
+    expect(LinkedFileStorage.accessURLFor(FileStorePurposes.uploads)).toBe(
+      'https://media.example.com',
+    );
+  });
+
+  test('resetForTests clears the uploads configuration', () => {
+    LinkedFileStorage.setDefaultStore(new FakeFileStore('https://uploads.example.com'));
+    reset();
+
+    expect(LinkedFileStorage.hasStore(FileStorePurposes.uploads)).toBe(false);
+    expect(
+      LinkedFileStorage.listPurposes().map((entry) => entry.purpose),
+    ).toContain(FileStorePurposes.uploads);
+  });
 });
 
 describe('normalizeSaveFileOptions', () => {
@@ -236,25 +353,57 @@ describe('normalizeSaveFileOptions', () => {
       mimeType: 'image/webp',
       preventDuplicates: true,
     });
-    expect(normalizeSaveFileOptions('image/webp')).toEqual({
+    expect(normalizeSaveFileOptions('image/webp', false)).toEqual({
       mimeType: 'image/webp',
       preventDuplicates: false,
     });
   });
 
-  test('keeps an options object and defaults preventDuplicates', () => {
+  test('the string form leaves an absent preventDuplicates undefined', () => {
+    const normalized = normalizeSaveFileOptions('image/webp');
+
+    expect(normalized.mimeType).toBe('image/webp');
+    expect(normalized.preventDuplicates).toBeUndefined();
+  });
+
+  test('the object form is kept as given', () => {
     expect(
-      normalizeSaveFileOptions({mimeType: 'text/css', cacheControl: 'no-store'}),
+      normalizeSaveFileOptions({
+        mimeType: 'text/css',
+        cacheControl: 'no-store',
+        metadata: {release: '1.2.3'},
+      }),
     ).toEqual({
       mimeType: 'text/css',
       cacheControl: 'no-store',
+      metadata: {release: '1.2.3'},
+    });
+    expect(normalizeSaveFileOptions({preventDuplicates: false})).toEqual({
       preventDuplicates: false,
     });
-    expect(normalizeSaveFileOptions({preventDuplicates: true}, false)).toEqual({
-      preventDuplicates: true,
-    });
-    expect(normalizeSaveFileOptions(undefined, true)).toEqual({
-      preventDuplicates: true,
-    });
+  });
+
+  test('both absent leaves preventDuplicates undefined, never false', () => {
+    // The store — not this helper — decides the default.
+    expect(normalizeSaveFileOptions().preventDuplicates).toBeUndefined();
+    expect(
+      normalizeSaveFileOptions({mimeType: 'text/css'}).preventDuplicates,
+    ).toBeUndefined();
+    expect(normalizeSaveFileOptions(undefined, undefined).preventDuplicates)
+      .toBeUndefined();
+  });
+
+  test('options.preventDuplicates wins over the positional argument', () => {
+    expect(
+      normalizeSaveFileOptions({preventDuplicates: true}, false).preventDuplicates,
+    ).toBe(true);
+    expect(
+      normalizeSaveFileOptions({preventDuplicates: false}, true).preventDuplicates,
+    ).toBe(false);
+    // The positional value is used only when the object says nothing.
+    expect(
+      normalizeSaveFileOptions({mimeType: 'text/css'}, true).preventDuplicates,
+    ).toBe(true);
+    expect(normalizeSaveFileOptions(undefined, true).preventDuplicates).toBe(true);
   });
 });
