@@ -362,6 +362,86 @@ LinkedStorage.setDefaultDataset(stores.appData);
 
 Each store class must accept a single config-object argument (`new StoreClass(config)`). `@_linked/fuseki`'s `FusekiStore` and `@_linked/server`'s `BackendAPIStore` both follow this contract.
 
+## File storage
+
+`LinkedStorage` routes *quads*; `LinkedFileStorage` routes *files*. Files are addressed by **purpose** — a short string naming what the files are for (`uploads`, `appAssets`, …) — so an app can send release bundles to a CDN bucket and user uploads to another store without any caller knowing which.
+
+```ts
+import {LinkedFileStorage, FileStorePurposes} from '@_linked/core';
+import {S3FileStore} from '@_linked/s3';
+
+LinkedFileStorage.setDefaultStore(new S3FileStore({/* … */}));           // fallback for every purpose
+LinkedFileStorage.setStore(FileStorePurposes.appAssets, new S3FileStore({/* cdn */}));
+
+await LinkedFileStorage.getStore(FileStorePurposes.appAssets).saveFile('/app.js', bytes);
+LinkedFileStorage.accessURLFor(FileStorePurposes.appAssets); // → https://cdn.example.com
+```
+
+### Resolution rule
+
+`getStore(purpose)` resolves in one order, and there is no fourth case:
+
+1. **configured** — a store was passed to `setStore(purpose, store)` → that store;
+2. **registered but not configured** → the default store, with a one-time `console.debug` line saying the purpose has no dedicated store (the normal case for a single-store app; it throws instead if no default store is set);
+3. **not registered** → throws, listing the known purposes. A typo like `'appAsset'` must not silently write release bundles into the uploads store.
+
+`uploads` is an ordinary purpose with no special case: `setDefaultStore` configures *no* purpose, so `uploads` reaches the default store through the fallback in step 2, and `setStore('uploads', other)` wins whether it is called before or after `setDefaultStore`.
+
+| Method | Meaning |
+| --- | --- |
+| `registerPurpose(purpose, {description?})` | Declare a purpose without configuring a store. |
+| `setStore(purpose, store)` | Configure (and register) the store; calls `store.init()`. |
+| `getStore(purpose)` | Resolve per the rule above. A **live reference** — call it per operation if config can change. |
+| `hasStore(purpose)` | Whether a store was *explicitly configured*. Ignores the fallback, so it is `false` while `getStore` still works. Never use it as a guard before `getStore`. |
+| `listPurposes()` | `{purpose, description?, configured}` for every declared purpose. |
+| `accessURLFor(purpose)` | The `accessURL` of the resolved store. |
+| `getDefaultStore()` / `setDefaultStore(store)` | The fallback store. `getDefaultDataset`/`setDefaultDataset` are `@deprecated` aliases that forward, kept until the next major. |
+
+### Introducing a purpose from a package
+
+Export the constant and register it **in the same module**, so importing the constant *is* the registration and load order resolves itself:
+
+```ts
+// @_linked/captures/purposes.ts
+import {LinkedFileStorage} from '@_linked/core';
+
+export const CapturesPurpose = 'captures';
+LinkedFileStorage.registerPurpose(CapturesPurpose, {description: '3D capture artifacts.'});
+```
+
+A consumer that imports `CapturesPurpose` can call `getStore(CapturesPurpose)` immediately; an app that never splits it out simply gets the default store. Core ships only `FileStorePurposes.uploads` and `FileStorePurposes.appAssets` — a new purpose belongs in the package that owns the concept.
+
+### Saving files: `SaveFileOptions`
+
+```ts
+await store.saveFile('/app.js', bytes, {
+  mimeType: 'application/javascript',
+  cacheControl: 'public, max-age=31536000, immutable',
+  metadata: {release: '1.2.3'},
+  preventDuplicates: true, // rename instead of overwriting when the path is taken
+});
+
+// Backwards compatible: a string third argument is read as the positional mimeType.
+await store.saveFile('/photo.webp', bytes, 'image/webp', true);
+```
+
+`options.preventDuplicates` wins over the positional fourth argument. Implementations should start with `normalizeSaveFileOptions(options, preventDuplicates)`, which collapses both forms into one object.
+
+> **There is no core-wide `preventDuplicates` default.** When a caller does not specify one it stays `undefined` all the way to the store, and **each store applies its own**: `LocalFileStore` adds a random suffix, `S3FileStore` overwrites. Pass it explicitly whenever the behaviour matters — never assume a default.
+
+### Optional `statFile`
+
+```ts
+const stat = await store.statFile?.('/app.js'); // FileStat | null | undefined
+if (!stat) {
+  // Store cannot report metadata, or the file is absent — skip verification.
+} else if (stat.sha256) {
+  // Only a real content hash verifies. `etag` is not one on S3.
+}
+```
+
+`statFile` is optional by design: a store without it still publishes. A caller must treat a missing method (`undefined`) or a missing `sha256` as "cannot verify" and continue, rather than failing the upload or falling back to `etag`.
+
 ## Automatic data validation
 
 SHACL shapes are ideal for data validation. Linked generates SHACL shapes from your TypeScript Shape classes, which you can sync to your store for schema-level validation. When your store enforces those shapes at runtime, you get both schema validation and runtime enforcement for extra safety.
