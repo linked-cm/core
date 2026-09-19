@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.19.1
+
+### Patch Changes
+
+- [#231](https://github.com/linked-fw/core/pull/231) [`58a5b7a`](https://github.com/linked-fw/core/commit/58a5b7af7332584e9f40c16d17e303f18d86962a) Thanks [@flyon](https://github.com/flyon)! - Declare npm as the package manager for this repo and mark `package-lock.json` as a generated file.
+
 ## 2.19.0
 
 ### Minor Changes
