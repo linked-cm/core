@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.20.1
+
+### Patch Changes
+
+- [#235](https://github.com/linked-fw/core/pull/235) [`19624f7`](https://github.com/linked-fw/core/commit/19624f7bb7b1d83bd99d9797a7da41fe7e09432b) Thanks [@flyon](https://github.com/flyon)! - Point `repository.url` at the linked-fw organisation, so npm provenance verification matches the repository that builds the package.
+
 ## 2.20.0
 
 ### Minor Changes
